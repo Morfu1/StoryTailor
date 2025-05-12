@@ -10,7 +10,7 @@
  */
 
 import {ai} from '@/ai/genkit';
-import {z} from 'genkit';
+import {z}from 'genkit';
 
 const GenerateCharacterPromptsInputSchema = z.object({
   script: z.string().describe('The main script of the story.'),
@@ -18,9 +18,9 @@ const GenerateCharacterPromptsInputSchema = z.object({
 export type GenerateCharacterPromptsInput = z.infer<typeof GenerateCharacterPromptsInputSchema>;
 
 const GenerateCharacterPromptsOutputSchema = z.object({
-  characterPrompts: z.string().describe('Prompts for the characters in the story.'),
-  itemPrompts: z.string().describe('Prompts for the items in the story.'),
-  locationPrompts: z.string().describe('Prompts for the locations in the story.'),
+  characterPrompts: z.string().describe('Prompts for the characters in the story, with each character name on a new line followed by its description.'),
+  itemPrompts: z.string().describe('Prompts for the items in the story, with each item name on a new line followed by its description.'),
+  locationPrompts: z.string().describe('Prompts for the locations in the story, with each location name on a new line followed by its description.'),
 });
 export type GenerateCharacterPromptsOutput = z.infer<typeof GenerateCharacterPromptsOutputSchema>;
 
@@ -35,27 +35,37 @@ const prompt = ai.definePrompt({
   input: {schema: GenerateCharacterPromptsInputSchema},
   output: {schema: GenerateCharacterPromptsOutputSchema},
   prompt: `You are a creative assistant helping to generate prompts for a children's story.
+Based on the following script, generate detailed prompts for the characters, items, and locations described.
 
-  Based on the following script, generate detailed prompts for the characters, items, and locations described.
+Script: {{{script}}}
 
-  Script: {{{script}}}
+For each character, item, and location, provide its name on one line, followed by its detailed description on subsequent lines. Ensure a clear separation between entries.
 
-  Format your response as follows:
+Format your response as follows:
 
-  Character Prompts:
-  [Character prompt 1]
-  [Character prompt 2]
-  ...
+Character Prompts:
+[Name of Character 1]
+[Description of Character 1...]
 
-  Item Prompts:
-  [Item prompt 1]
-  [Item prompt 2]
-  ...
+[Name of Character 2]
+[Description of Character 2...]
+...
 
-  Location Prompts:
-  [Location prompt 1]
-  [Location prompt 2]
-  ...`,
+Item Prompts:
+[Name of Item 1]
+[Description of Item 1...]
+
+[Name of Item 2]
+[Description of Item 2...]
+...
+
+Location Prompts:
+[Name of Location 1]
+[Description of Location 1...]
+
+[Name of Location 2]
+[Description of Location 2...]
+...`,
 });
 
 const generateCharacterPromptsFlow = ai.defineFlow(
