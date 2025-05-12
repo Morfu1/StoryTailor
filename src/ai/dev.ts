@@ -1,1 +1,7 @@
-// Flows will be imported for their side effects in this file.
+import { config } from 'dotenv';
+config();
+
+import '@/ai/flows/generate-narration-audio.ts';
+import '@/ai/flows/generate-image-prompts.ts';
+import '@/ai/flows/generate-character-prompts.ts';
+import '@/ai/flows/generate-script.ts';
