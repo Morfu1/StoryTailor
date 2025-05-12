@@ -1,0 +1,19 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Stories:
+    // - Authenticated users can create stories for themselves.
+    // - Authenticated users can read, update, delete their own stories.
+    // - No one can read/write stories of other users.
+    match /stories/{storyId} {
+      allow read, update, delete: if request.auth != null && request.auth.uid == resource.data.userId;
+      allow create: if request.auth != null && request.auth.uid == request.resource.data.userId;
+    }
+
+    // Default deny all other paths (optional, good practice)
+    // match /{document=**} {
+    //   allow read, write: if false;
+    // }
+  }
+}
