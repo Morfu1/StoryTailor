@@ -12,7 +12,7 @@ import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
 import Handlebars from 'handlebars';
 
-// Register Handlebars helper at the module level
+// Register Handlebars helper at the module level (though not strictly used in the revised prompt, kept for potential future use or other prompts)
 Handlebars.registerHelper('range', function (count) {
   const array = [];
   for (let i = 0; i < count; i++) {
@@ -35,7 +35,7 @@ const GenerateImagePromptsInputSchema = z.object({
 export type GenerateImagePromptsInput = z.infer<typeof GenerateImagePromptsInputSchema>;
 
 const GenerateImagePromptsOutputSchema = z.object({
-  imagePrompts: z.array(z.string()).describe('The generated image prompts.'),
+  imagePrompts: z.array(z.string()).describe('The generated image prompts as an array of strings.'),
 });
 export type GenerateImagePromptsOutput = z.infer<typeof GenerateImagePromptsOutputSchema>;
 
@@ -49,46 +49,36 @@ const generateImagePromptsPrompt = ai.definePrompt({
   name: 'generateImagePromptsPrompt',
   input: {schema: GenerateImagePromptsInputSchema.extend({ numImages: z.number() })}, // Add numImages to prompt input
   output: {schema: GenerateImagePromptsOutputSchema},
-  prompt: `You are an expert at creating detailed and evocative image prompts for animation frames based on a given script, character descriptions, location descriptions and item descriptions. Your goal is to generate a sequence of prompts that, when used with a text-to-image model, will produce visually coherent and engaging scenes for an animation.
+  prompt: `You are an expert at creating detailed and evocative image prompts for animation frames based on a given script, character descriptions, location descriptions, and item descriptions. Your goal is to generate a sequence of prompts that, when used with a text-to-image model, will produce visually coherent and engaging scenes for an animation.
 
 Instructions:
-
-1.  Determine the number of images needed based on the audio duration and the desired images per minute.
-2.  Analyze the script and identify key scenes that need to be visualized.
-3.  Create a specific image prompt for each of those scenes, incorporating known character, location and item descriptions.
-4.  Each prompt should include:
-    *   A shot type (e.g., "Wide front shot", "Medium side shot", "Close-up at eye-level", "Wide panoramic high-angle shot")
-    *   A description of the subject and its action in the scene
+1.  Analyze the script and identify {{numImages}} key scenes that need to be visualized.
+2.  For each scene, create a specific image prompt.
+3.  Each image prompt should include:
+    *   A shot type (e.g., "Wide front shot", "Medium side shot", "Close-up at eye-level", "Wide panoramic high-angle shot").
+    *   A description of the subject and its action in the scene.
     *   A description of the environment.
-    *   References to the character, location, and item descriptions in the format @characterName, @locationName, @itemName.
+    *   References to the character, location, and item descriptions using the format @characterName, @locationName, or @itemName where appropriate. Use the exact names provided in the descriptions.
 
-
-Here are the character descriptions:
-
+Character Descriptions:
 {{{characterPrompts}}}
 
-Here are the location descriptions:
-
+Location Descriptions:
 {{{locationPrompts}}}
 
-Here are the item descriptions:
-
+Item Descriptions:
 {{{itemPrompts}}}
 
-Here is the script:
-
+Script:
 {{{script}}}
 
-
-Based on the script and the provided descriptions, generate {{numImages}} image prompts:
-
-{{#each (range numImages)}}
-{{@index + 1}}: 
-{{/each}}
+Based on the script and the provided descriptions, generate exactly {{numImages}} image prompts.
+Return your response as a JSON object with a single key "imagePrompts". The value of "imagePrompts" MUST be an array of strings, where each string is one of the generated image prompts.
+Ensure the array contains exactly {{numImages}} prompt strings. Each string in the array should be a complete, detailed prompt suitable for a text-to-image model.
 `,
   config: {
     temperature: 0.7,
-    maxOutputTokens: 2048,
+    maxOutputTokens: 2048, // Increased slightly in case of very detailed prompts
   },
 });
 
@@ -99,51 +89,43 @@ const generateImagePromptsFlow = ai.defineFlow(
     outputSchema: GenerateImagePromptsOutputSchema,
   },
   async input => {
-    const numImages = Math.ceil(input.audioDurationSeconds * (input.imagesPerMinute / 60));
+    const numImages = Math.max(1, Math.ceil(input.audioDurationSeconds * (input.imagesPerMinute / 60))); // Ensure at least 1 image if duration > 0
 
     const {output} = await generateImagePromptsPrompt({
       ...input,
       numImages,
     });
-
-    // The output schema expects an array of strings for imagePrompts.
-    // If the LLM returns a single string with prompts separated by newlines (or numbered lines),
-    // we need to parse it into an array.
-    // Assuming the prompt output is structured like:
-    // 1: Prompt 1 text
-    // 2: Prompt 2 text
-    // ...
-    // Or if it directly returns an array in the output object that matches the schema.
-    // The current schema specifies `output: {schema: GenerateImagePromptsOutputSchema}`,
-    // so the LLM should attempt to return an object like `{ imagePrompts: ["prompt1", "prompt2"] }`.
     
     let imagePromptsArray: string[] = [];
 
     if (output && Array.isArray(output.imagePrompts)) {
-        imagePromptsArray = output.imagePrompts.filter(prompt => typeof prompt === 'string' && prompt.trim() !== '');
-    } else if (output && typeof (output as any) === 'string') { 
-      // Fallback if the LLM returns a single string instead of the structured output
-      // This might happen if the LLM doesn't fully adhere to the output schema instructions.
-      const rawStringOutput = (output as any) as string;
-      imagePromptsArray = rawStringOutput
-        .split(/\n\d+:\s*|\n-\s*/) // Split by newline followed by number and colon, or newline and dash
-        .map(prompt => prompt.trim())
-        .filter(prompt => prompt.length > 0);
-    } else if (output && output.imagePrompts && typeof output.imagePrompts === 'string') {
-        // If imagePrompts is a single string with newlines
-        imagePromptsArray = (output.imagePrompts as string)
-          .split(/\n\d+:\s*|\n-\s*/)
-          .map(prompt => prompt.trim())
-          .filter(prompt => prompt.length > 0);
+        imagePromptsArray = output.imagePrompts.map(prompt => String(prompt).trim()).filter(prompt => prompt !== '');
+    } else {
+        // This block might be hit if the LLM fails to adhere to the JSON object structure
+        // despite the prompt and output schema.
+        console.warn("Image prompt generation did not return the expected array structure. Output:", output);
+        // Attempt to parse if `output` itself is a string (less likely with schema adherence)
+        if (typeof output === 'string') {
+             imagePromptsArray = (output as string)
+            .split(/\n\d+:\s*|\n-\s*|\n\n/) // Split by newline, number and colon, or newline and dash, or double newline
+            .map(prompt => prompt.trim())
+            .filter(prompt => prompt.length > 0 && !/^\d+:\s*$/.test(prompt) && !/^-\s*$/.test(prompt) ); // Filter out empty or only-marker lines
+        } else if (output && typeof (output as any).imagePrompts === 'string') {
+            // If imagePrompts field is a string with newlines
+             imagePromptsArray = ((output as any).imagePrompts as string)
+            .split(/\n\d+:\s*|\n-\s*|\n\n/)
+            .map(prompt => prompt.trim())
+            .filter(prompt => prompt.length > 0 && !/^\d+:\s*$/.test(prompt) && !/^-\s*$/.test(prompt) );
+        }
     }
-
 
     // Ensure we adhere to the output schema even if parsing fails or returns unexpected structure
     if (!imagePromptsArray || imagePromptsArray.length === 0) {
-        // Log an issue or return a specific error structure if needed,
-        // for now, returning an empty array to satisfy the schema.
-        console.warn("Image prompt generation resulted in an empty or unparseable list.");
-        return { imagePrompts: [] };
+        console.warn("Image prompt generation resulted in an empty or unparseable list even after fallbacks.");
+        // Consider throwing an error here if an empty list is unacceptable
+        // For now, returning an empty array to satisfy the schema.
+        // throw new Error("Failed to generate a valid list of image prompts.");
+        return { imagePrompts: [] }; 
     }
     
     return {imagePrompts: imagePromptsArray};
