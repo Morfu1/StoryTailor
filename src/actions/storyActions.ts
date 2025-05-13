@@ -11,6 +11,15 @@ import type { Story } from '@/types/story';
 
 import { dbAdmin, firebaseAdmin } from '@/lib/firebaseAdmin'; 
 import { revalidatePath } from 'next/cache';
+import type { Timestamp as AdminTimestamp } from 'firebase-admin/firestore';
+
+
+// Log dbAdmin status when this module is loaded (server-side)
+if (typeof dbAdmin === 'undefined') {
+  console.error("[storyActions Module Load] CRITICAL: dbAdmin from @/lib/firebaseAdmin is UNDEFINED. All Firestore admin operations will fail with 'Database connection not available'. Check firebaseAdmin.ts logs for errors, especially GOOGLE_APPLICATION_CREDENTIALS configuration.");
+} else {
+  console.log("[storyActions Module Load] dbAdmin from @/lib/firebaseAdmin is (at least initially) DEFINED. Firestore admin operations should be possible.");
+}
 
 
 export async function generateTitle(input: GenerateTitleInput) {
@@ -75,8 +84,8 @@ export async function saveStory(storyData: Story, authenticatedUserId: string): 
   console.log("[saveStory Action] Initiated. Authenticated User ID:", authenticatedUserId);
   
   if (!dbAdmin) {
-    console.error("[saveStory Action] Firebase Admin SDK (dbAdmin) is not initialized. Cannot save story.");
-    return { success: false, error: "Server configuration error: Database connection not available." };
+    console.error("[saveStory Action] Firebase Admin SDK (dbAdmin) is not initialized. Cannot save story. This usually means GOOGLE_APPLICATION_CREDENTIALS is not set correctly or the service account key is invalid/inaccessible by the server. Check server logs for firebaseAdmin.ts output.");
+    return { success: false, error: "Server configuration error: Database connection not available. Please contact support or check server logs." };
   }
   if (!authenticatedUserId || typeof authenticatedUserId !== 'string' || authenticatedUserId.trim() === '') {
     console.error("[saveStory Action] Error: Authenticated User ID is invalid or missing:", authenticatedUserId);
@@ -86,40 +95,31 @@ export async function saveStory(storyData: Story, authenticatedUserId: string): 
   console.log("[saveStory Action] Received storyData.id for save/update:", storyData.id); 
 
   try {
-    // Construct the base payload, ensuring userId is always from the authenticated session
     const payload: any = {
-      ...storyData, // Spread incoming story data
-      userId: authenticatedUserId, // CRITICAL: Always use the authenticated user's ID
+      ...storyData, 
+      userId: authenticatedUserId, 
       title: storyData.title || "Untitled Story",
       userPrompt: storyData.userPrompt || "",
-      updatedAt: firebaseAdmin.firestore.FieldValue.serverTimestamp(), 
+      updatedAt: firebaseAdmin.firestore.FieldValue.serverTimestamp() as AdminTimestamp, 
     };
 
-    // Remove the 'id' field from the payload itself, as it's used for document reference
-    // and should not be part of the document data if Firestore auto-generates it or if it's the doc name.
     delete payload.id; 
 
-    // Handle createdAt for new vs existing stories
-    if (storyData.id) { // Existing story
+    if (storyData.id) { 
       if (storyData.createdAt) {
-        // Preserve existing createdAt: Convert Date to Admin Timestamp if necessary
         payload.createdAt = storyData.createdAt instanceof Date 
-          ? firebaseAdmin.firestore.Timestamp.fromDate(storyData.createdAt) 
-          : storyData.createdAt;
+          ? firebaseAdmin.firestore.Timestamp.fromDate(storyData.createdAt) as AdminTimestamp
+          : storyData.createdAt as AdminTimestamp;
       } else {
-        // If somehow an existing story is missing createdAt, set it. Unlikely if created properly.
         console.warn(`[saveStory Action] Existing story ${storyData.id} is missing createdAt. Setting it now.`);
-        payload.createdAt = firebaseAdmin.firestore.FieldValue.serverTimestamp();
+        payload.createdAt = firebaseAdmin.firestore.FieldValue.serverTimestamp() as AdminTimestamp;
       }
-    } else { // New story
-      payload.createdAt = firebaseAdmin.firestore.FieldValue.serverTimestamp();
+    } else { 
+      payload.createdAt = firebaseAdmin.firestore.FieldValue.serverTimestamp() as AdminTimestamp;
     }
     
-    // Ensure no undefined values are sent to Firestore
     Object.keys(payload).forEach(key => {
       if (payload[key] === undefined) {
-        // Firestore does not allow 'undefined'. Convert to null or remove.
-        // For this app, let's remove them to keep documents clean.
         delete payload[key]; 
       }
     });
@@ -150,7 +150,6 @@ export async function saveStory(storyData: Story, authenticatedUserId: string): 
     } else if (error instanceof Error) {
       errorMessage = `Failed to save story (Admin SDK error): ${error.message}`;
     }
-    // Log the full error object for more details if available
     console.error("[saveStory Action] Full error object:", JSON.stringify(error, null, 2));
     return { success: false, error: errorMessage };
   }
@@ -158,8 +157,8 @@ export async function saveStory(storyData: Story, authenticatedUserId: string): 
 
 export async function getStory(storyId: string, userId: string): Promise<{ success: boolean; data?: Story; error?: string }> {
   if (!dbAdmin) {
-    console.error("[getStory Action] Firebase Admin SDK (dbAdmin) is not initialized. Cannot fetch story.");
-    return { success: false, error: "Server configuration error: Database connection not available." };
+    console.error("[getStory Action] Firebase Admin SDK (dbAdmin) is not initialized. Cannot fetch story. Check server logs for firebaseAdmin.ts output.");
+    return { success: false, error: "Server configuration error: Database connection not available. Please contact support or check server logs." };
   }
   if (!userId) {
     console.warn("[getStory Action] Attempt to fetch story without userId.");
@@ -177,11 +176,12 @@ export async function getStory(storyId: string, userId: string): Promise<{ succe
         return { success: false, error: "Unauthorized access to story." };
       }
 
+      // Convert Admin Timestamps to Date objects for client-side use
       if (story.createdAt && story.createdAt instanceof firebaseAdmin.firestore.Timestamp) {
-        story.createdAt = (story.createdAt as admin.firestore.Timestamp).toDate();
+        story.createdAt = (story.createdAt as AdminTimestamp).toDate();
       }
       if (story.updatedAt && story.updatedAt instanceof firebaseAdmin.firestore.Timestamp) {
-        story.updatedAt = (story.updatedAt as admin.firestore.Timestamp).toDate();
+        story.updatedAt = (story.updatedAt as AdminTimestamp).toDate();
       }
       return { success: true, data: story };
     } else {
@@ -202,15 +202,13 @@ export async function getStory(storyId: string, userId: string): Promise<{ succe
 
 export async function generateImageFromPrompt(prompt: string): Promise<{ success: boolean, imageUrl?: string, error?: string, dataAiHint?: string }> {
   // Placeholder - simulate AI image generation
-  await new Promise(resolve => setTimeout(resolve, 1500)); // Simulate delay
+  await new Promise(resolve => setTimeout(resolve, 1500)); 
   
-  // Basic keyword extraction for data-ai-hint
   let keywords = "abstract"; 
-  const mentionedItems = prompt.match(/@\w+/g); // Check for @mentions
+  const mentionedItems = prompt.match(/@\w+/g); 
   if (mentionedItems && mentionedItems.length > 0) {
       keywords = mentionedItems.map(item => item.substring(1).toLowerCase()).slice(0,2).join(" ");
   } else {
-      // Fallback to first few meaningful words if no @mentions
       const words = prompt.toLowerCase().split(" ");
       const commonWords = ["a", "an", "the", "of", "in", "is", "and", "shot", "at", "with", "scene", "visualize", "generate"];
       const meaningfulWords = words.filter(w => !commonWords.includes(w) && w.length > 3);
