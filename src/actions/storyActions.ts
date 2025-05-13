@@ -83,7 +83,7 @@ interface FirebaseErrorWithCode extends Error {
   code?: string;
 }
 
-// BASIC TEST SAVE FUNCTION
+// BASIC TEST SAVE FUNCTION - MINIMALIST APPROACH TO TEST ADMIN SDK CONNECTION
 export async function saveStory(storyData: Story, authenticatedUserId: string): Promise<{ success: boolean; storyId?: string; error?: string }> {
   console.log('---------------------------------------------------------------------');
   console.log("[saveStory Action - BASIC TEST] Initiated.");
@@ -170,6 +170,7 @@ export async function getStory(storyId: string, userId: string): Promise<{ succe
        // return { success: false, error: "Unauthorized access to story." };
       }
 
+      // Convert Firestore Timestamps to JS Date objects if they exist
       if (story.createdAt && typeof (story.createdAt as any).toDate === 'function') {
         story.createdAt = (story.createdAt as AdminTimestamp).toDate();
       }
@@ -219,3 +220,109 @@ export async function generateImageFromPrompt(prompt: string): Promise<{ success
 
   return { success: true, imageUrl, dataAiHint: keywords };
 }
+
+// Original saveStory commented out for basic testing
+/*
+export async function saveStory(storyData: Story, userId: string): Promise<{ success: boolean; storyId?: string; error?: string }> {
+  console.log('---------------------------------------------------------------------');
+  console.log("[saveStory Action] Initiated. User ID:", userId, "Story ID (if exists):", storyData.id);
+  
+  if (!dbAdmin) {
+    const errorMessage = "Server configuration error: Database connection (dbAdmin) is not available. Firebase Admin SDK might not be initialized. Check server logs for firebaseAdmin.ts output.";
+    console.error("[saveStory Action] CRITICAL ERROR:", errorMessage);
+    return { success: false, error: errorMessage };
+  }
+   console.log("[saveStory Action] INFO: dbAdmin is DEFINED.");
+
+  if (!userId || typeof userId !== 'string' || userId.trim() === '') {
+    console.error("[saveStory Action] Error: Authenticated User ID is invalid or missing:", userId);
+    return { success: false, error: "User not authenticated or user ID is invalid." };
+  }
+
+  // Prepare data, ensuring userId is always from the authenticated context
+  // And timestamps are handled correctly
+  const dataToSave: any = {
+    ...storyData,
+    userId: userId, // Crucial: Always use the authenticated userId
+    updatedAt: firebaseAdmin.firestore.FieldValue.serverTimestamp(),
+  };
+
+  // Remove id from data if it's there, as it's the document key
+  if (dataToSave.id) {
+    delete dataToSave.id; 
+  }
+
+  // Convert Date objects from client to Firestore Timestamps if they exist
+  if (dataToSave.createdAt && dataToSave.createdAt instanceof Date) {
+    dataToSave.createdAt = firebaseAdmin.firestore.Timestamp.fromDate(dataToSave.createdAt);
+  }
+  if (dataToSave.updatedAt && dataToSave.updatedAt instanceof Date) { // Should be serverTimestamp, but safeguard
+    dataToSave.updatedAt = firebaseAdmin.firestore.Timestamp.fromDate(dataToSave.updatedAt);
+  }
+  
+  // Ensure detailsPrompts are stored correctly (object or delete if empty/undefined)
+  if (dataToSave.detailsPrompts && Object.keys(dataToSave.detailsPrompts).length === 0) {
+    delete dataToSave.detailsPrompts;
+  } else if (dataToSave.detailsPrompts === undefined) {
+    delete dataToSave.detailsPrompts;
+  }
+
+  // Ensure imagePrompts and generatedImages are arrays or delete if undefined
+  if (dataToSave.imagePrompts === undefined) delete dataToSave.imagePrompts;
+  if (dataToSave.generatedImages === undefined) delete dataToSave.generatedImages;
+
+
+  Object.keys(dataToSave).forEach(key => {
+    if (dataToSave[key] === undefined) {
+      console.log(`[saveStory Action] Deleting undefined key: ${key}`);
+      delete dataToSave[key];
+    }
+  });
+  
+  console.log("[saveStory Action] Data prepared for Firestore:", JSON.stringify(dataToSave, null, 2));
+
+
+  try {
+    if (storyData.id) {
+      // Update existing story
+      console.log(`[saveStory Action] Attempting to UPDATE document 'stories/${storyData.id}'`);
+      const storyRef = dbAdmin.collection("stories").doc(storyData.id);
+      await storyRef.update(dataToSave);
+      console.log(`[saveStory Action] SUCCESS: Document 'stories/${storyData.id}' updated.`);
+      revalidatePath('/dashboard');
+      revalidatePath(`/create-story?storyId=${storyData.id}`);
+      return { success: true, storyId: storyData.id };
+    } else {
+      // Create new story
+      dataToSave.createdAt = firebaseAdmin.firestore.FieldValue.serverTimestamp(); // Set createdAt for new stories
+      console.log("[saveStory Action] Attempting to ADD new document to 'stories' collection");
+      const docRef = await dbAdmin.collection("stories").add(dataToSave);
+      console.log(`[saveStory Action] SUCCESS: Document added to 'stories' with ID: ${docRef.id}`);
+      revalidatePath('/dashboard');
+      return { success: true, storyId: docRef.id };
+    }
+  } catch (error) {
+    console.error("[saveStory Action] Error during Firestore operation:", error);
+    let errorMessage = "Failed to save story.";
+    const firebaseError = error as FirebaseErrorWithCode;
+
+    if (firebaseError && firebaseError.code) {
+      errorMessage = `Failed to save story (Firestore Error): ${firebaseError.message} (Code: ${firebaseError.code})`;
+      if (firebaseError.code === 'permission-denied' || firebaseError.code === 7) {
+        console.error("[saveStory Action] PERMISSION DENIED. This likely means the Admin SDK service account lacks Firestore write permissions, OR there's an issue with security rules if they were not bypassed by Admin SDK (though Admin SDK typically bypasses rules). Check IAM for the service account.");
+      } else if (firebaseError.code === 'unauthenticated' || firebaseError.code === 16) {
+         console.error("[saveStory Action] UNAUTHENTICATED: This indicates an issue with Admin SDK authentication, possibly related to credentials.");
+      }
+    } else if (error instanceof Error) {
+      errorMessage = `Failed to save story: ${error.message}`;
+    }
+    console.error("[saveStory Action] Full error object:", JSON.stringify(error, null, 2));
+    return { success: false, error: errorMessage };
+  } finally {
+     console.log('---------------------------------------------------------------------');
+     console.log("[saveStory Action] Completed.");
+     console.log('---------------------------------------------------------------------');
+  }
+}
+*/
+

@@ -31,11 +31,14 @@ if (!admin.apps.length) {
   try {
     // admin.initializeApp() will use GOOGLE_APPLICATION_CREDENTIALS if set and valid,
     // or ADC if GOOGLE_APPLICATION_CREDENTIALS is not set.
+    // The credential object is not explicitly passed here, relying on the environment variable.
     admin.initializeApp({
-      // If GOOGLE_APPLICATION_CREDENTIALS is set, it overrides credential specified here.
-      // If it's NOT set, and you want to load from a default path, you might specify:
-      // credential: admin.credential.applicationDefault(), // Or a specific cert
-      // projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID, // Ensure this is your correct project ID
+        // If GOOGLE_APPLICATION_CREDENTIALS is set via environment, it's used automatically.
+        // If not set, ADC is attempted.
+        // If you wanted to explicitly use ADC, you'd do:
+        // credential: admin.credential.applicationDefault(),
+        // projectId is also usually inferred from credentials or ADC.
+        // projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID, // Can be specified if needed
     });
     adminApp = admin.app(); // Get the default app instance
     console.log(`[firebaseAdmin] SUCCESS: Firebase Admin SDK initializeApp() completed.`);
@@ -44,7 +47,7 @@ if (!admin.apps.length) {
     
     if (!adminApp.options.projectId && process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID) {
         console.warn(`[firebaseAdmin] WARNING: Initialized app does not have a projectId in its options. This is unusual. Using NEXT_PUBLIC_FIREBASE_PROJECT_ID ('${process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID}') for Firestore connection if needed, but the Admin SDK might not be fully configured.`);
-    } else if (adminApp.options.projectId !== process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID) {
+    } else if (adminApp.options.projectId && process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID && adminApp.options.projectId !== process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID) {
         console.warn(`[firebaseAdmin] POTENTIAL MISMATCH: Initialized Admin App Project ID ("${adminApp.options.projectId}") does not match NEXT_PUBLIC_FIREBASE_PROJECT_ID ("${process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID}"). Ensure credentials point to the correct project.`);
     }
 
@@ -61,10 +64,12 @@ if (!admin.apps.length) {
           console.error(`  TROUBLESHOOTING: The service account key file ("${GAC_PATH || 'Not Set'}") might be malformed, not a valid JSON key file, or corrupted.`);
       } else if (error.message.includes('Missing project ID')) {
           console.error(`  TROUBLESHOOTING: A project ID could not be determined. Ensure your service account key is valid or Application Default Credentials are configured with a project ID.`);
+      } else if (error.message.includes('Could not load the default credentials')) {
+          console.error(`  TROUBLESHOOTING: GOOGLE_APPLICATION_CREDENTIALS is not set or invalid, AND Application Default Credentials could not be found/loaded. This usually means you're not in a GCP environment and haven't provided a service account key path.`);
       }
       if (error.stack) console.error(`  Stack Trace: ${error.stack}`);
     } else {
-      console.error('  Caught a non-Error object during initializeApp:', error);
+      console.error('  Caught a non-Error object during initializeApp():', error);
     }
     console.error('[firebaseAdmin] RESULT: Firebase Admin SDK initialization FAILED. `dbAdmin` will be undefined.');
   }
@@ -79,14 +84,13 @@ if (!admin.apps.length) {
 
 if (adminApp) {
   try {
-    const databaseId = 'storytailordb';
+    const databaseId = 'storytailordb'; // The ID of your specific Firestore database
     console.log(`[firebaseAdmin] INFO: Attempting to get Firestore Admin instance for database ID: "${databaseId}" using app: "${adminApp.name}".`);
-    // Explicitly get the 'storytailordb' instance
     dbAdmin = getAdminFirestore(adminApp, databaseId);
     console.log(`[firebaseAdmin] SUCCESS: Firestore Admin SDK instance for "${databaseId}" (dbAdmin) obtained.`);
   } catch (error) {
     dbAdmin = undefined; 
-    console.error(`[firebaseAdmin] CRITICAL ERROR obtaining Firestore Admin instance for database ID "${'storytailordb'}" (or default if not specified):`);
+    console.error(`[firebaseAdmin] CRITICAL ERROR obtaining Firestore Admin instance for database ID "${'storytailordb'}":`);
      if (error instanceof Error) {
       console.error(`  Error Type: ${error.name}`);
       console.error(`  Error Message: ${error.message}`);
