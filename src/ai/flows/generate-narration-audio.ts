@@ -52,10 +52,10 @@ const generateNarrationAudioFlow = ai.defineFlow(
     outputSchema: GenerateNarrationAudioOutputSchema,
   },
   async (input: GenerateNarrationAudioInput): Promise<GenerateNarrationAudioOutput> => {
-    const apiKey = process.env.ELEVENLABS_API_KEY;
+    const apiKey = process.env.ELEVEN_API_KEY; // Changed from ELEVENLABS_API_KEY
     if (!apiKey) {
-      console.error('ElevenLabs API key is not configured.');
-      return { error: 'ElevenLabs API key is not configured.' };
+      console.error('ElevenLabs API key (ELEVEN_API_KEY) is not configured in environment variables.');
+      return { error: 'ElevenLabs API key is not configured. Please ensure ELEVEN_API_KEY is set in your environment.' };
     }
 
     if (input.voiceId) {
@@ -113,9 +113,14 @@ const generateNarrationAudioFlow = ai.defineFlow(
         const data = await response.json();
         // Filter for "premade" voices as a proxy for generally available/free voices.
         // The API might change, so this filtering logic might need adjustment.
-        const premadeVoices = (data.voices as ElevenLabsVoice[]).filter(voice => voice.category === 'premade' || !voice.category); // Include those without category as well for safety
+        // Also consider voices with no category or 'professional' if that's desired for free tier testing
+        const availableVoices = (data.voices as ElevenLabsVoice[]).filter(
+          voice => voice.category === 'premade' || 
+                   voice.category === 'professional' || // Some free tier might have these
+                   !voice.category // Include voices without a specific category if they are available
+        ); 
 
-        return { voices: premadeVoices };
+        return { voices: availableVoices };
 
       } catch (err) {
         console.error('Error calling ElevenLabs Voices API:', err);
@@ -124,3 +129,4 @@ const generateNarrationAudioFlow = ai.defineFlow(
     }
   }
 );
+
