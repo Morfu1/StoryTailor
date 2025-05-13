@@ -32,8 +32,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { generateTitle, generateScript, generateCharacterPrompts, generateNarrationAudio, generateImagePrompts, saveStory, getStory, generateImageFromPrompt } from '@/actions/storyActions';
-import { Bot, Clapperboard, ImageIcon, Loader2, Mic, Save, Sparkles, FileText, Image as LucideImage, AlertCircle, CheckCircle, Info, Pencil, ListMusic, Upload } from 'lucide-react';
+import { Bot, Clapperboard, ImageIcon, Loader2, Mic, Save, Sparkles, FileText, Image as LucideImage, AlertCircle, CheckCircle, Info, Pencil, ListMusic, Upload, Film } from 'lucide-react';
 import Image from 'next/image';
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState, useCallback } from 'react';
 
@@ -416,14 +417,6 @@ export default function CreateStoryPage() {
 
     const result = await saveStory(storyToSave, user.uid); 
     if (result.success && result.storyId) {
-      // After successful save, if the URL was a data URI, it's now a storage URL from the backend.
-      // We need to update the local state if the saveStory action returns the updated story object,
-      // or re-fetch. For now, we assume the URL might have changed.
-      // A better approach is for saveStory to return the updated story object or at least the new URL.
-      // For simplicity, we'll just update the ID and router.
-      // If saveStory modifies storyData.narrationAudioUrl (data URI -> storage URL), it should be reflected.
-      // Let's assume saveStory doesn't return the full updated object, so we re-fetch if it's a new story.
-      
       const updatedStoryData = { ...storyData, id: result.storyId };
       if (result.data?.narrationAudioUrl && result.data.narrationAudioUrl !== storyData.narrationAudioUrl) {
         updatedStoryData.narrationAudioUrl = result.data.narrationAudioUrl;
@@ -437,12 +430,6 @@ export default function CreateStoryPage() {
       toast({ title: 'Story Saved!', description: 'Your masterpiece is safely stored.', className: 'bg-primary text-primary-foreground' });
       if (!storyId && result.storyId) { 
           router.replace(`/create-story?storyId=${result.storyId}`, { scroll: false });
-      } else if (result.storyId === storyId) {
-        // If it's an update, and the audio URL might have changed from data URI to storage URL
-        // It's good to refresh the local state to reflect the permanent URL
-        // This part is tricky without saveStory returning the final state.
-        // A simple way is to re-fetch, but that might be too much.
-        // For now, we assume the component state is managed ok, and the next load will have the storage URL.
       }
     } else {
       toast({ title: 'Error Saving Story', description: result.error || 'Could not save your story.', variant: 'destructive' });
@@ -771,7 +758,7 @@ export default function CreateStoryPage() {
               </AccordionContent>
             </AccordionItem>
 
-            {/* Step 6: Video Assembly (Placeholder) */}
+            {/* Step 6: Video Assembly */}
             <AccordionItem value="step-6" disabled={!allImagesGenerated}>
               <AccordionTrigger className="text-xl font-semibold hover:no-underline data-[state=open]:text-primary">
                 <div className="flex items-center">
@@ -780,9 +767,9 @@ export default function CreateStoryPage() {
               </AccordionTrigger>
               <AccordionContent className="pt-4 space-y-4">
                  {!allImagesGenerated && <p className="text-muted-foreground">Please generate all images in Step 5 first.</p>}
-                {allImagesGenerated && (
+                {allImagesGenerated && storyData.id && (
                   <>
-                    <p className="text-muted-foreground">Review your generated images below. Video assembly is coming soon!</p>
+                    <p className="text-muted-foreground">All images are generated. You can now proceed to assemble your video.</p>
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 mt-4">
                       {storyData.generatedImages?.map((img, index) => (
                         img && // Ensure img is not null before rendering
@@ -794,15 +781,23 @@ export default function CreateStoryPage() {
                         </div>
                       ))}
                     </div>
-                    <Button disabled className="mt-4 bg-primary hover:bg-primary/90 text-primary-foreground opacity-50 cursor-not-allowed" title="Video assembly coming soon!">
-                      <Clapperboard className="mr-2 h-4 w-4" /> Assemble Video (Coming Soon)
+                    <Button asChild className="mt-4 bg-primary hover:bg-primary/90 text-primary-foreground" disabled={!allImagesGenerated || !storyData.id}>
+                      <Link href={`/assemble-video?storyId=${storyData.id}`}>
+                        <Film className="mr-2 h-4 w-4" /> Assemble & Export Video
+                      </Link>
                     </Button>
                     <div className="flex items-center p-3 text-sm text-primary bg-primary/10 border border-primary/20 rounded-md">
                       <Info className="h-5 w-5 mr-2 shrink-0" />
-                      <span>Video assembly and MP4 export features are currently under development. Stay tuned!</span>
+                      <span>Video assembly and MP4 export will be handled on the next page. Some features might be under development.</span>
                     </div>
                   </>
                 )}
+                 {allImagesGenerated && !storyData.id && (
+                    <div className="flex items-center p-3 text-sm text-yellow-700 bg-yellow-100 border border-yellow-200 rounded-md">
+                        <AlertCircle className="h-5 w-5 mr-2 shrink-0" />
+                        <span>Please save your story first to enable video assembly.</span>
+                    </div>
+                 )}
               </AccordionContent>
             </AccordionItem>
           </Accordion>
@@ -839,3 +834,4 @@ export default function CreateStoryPage() {
     </div>
   );
 }
+
