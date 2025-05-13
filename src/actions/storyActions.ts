@@ -6,21 +6,9 @@ import { generateNarrationAudio as aiGenerateNarrationAudio, type GenerateNarrat
 import { generateImagePrompts as aiGenerateImagePrompts, type GenerateImagePromptsInput } from '@/ai/flows/generate-image-prompts';
 
 import type { Story } from '@/types/story';
-import { db, auth } from '@/lib/firebase'; // Assuming auth can be used server-side if needed or user ID is passed
-import { collection, addDoc, updateDoc, doc, serverTimestamp, getDoc } from 'firebase/firestore';
+import { db } from '@/lib/firebase'; 
+import { collection, addDoc, updateDoc, doc, serverTimestamp, getDoc, type FirestoreError } from 'firebase/firestore';
 import { revalidatePath } from 'next/cache';
-
-
-// Helper to get current user ID (example, adjust based on your auth setup for server actions)
-async function getCurrentUserId(): Promise<string | null> {
-  // This is tricky for server actions without session cookies.
-  // For now, assume userId is passed in or handle auth state appropriately.
-  // If using Firebase Admin SDK on a backend, you could verify ID tokens.
-  // For client-driven server actions, the client should provide the user ID.
-  // For this example, we'll assume userId is passed to functions that need it.
-  // For Firebase client SDK, auth.currentUser is only available client-side.
-  return null; // Placeholder
-}
 
 
 export async function generateScript(input: GenerateScriptInput) {
@@ -46,11 +34,9 @@ export async function generateCharacterPrompts(input: GenerateCharacterPromptsIn
 export async function generateNarrationAudio(input: GenerateNarrationAudioInput) {
   try {
     const result = await aiGenerateNarrationAudio(input);
-    // The placeholder audio is very short. Actual duration would come from a real audio file.
-    // For now, let's set a mock duration if we get the placeholder.
-    let duration = 30; // Default mock duration
+    let duration = 30; 
     if (result.audioDataUri === 'data:audio/mp3;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAAA') {
-      duration = 5; // Mock duration for placeholder
+      duration = 5; 
     }
     return { success: true, data: { ...result, duration } };
   } catch (error) {
@@ -75,31 +61,47 @@ export async function saveStory(storyData: Story, userId: string): Promise<{ suc
   }
 
   try {
+    // Prepare data by removing id for create, and ensuring only valid fields are passed
+    const dataToSave: any = { ...storyData };
+    if (!storyData.id) { // For new story
+      delete dataToSave.id; // addDoc generates ID, so remove if present
+      dataToSave.createdAt = serverTimestamp();
+    }
+    dataToSave.userId = userId; // Ensure userId is correctly set from the authenticated user
+    dataToSave.updatedAt = serverTimestamp();
+
+    // Firestore does not allow undefined values. Filter them out.
+    for (const key in dataToSave) {
+        if (dataToSave[key] === undefined) {
+            delete dataToSave[key];
+        }
+    }
+
+
     if (storyData.id) {
       // Update existing story
       const storyRef = doc(db, "stories", storyData.id);
-      await updateDoc(storyRef, {
-        ...storyData,
-        userId, // Ensure userId is correctly set
-        updatedAt: serverTimestamp(),
-      });
+      await updateDoc(storyRef, dataToSave);
       revalidatePath('/dashboard');
       revalidatePath(`/create-story?storyId=${storyData.id}`);
       return { success: true, storyId: storyData.id };
     } else {
       // Create new story
-      const docRef = await addDoc(collection(db, "stories"), {
-        ...storyData,
-        userId,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
+      const docRef = await addDoc(collection(db, "stories"), dataToSave);
       revalidatePath('/dashboard');
       return { success: true, storyId: docRef.id };
     }
   } catch (error) {
     console.error("Error saving story to Firestore:", error);
-    return { success: false, error: "Failed to save story." };
+    let errorMessage = "Failed to save story.";
+    // Try to get more specific error message from FirebaseError
+    const firebaseError = error as FirestoreError;
+    if (firebaseError && firebaseError.code) {
+      errorMessage = `Failed to save story: ${firebaseError.message} (Code: ${firebaseError.code})`;
+    } else if (error instanceof Error) {
+      errorMessage = `Failed to save story: ${error.message}`;
+    }
+    return { success: false, error: errorMessage };
   }
 }
 
@@ -114,36 +116,34 @@ export async function getStory(storyId: string, userId: string): Promise<{ succe
     if (docSnap.exists()) {
       const story = { id: docSnap.id, ...docSnap.data() } as Story;
       if (story.userId !== userId) {
+        // This is an application-level check. Firestore rules should primarily enforce this.
         return { success: false, error: "Unauthorized access to story." };
       }
-      // Convert Firestore Timestamps to Date objects for client-side usage if necessary
-      // This often happens automatically with Firestore SDK or needs manual conversion depending on setup
-      // For server actions returning to client, it's safer to ensure serializable data.
-      // However, for this structure, client components will handle date display.
       return { success: true, data: story };
     } else {
       return { success: false, error: "Story not found." };
     }
   } catch (error) {
     console.error("Error fetching story from Firestore:", error);
-    return { success: false, error: "Failed to fetch story." };
+    let errorMessage = "Failed to fetch story.";
+    const firebaseError = error as FirestoreError;
+    if (firebaseError && firebaseError.code) {
+      errorMessage = `Failed to fetch story: ${firebaseError.message} (Code: ${firebaseError.code})`;
+    } else if (error instanceof Error) {
+      errorMessage = `Failed to fetch story: ${error.message}`;
+    }
+    return { success: false, error: errorMessage };
   }
 }
 
-// Placeholder for image generation - in a real app, this would call a text-to-image model
 export async function generateImageFromPrompt(prompt: string): Promise<{ success: boolean, imageUrl?: string, error?: string, dataAiHint?: string }> {
-  // Simulate API call
   await new Promise(resolve => setTimeout(resolve, 1500));
   
-  // Extract keywords from prompt for picsum.photos. Simple extraction logic.
-  // Example: "Wide front shot of @Rusty standing proudly in a sunlit clearing of the @Forest"
-  // -> keywords: "fox forest"
-  let keywords = "abstract"; // Default
-  const mentionedItems = prompt.match(/@\w+/g); // E.g. ["@Rusty", "@Forest"]
+  let keywords = "abstract"; 
+  const mentionedItems = prompt.match(/@\w+/g); 
   if (mentionedItems && mentionedItems.length > 0) {
       keywords = mentionedItems.map(item => item.substring(1).toLowerCase()).slice(0,2).join(" ");
   } else {
-      // Fallback: try to get first few nouns
       const words = prompt.toLowerCase().split(" ");
       const commonWords = ["a", "an", "the", "of", "in", "is", "and", "shot", "at", "with"];
       const meaningfulWords = words.filter(w => !commonWords.includes(w) && w.length > 3);
@@ -152,15 +152,9 @@ export async function generateImageFromPrompt(prompt: string): Promise<{ success
       }
   }
 
-
-  // For now, return a placeholder image from picsum.photos
   const width = 512;
   const height = 512;
-  // const imageUrl = `https://picsum.photos/seed/${encodeURIComponent(prompt.slice(0,10))}/${width}/${height}`;
-  // The above seed doesn't work well with keywords for picsum. Picsum doesn't have keyword search.
-  // Using the hint for future replacement. For now, a random image.
   const imageUrl = `https://picsum.photos/${width}/${height}?random=${Math.random()}`;
-
 
   return { success: true, imageUrl, dataAiHint: keywords };
 }
