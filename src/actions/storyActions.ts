@@ -1,15 +1,27 @@
+
 "use server";
 
 import { generateScript as aiGenerateScript, type GenerateScriptInput } from '@/ai/flows/generate-script';
 import { generateCharacterPrompts as aiGenerateCharacterPrompts, type GenerateCharacterPromptsInput } from '@/ai/flows/generate-character-prompts';
 import { generateNarrationAudio as aiGenerateNarrationAudio, type GenerateNarrationAudioInput } from '@/ai/flows/generate-narration-audio';
 import { generateImagePrompts as aiGenerateImagePrompts, type GenerateImagePromptsInput } from '@/ai/flows/generate-image-prompts';
+import { generateTitle as aiGenerateTitle, type GenerateTitleInput } from '@/ai/flows/generate-title'; // Added import for generateTitle
 
 import type { Story } from '@/types/story';
 import { db } from '@/lib/firebase'; 
-import { collection, addDoc, updateDoc, doc, serverTimestamp, getDoc, type FirestoreError } from 'firebase/firestore';
+import { collection, addDoc, updateDoc, doc, serverTimestamp, getDoc, type FirestoreError, Timestamp } from 'firebase/firestore';
 import { revalidatePath } from 'next/cache';
 
+
+export async function generateTitle(input: GenerateTitleInput) {
+  try {
+    const result = await aiGenerateTitle(input);
+    return { success: true, data: result };
+  } catch (error) {
+    console.error("Error in generateTitle AI flow:", error);
+    return { success: false, error: "Failed to generate title." };
+  }
+}
 
 export async function generateScript(input: GenerateScriptInput) {
   try {
@@ -61,19 +73,36 @@ export async function saveStory(storyData: Story, userId: string): Promise<{ suc
   }
 
   try {
-    // Prepare data by removing id for create, and ensuring only valid fields are passed
-    const dataToSave: any = { ...storyData };
+    const dataToSave: Partial<Story> & { userId: string; createdAt?: Timestamp; updatedAt: Timestamp } = {
+      userId,
+      title: storyData.title || "Untitled Story",
+      userPrompt: storyData.userPrompt || "",
+      generatedScript: storyData.generatedScript,
+      detailsPrompts: storyData.detailsPrompts,
+      narrationAudioUrl: storyData.narrationAudioUrl,
+      narrationAudioDurationSeconds: storyData.narrationAudioDurationSeconds,
+      imagePrompts: storyData.imagePrompts,
+      generatedImages: storyData.generatedImages,
+      updatedAt: serverTimestamp() as Timestamp,
+    };
+    
     if (!storyData.id) { // For new story
-      delete dataToSave.id; // addDoc generates ID, so remove if present
-      dataToSave.createdAt = serverTimestamp();
+        dataToSave.createdAt = serverTimestamp() as Timestamp;
     }
-    dataToSave.userId = userId; // Ensure userId is correctly set from the authenticated user
-    dataToSave.updatedAt = serverTimestamp();
 
     // Firestore does not allow undefined values. Filter them out.
+    // Also, ensure all properties of Story are potentially included if they exist on storyData
+    Object.keys(storyData).forEach(key => {
+      const K = key as keyof Story;
+      if (storyData[K] !== undefined && !(K in dataToSave) && K !== 'id' && K !== 'createdAt' && K !== 'updatedAt' && K !== 'userId') {
+        (dataToSave as any)[K] = storyData[K];
+      }
+    });
+    
+    // Final pass to remove any undefined from explicitly set fields or storyData loop
     for (const key in dataToSave) {
-        if (dataToSave[key] === undefined) {
-            delete dataToSave[key];
+        if ((dataToSave as any)[key] === undefined) {
+            delete (dataToSave as any)[key];
         }
     }
 
@@ -94,7 +123,6 @@ export async function saveStory(storyData: Story, userId: string): Promise<{ suc
   } catch (error) {
     console.error("Error saving story to Firestore:", error);
     let errorMessage = "Failed to save story.";
-    // Try to get more specific error message from FirebaseError
     const firebaseError = error as FirestoreError;
     if (firebaseError && firebaseError.code) {
       errorMessage = `Failed to save story: ${firebaseError.message} (Code: ${firebaseError.code})`;
@@ -116,8 +144,14 @@ export async function getStory(storyId: string, userId: string): Promise<{ succe
     if (docSnap.exists()) {
       const story = { id: docSnap.id, ...docSnap.data() } as Story;
       if (story.userId !== userId) {
-        // This is an application-level check. Firestore rules should primarily enforce this.
         return { success: false, error: "Unauthorized access to story." };
+      }
+       // Convert Firestore Timestamps to Date objects if they exist
+      if (story.createdAt && story.createdAt instanceof Timestamp) {
+        story.createdAt = story.createdAt.toDate();
+      }
+      if (story.updatedAt && story.updatedAt instanceof Timestamp) {
+        story.updatedAt = story.updatedAt.toDate();
       }
       return { success: true, data: story };
     } else {
@@ -158,3 +192,4 @@ export async function generateImageFromPrompt(prompt: string): Promise<{ success
 
   return { success: true, imageUrl, dataAiHint: keywords };
 }
+

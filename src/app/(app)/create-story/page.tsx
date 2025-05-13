@@ -23,8 +23,8 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { generateScript, generateCharacterPrompts, generateNarrationAudio, generateImagePrompts, saveStory, getStory, generateImageFromPrompt } from '@/actions/storyActions';
-import { Bot, Clapperboard, ImageIcon, Loader2, Mic, Save, Sparkles, FileText, Image as LucideImage, AlertCircle, CheckCircle, Info } from 'lucide-react';
+import { generateTitle, generateScript, generateCharacterPrompts, generateNarrationAudio, generateImagePrompts, saveStory, getStory, generateImageFromPrompt } from '@/actions/storyActions';
+import { Bot, Clapperboard, ImageIcon, Loader2, Mic, Save, Sparkles, FileText, Image as LucideImage, AlertCircle, CheckCircle, Info, Pencil } from 'lucide-react';
 import Image from 'next/image';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState, useCallback } from 'react';
@@ -53,7 +53,7 @@ export default function CreateStoryPage() {
   const [currentStep, setCurrentStep] = useState(1);
   const [pageLoading, setPageLoading] = useState(true);
   const [imagesPerMinute, setImagesPerMinute] = useState(5);
-  const [isSaveConfirmOpen, setIsSaveConfirmOpen] = useState(false); // State for save confirmation dialog
+  const [isSaveConfirmOpen, setIsSaveConfirmOpen] = useState(false);
 
 
   const updateStoryData = (updates: Partial<Story>) => {
@@ -64,15 +64,14 @@ export default function CreateStoryPage() {
     setIsLoading(prev => ({ ...prev, [key]: value }));
   };
 
-  // Fetch existing story if storyId is present
   useEffect(() => {
-    if (authLoading) return; // Wait for auth state to be determined
-    if (!user) { // If user is not authenticated after auth check, redirect
+    if (authLoading) return; 
+    if (!user) {
         router.replace('/login');
         return;
     }
 
-    updateStoryData({ userId: user.uid }); // Set userId once user is available
+    updateStoryData({ userId: user.uid }); 
 
     if (storyId && user) {
       handleSetLoading('page', true);
@@ -80,7 +79,6 @@ export default function CreateStoryPage() {
         .then(response => {
           if (response.success && response.data) {
             setStoryData(response.data);
-            // Determine current step based on fetched data
             if (response.data.generatedImages && response.data.generatedImages.length > 0 && response.data.imagePrompts && response.data.generatedImages.length === response.data.imagePrompts.length) setCurrentStep(6);
             else if (response.data.imagePrompts && response.data.imagePrompts.length > 0) setCurrentStep(5);
             else if (response.data.narrationAudioUrl) setCurrentStep(4);
@@ -89,12 +87,12 @@ export default function CreateStoryPage() {
             else setCurrentStep(1);
           } else {
             toast({ title: 'Error', description: response.error || 'Failed to load story.', variant: 'destructive' });
-            router.push('/dashboard'); // Redirect if story not found or unauthorized
+            router.push('/dashboard'); 
           }
         })
         .finally(() => handleSetLoading('page', false));
     } else {
-       handleSetLoading('page', false); // No storyId, new story
+       handleSetLoading('page', false); 
     }
     setPageLoading(false);
   }, [storyId, user, router, toast, authLoading]);
@@ -105,26 +103,36 @@ export default function CreateStoryPage() {
       toast({ title: 'Missing Prompt', description: 'Please enter a story prompt.', variant: 'destructive' });
       return;
     }
-
-    // Automatically set title if empty and prompt is available
-    let currentTitle = storyData.title;
-    if (!currentTitle.trim() && storyData.userPrompt.trim()) {
-      const promptSegment = storyData.userPrompt.trim().substring(0, 50);
-      // Ensure title has content, fallback if prompt segment somehow becomes empty (e.g. all spaces trimmed)
-      currentTitle = promptSegment.length > 0 ? 
-                     (promptSegment.length < storyData.userPrompt.trim().length ? `${promptSegment}...` : promptSegment)
-                     : `Untitled Story - ${new Date().toLocaleTimeString()}`;
-      updateStoryData({ title: currentTitle });
-    }
     
     handleSetLoading('script', true);
-    const result = await generateScript({ prompt: storyData.userPrompt });
-    if (result.success && result.data) {
-      updateStoryData({ generatedScript: result.data.script });
+
+    let currentTitle = storyData.title;
+    if (!currentTitle.trim() && storyData.userPrompt.trim()) {
+        handleSetLoading('titleGen', true);
+        const titleResult = await generateTitle({ userPrompt: storyData.userPrompt });
+        handleSetLoading('titleGen', false);
+        if (titleResult.success && titleResult.data?.title) {
+            currentTitle = titleResult.data.title;
+            updateStoryData({ title: currentTitle });
+            toast({ title: 'Title Generated!', description: 'A title for your story has been created.', className: 'bg-primary text-primary-foreground' });
+        } else {
+            toast({ title: 'Title Generation Failed', description: titleResult.error || 'Could not generate a title. Please enter one manually.', variant: 'default' });
+            // Fallback to a simple title if AI fails
+            const promptSegment = storyData.userPrompt.trim().substring(0, 30);
+            currentTitle = promptSegment.length > 0 ? 
+                            (promptSegment.length < storyData.userPrompt.trim().length ? `${promptSegment}... (Draft)` : `${promptSegment} (Draft)`)
+                            : `Untitled Story - ${new Date().toLocaleTimeString()}`;
+            updateStoryData({ title: currentTitle });
+        }
+    }
+    
+    const scriptResult = await generateScript({ prompt: storyData.userPrompt });
+    if (scriptResult.success && scriptResult.data) {
+      updateStoryData({ generatedScript: scriptResult.data.script });
       setCurrentStep(2);
       toast({ title: 'Script Generated!', description: 'Your story script is ready.', className: 'bg-primary text-primary-foreground' });
     } else {
-      toast({ title: 'Error', description: result.error || 'Failed to generate script.', variant: 'destructive' });
+      toast({ title: 'Error', description: scriptResult.error || 'Failed to generate script.', variant: 'destructive' });
     }
     handleSetLoading('script', false);
   };
@@ -184,7 +192,6 @@ export default function CreateStoryPage() {
     if (result.success && result.imageUrl) {
       const newImage: GeneratedImage = { prompt, imageUrl: result.imageUrl, dataAiHint: result.dataAiHint };
       const updatedImages = [...(storyData.generatedImages || [])];
-      // Check if image for this prompt already exists, then update, else add
       const existingImageIndex = updatedImages.findIndex(img => img.prompt === prompt);
       if (existingImageIndex > -1) {
         updatedImages[existingImageIndex] = newImage;
@@ -205,17 +212,14 @@ export default function CreateStoryPage() {
   const handleGenerateAllImages = async () => {
     if (!storyData.imagePrompts || storyData.imagePrompts.length === 0) return;
     handleSetLoading('allImages', true);
-    const newGeneratedImages: GeneratedImage[] = []; // Store newly generated images in this batch
+    const newGeneratedImages: GeneratedImage[] = []; 
     let allSucceeded = true;
     
-    // Create a Set of existing prompts for quick lookup
     const existingPrompts = new Set(storyData.generatedImages?.map(img => img.prompt) || []);
 
     for (let i = 0; i < storyData.imagePrompts.length; i++) {
       const prompt = storyData.imagePrompts[i];
-      // Skip if image for this prompt already exists
       if (existingPrompts.has(prompt)) {
-        // If you want to ensure the `newGeneratedImages` reflects all images for the current prompts set:
         const existingImage = storyData.generatedImages?.find(img => img.prompt === prompt);
         if(existingImage) newGeneratedImages.push(existingImage);
         continue;
@@ -230,8 +234,6 @@ export default function CreateStoryPage() {
         toast({ title: 'Image Generation Error', description: result.error || `Failed for prompt: "${prompt.substring(0,30)}..."`, variant: 'destructive' });
       }
       handleSetLoading(`image-${i}`, false);
-      // Update storyData progressively to show images as they are generated
-      // Combine existing images with newly generated ones, ensuring no duplicates by prompt
       setStoryData(prev => {
         const combined = [...(prev.generatedImages || []), ...newGeneratedImages];
         const uniqueImages = Array.from(new Map(combined.map(img => [img.prompt, img])).values());
@@ -256,25 +258,25 @@ export default function CreateStoryPage() {
     }
     if (!storyData.title || !storyData.title.trim()) {
       toast({ title: 'Missing Title', description: 'Please give your story a title.', variant: 'destructive' });
-      setIsSaveConfirmOpen(false); // Close dialog
+      setIsSaveConfirmOpen(false); 
       return;
     }
     handleSetLoading('save', true);
-    const result = await saveStory({ ...storyData, userId: user.uid }, user.uid); // Pass user.uid explicitly
+    const result = await saveStory({ ...storyData, userId: user.uid }, user.uid); 
     if (result.success && result.storyId) {
       updateStoryData({ id: result.storyId });
       toast({ title: 'Story Saved!', description: 'Your masterpiece is safely stored.', className: 'bg-primary text-primary-foreground' });
-      if (!storyId) { // If it was a new story, redirect to the edit page with ID
+      if (!storyId) { 
           router.replace(`/create-story?storyId=${result.storyId}`);
       }
     } else {
       toast({ title: 'Error Saving Story', description: result.error || 'Could not save your story.', variant: 'destructive' });
     }
     handleSetLoading('save', false);
-    setIsSaveConfirmOpen(false); // Close dialog after save attempt
+    setIsSaveConfirmOpen(false); 
   };
 
-  const progressPercentage = ((currentStep -1) / 5) * 100; // 6 steps total, 5 generative steps before final review/video.
+  const progressPercentage = ((currentStep -1) / 5) * 100; 
 
   if (pageLoading || authLoading) {
     return (
@@ -285,12 +287,12 @@ export default function CreateStoryPage() {
     );
   }
 
-  if(!user && !authLoading){ // Should be caught by layout, but as a safeguard
+  if(!user && !authLoading){ 
     return <div className="text-center p-8"><p>Redirecting to login...</p></div>
   }
 
   const allImagesGenerated = storyData.imagePrompts && storyData.generatedImages && storyData.imagePrompts.length > 0 && storyData.imagePrompts.length === storyData.generatedImages.length;
-  const isSaveButtonDisabled = !storyData.title.trim() || !user || isLoading.save;
+  const isSaveButtonDisabled = !storyData.title?.trim() || !user || isLoading.save;
 
 
   return (
@@ -305,13 +307,17 @@ export default function CreateStoryPage() {
             Follow the steps below to bring your animated story to life. Click Save Story anytime to store your progress.
           </CardDescription>
            <div className="mt-4">
-            <Label htmlFor="storyTitle" className="text-sm font-medium">Story Title</Label>
+            <Label htmlFor="storyTitle" className="text-sm font-medium flex items-center">
+                Story Title 
+                {isLoading.titleGen && <Loader2 className="ml-2 h-4 w-4 animate-spin" />}
+            </Label>
             <Input
               id="storyTitle"
               placeholder="My Awesome Adventure"
               value={storyData.title}
               onChange={(e) => updateStoryData({ title: e.target.value })}
               className="mt-1 text-lg"
+              disabled={isLoading.titleGen}
             />
           </div>
         </CardHeader>
@@ -328,7 +334,7 @@ export default function CreateStoryPage() {
             <AccordionItem value="step-1">
               <AccordionTrigger className="text-xl font-semibold hover:no-underline data-[state=open]:text-primary">
                 <div className="flex items-center">
-                  <FileText className="w-6 h-6 mr-3" /> Step 1: Craft Your Story Idea
+                  <Pencil className="w-6 h-6 mr-3" /> Step 1: Craft Your Story Idea
                 </div>
               </AccordionTrigger>
               <AccordionContent className="pt-4 space-y-4">
@@ -343,7 +349,7 @@ export default function CreateStoryPage() {
                 />
                 <Button onClick={handleGenerateScript} disabled={isLoading.script || !storyData.userPrompt.trim()} className="bg-accent hover:bg-accent/90 text-accent-foreground">
                   {isLoading.script ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
-                  Generate Script
+                  {storyData.generatedScript ? 'Re-generate Script & Title' : 'Generate Script & Title'}
                 </Button>
               </AccordionContent>
             </AccordionItem>
@@ -352,7 +358,7 @@ export default function CreateStoryPage() {
             <AccordionItem value="step-2" disabled={currentStep < 2}>
               <AccordionTrigger className="text-xl font-semibold hover:no-underline data-[state=open]:text-primary">
                 <div className="flex items-center">
-                  <Bot className="w-6 h-6 mr-3" /> Step 2: Review Script & Generate Details
+                  <FileText className="w-6 h-6 mr-3" /> Step 2: Review Script & Generate Details
                 </div>
               </AccordionTrigger>
               <AccordionContent className="pt-4 space-y-4">
@@ -361,7 +367,7 @@ export default function CreateStoryPage() {
                     <Label className="block text-md font-medium">Generated Script</Label>
                     <Textarea value={storyData.generatedScript} readOnly rows={10} className="mt-1 bg-muted/50 text-base"/>
                     <Button onClick={handleGenerateDetails} disabled={isLoading.details || !storyData.generatedScript} className="mt-4 bg-accent hover:bg-accent/90 text-accent-foreground">
-                      {isLoading.details ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
+                      {isLoading.details ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Bot className="mr-2 h-4 w-4" />}
                       Generate Character, Item & Location Details
                     </Button>
                   </div>
@@ -380,11 +386,27 @@ export default function CreateStoryPage() {
                 {storyData.detailsPrompts && (
                   <div>
                     <Label className="block text-md font-medium">Character, Item & Location Prompts</Label>
-                    <div className="space-y-2 mt-1 p-3 bg-muted/50 rounded-md">
-                      <p className="text-sm"><strong className="text-primary">Characters:</strong> {storyData.detailsPrompts.characterPrompts || "None"}</p>
-                      <p className="text-sm"><strong className="text-primary">Items:</strong> {storyData.detailsPrompts.itemPrompts || "None"}</p>
-                      <p className="text-sm"><strong className="text-primary">Locations:</strong> {storyData.detailsPrompts.locationPrompts || "None"}</p>
-                    </div>
+                     <Accordion type="multiple" className="w-full mt-1 bg-muted/30 rounded-md">
+                        <AccordionItem value="chars">
+                            <AccordionTrigger className="px-3 py-2 text-sm hover:no-underline">View Character Prompts</AccordionTrigger>
+                            <AccordionContent className="px-3 pb-2">
+                                <Textarea value={storyData.detailsPrompts.characterPrompts || "No character prompts generated."} readOnly rows={5} className="bg-muted/50 text-xs"/>
+                            </AccordionContent>
+                        </AccordionItem>
+                        <AccordionItem value="items">
+                            <AccordionTrigger className="px-3 py-2 text-sm hover:no-underline">View Item Prompts</AccordionTrigger>
+                            <AccordionContent className="px-3 pb-2">
+                                 <Textarea value={storyData.detailsPrompts.itemPrompts || "No item prompts generated."} readOnly rows={5} className="bg-muted/50 text-xs"/>
+                            </AccordionContent>
+                        </AccordionItem>
+                        <AccordionItem value="locations">
+                            <AccordionTrigger className="px-3 py-2 text-sm hover:no-underline">View Location Prompts</AccordionTrigger>
+                            <AccordionContent className="px-3 pb-2">
+                                 <Textarea value={storyData.detailsPrompts.locationPrompts || "No location prompts generated."} readOnly rows={5} className="bg-muted/50 text-xs"/>
+                            </AccordionContent>
+                        </AccordionItem>
+                    </Accordion>
+
                      <Button onClick={handleGenerateNarration} disabled={isLoading.narration || !storyData.generatedScript} className="mt-4 bg-accent hover:bg-accent/90 text-accent-foreground">
                       {isLoading.narration ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Mic className="mr-2 h-4 w-4" />}
                       Generate Narration Audio
@@ -520,7 +542,7 @@ export default function CreateStoryPage() {
                 <AlertDialogTrigger asChild>
                   <Button size="lg" disabled={isSaveButtonDisabled} className="bg-green-600 hover:bg-green-700 text-white">
                     <Save className="mr-2 h-4 w-4" />
-                    {storyId ? 'Save Changes' : 'Save Story'}
+                    {isLoading.save ? 'Saving...' : (storyId ? 'Save Changes' : 'Save Story')}
                   </Button>
                 </AlertDialogTrigger>
                 <AlertDialogContent>
@@ -532,7 +554,7 @@ export default function CreateStoryPage() {
                   </AlertDialogHeader>
                   <AlertDialogFooter>
                     <AlertDialogCancel disabled={isLoading.save}>Cancel</AlertDialogCancel>
-                    <AlertDialogAction onClick={handleConfirmSaveStory} disabled={isLoading.save} className="bg-green-600 hover:bg-green-700">
+                    <AlertDialogAction onClick={handleConfirmSaveStory} disabled={isLoading.save || !storyData.title?.trim()} className="bg-green-600 hover:bg-green-700">
                        {isLoading.save ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
                        Yes, Save Story
                     </AlertDialogAction>
@@ -545,4 +567,3 @@ export default function CreateStoryPage() {
     </div>
   );
 }
-
