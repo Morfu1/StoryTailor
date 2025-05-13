@@ -1,18 +1,20 @@
 
 "use server";
 
-import { generateScript as aiGenerateScript, type GenerateScriptInput } from '@/ai/flows/generate-script';
-import { generateCharacterPrompts as aiGenerateCharacterPrompts, type GenerateCharacterPromptsInput } from '@/ai/flows/generate-character-prompts';
-import { generateNarrationAudio as aiGenerateNarrationAudio, type GenerateNarrationAudioInput } from '@/ai/flows/generate-narration-audio';
-import { generateImagePrompts as aiGenerateImagePrompts, type GenerateImagePromptsInput } from '@/ai/flows/generate-image-prompts';
-import { generateTitle as aiGenerateTitle, type GenerateTitleInput } from '@/ai/flows/generate-title'; 
-
+import type { GenerateCharacterPromptsInput } from '@/ai/flows/generate-character-prompts';
+import { generateCharacterPrompts as aiGenerateCharacterPrompts } from '@/ai/flows/generate-character-prompts';
+import type { GenerateImagePromptsInput } from '@/ai/flows/generate-image-prompts';
+import { generateImagePrompts as aiGenerateImagePrompts } from '@/ai/flows/generate-image-prompts';
+import type { GenerateNarrationAudioInput } from '@/ai/flows/generate-narration-audio';
+import { generateNarrationAudio as aiGenerateNarrationAudio } from '@/ai/flows/generate-narration-audio';
+import type { GenerateScriptInput } from '@/ai/flows/generate-script';
+import { generateScript as aiGenerateScript } from '@/ai/flows/generate-script';
+import type { GenerateTitleInput } from '@/ai/flows/generate-title';
+import { generateTitle as aiGenerateTitle } from '@/ai/flows/generate-title';
+import { firebaseAdmin, dbAdmin } from '@/lib/firebaseAdmin';
 import type { Story } from '@/types/story';
-
-import { dbAdmin, firebaseAdmin } from '@/lib/firebaseAdmin'; 
-import { revalidatePath } from 'next/cache';
 import type { Timestamp as AdminTimestamp } from 'firebase-admin/firestore';
-
+import { revalidatePath } from 'next/cache';
 
 // Log dbAdmin status when this module is loaded (server-side)
 console.log('---------------------------------------------------------------------');
@@ -84,6 +86,8 @@ interface FirebaseErrorWithCode extends Error {
 }
 
 // BASIC TEST SAVE FUNCTION - MINIMALIST APPROACH TO TEST ADMIN SDK CONNECTION
+// This function is now commented out to use the original saveStory.
+/*
 export async function saveStory(storyData: Story, authenticatedUserId: string): Promise<{ success: boolean; storyId?: string; error?: string }> {
   console.log('---------------------------------------------------------------------');
   console.log("[saveStory Action - BASIC TEST] Initiated.");
@@ -144,7 +148,7 @@ export async function saveStory(storyData: Story, authenticatedUserId: string): 
     console.log('---------------------------------------------------------------------');
   }
 }
-
+*/
 
 export async function getStory(storyId: string, userId: string): Promise<{ success: boolean; data?: Story; error?: string }> {
   if (!dbAdmin) {
@@ -160,14 +164,14 @@ export async function getStory(storyId: string, userId: string): Promise<{ succe
     const docSnap = await storyRef.get();
 
     if (docSnap.exists) {
-      const story = { id: docSnap.id, ...docSnap.data() } as Story;
+      const storyData = docSnap.data();
+      const story = { id: docSnap.id, ...storyData } as Story;
       
-      // With temporarily open rules, this check might not be strictly necessary for the read to succeed,
-      // but it's good practice for when you restore secure rules.
-      // For now, we'll keep it to see if it causes issues even with open rules (it shouldn't).
-      if (story.userId !== userId && story._testMarker !== "BASIC_SAVE_TEST_DOCUMENT_V2") { // Allow reading test documents for now by anyone for debug
-        console.warn(`[getStory Action] Unauthorized attempt to access story ${storyId} by user ${userId}. Story belongs to ${story.userId}`);
-       // return { success: false, error: "Unauthorized access to story." };
+      // Basic check against tampering or rule bypass, though Admin SDK typically bypasses rules.
+      // If story.userId is not what's expected, log a warning.
+      // For a test document, this check might be relaxed or specific.
+      if (story.userId !== userId && storyData?.['_testMarker'] !== "BASIC_SAVE_TEST_DOCUMENT_V2") { 
+        console.warn(`[getStory Action] User ${userId} fetched story ${storyId} belonging to ${story.userId}. This is expected if rules permit or for admin access.`);
       }
 
       // Convert Firestore Timestamps to JS Date objects if they exist
@@ -221,8 +225,8 @@ export async function generateImageFromPrompt(prompt: string): Promise<{ success
   return { success: true, imageUrl, dataAiHint: keywords };
 }
 
-// Original saveStory commented out for basic testing
-/*
+
+// Original saveStory function restored
 export async function saveStory(storyData: Story, userId: string): Promise<{ success: boolean; storyId?: string; error?: string }> {
   console.log('---------------------------------------------------------------------');
   console.log("[saveStory Action] Initiated. User ID:", userId, "Story ID (if exists):", storyData.id);
@@ -253,12 +257,12 @@ export async function saveStory(storyData: Story, userId: string): Promise<{ suc
   }
 
   // Convert Date objects from client to Firestore Timestamps if they exist
+  // For new documents, createdAt will be set by FieldValue.serverTimestamp()
+  // For updates, if createdAt was passed as Date, convert it. Otherwise, it remains as Firestore Timestamp
   if (dataToSave.createdAt && dataToSave.createdAt instanceof Date) {
     dataToSave.createdAt = firebaseAdmin.firestore.Timestamp.fromDate(dataToSave.createdAt);
   }
-  if (dataToSave.updatedAt && dataToSave.updatedAt instanceof Date) { // Should be serverTimestamp, but safeguard
-    dataToSave.updatedAt = firebaseAdmin.firestore.Timestamp.fromDate(dataToSave.updatedAt);
-  }
+  // updatedAt is always set to serverTimestamp
   
   // Ensure detailsPrompts are stored correctly (object or delete if empty/undefined)
   if (dataToSave.detailsPrompts && Object.keys(dataToSave.detailsPrompts).length === 0) {
@@ -269,7 +273,10 @@ export async function saveStory(storyData: Story, userId: string): Promise<{ suc
 
   // Ensure imagePrompts and generatedImages are arrays or delete if undefined
   if (dataToSave.imagePrompts === undefined) delete dataToSave.imagePrompts;
+  else if (!Array.isArray(dataToSave.imagePrompts)) dataToSave.imagePrompts = []; // Ensure it's an array
+
   if (dataToSave.generatedImages === undefined) delete dataToSave.generatedImages;
+  else if (!Array.isArray(dataToSave.generatedImages)) dataToSave.generatedImages = []; // Ensure it's an array
 
 
   Object.keys(dataToSave).forEach(key => {
@@ -287,6 +294,24 @@ export async function saveStory(storyData: Story, userId: string): Promise<{ suc
       // Update existing story
       console.log(`[saveStory Action] Attempting to UPDATE document 'stories/${storyData.id}'`);
       const storyRef = dbAdmin.collection("stories").doc(storyData.id);
+      
+      // Fetch the document first to check ownership - crucial for security with Admin SDK
+      const docSnap = await storyRef.get();
+      if (!docSnap.exists) {
+        console.error(`[saveStory Action] Error: Story with ID ${storyData.id} not found for update.`);
+        return { success: false, error: "Story not found. Cannot update." };
+      }
+      const existingStoryData = docSnap.data();
+      if (existingStoryData?.userId !== userId) {
+        console.error(`[saveStory Action] Error: User ${userId} attempting to update story ${storyData.id} owned by ${existingStoryData?.userId}.`);
+        return { success: false, error: "Unauthorized: You can only update your own stories." };
+      }
+      // Do not update createdAt on existing documents unless specifically intended
+      if ('createdAt' in dataToSave && existingStoryData?.createdAt) {
+         delete dataToSave.createdAt; 
+      }
+
+
       await storyRef.update(dataToSave);
       console.log(`[saveStory Action] SUCCESS: Document 'stories/${storyData.id}' updated.`);
       revalidatePath('/dashboard');
@@ -308,10 +333,10 @@ export async function saveStory(storyData: Story, userId: string): Promise<{ suc
 
     if (firebaseError && firebaseError.code) {
       errorMessage = `Failed to save story (Firestore Error): ${firebaseError.message} (Code: ${firebaseError.code})`;
-      if (firebaseError.code === 'permission-denied' || firebaseError.code === 7) {
-        console.error("[saveStory Action] PERMISSION DENIED. This likely means the Admin SDK service account lacks Firestore write permissions, OR there's an issue with security rules if they were not bypassed by Admin SDK (though Admin SDK typically bypasses rules). Check IAM for the service account.");
-      } else if (firebaseError.code === 'unauthenticated' || firebaseError.code === 16) {
-         console.error("[saveStory Action] UNAUTHENTICATED: This indicates an issue with Admin SDK authentication, possibly related to credentials.");
+      if (firebaseError.code === 'permission-denied' || firebaseError.code === 7) { // Code 7 is PERMISSION_DENIED
+        console.error("[saveStory Action] PERMISSION DENIED. This likely means the Admin SDK service account lacks Firestore write permissions for the target path, OR a Firestore rule is somehow still blocking (though Admin SDK usually bypasses rules). Check IAM for the service account and Firestore rules for 'stories' collection.");
+      } else if (firebaseError.code === 'unauthenticated' || firebaseError.code === 16) { // Code 16 is UNAUTHENTICATED
+         console.error("[saveStory Action] UNAUTHENTICATED: This indicates an issue with Admin SDK authentication, possibly related to credentials or token.");
       }
     } else if (error instanceof Error) {
       errorMessage = `Failed to save story: ${error.message}`;
@@ -324,5 +349,4 @@ export async function saveStory(storyData: Story, userId: string): Promise<{ suc
      console.log('---------------------------------------------------------------------');
   }
 }
-*/
 

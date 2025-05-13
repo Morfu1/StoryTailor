@@ -51,7 +51,7 @@ export default function CreateStoryPage() {
   const [storyData, setStoryData] = useState<Story>(initialStoryState);
   const [isLoading, setIsLoading] = useState<Record<string, boolean>>({});
   const [currentStep, setCurrentStep] = useState(1);
-  const [pageLoading, setPageLoading] = useState(true);
+  const [pageLoading, setPageLoading] = useState(true); // Renamed from `isLoading.page` for clarity
   const [imagesPerMinute, setImagesPerMinute] = useState(5);
   const [isSaveConfirmOpen, setIsSaveConfirmOpen] = useState(false);
 
@@ -71,35 +71,47 @@ export default function CreateStoryPage() {
         return;
     }
 
-    // Set userId in storyData if it's not already set from a loaded story
-    // This is mostly for new stories, as loaded stories will have it.
     if (user.uid && !storyData.userId) {
       updateStoryData({ userId: user.uid }); 
     }
 
-
     if (storyId && user) {
-      handleSetLoading('page', true);
+      setPageLoading(true); // Use dedicated state for page loading
       getStory(storyId, user.uid)
         .then(response => {
           if (response.success && response.data) {
-            setStoryData(response.data);
-            if (response.data.generatedImages && response.data.generatedImages.length > 0 && response.data.imagePrompts && response.data.generatedImages.length === response.data.imagePrompts.length) setCurrentStep(6);
-            else if (response.data.imagePrompts && response.data.imagePrompts.length > 0) setCurrentStep(5);
-            else if (response.data.narrationAudioUrl) setCurrentStep(4);
-            else if (response.data.detailsPrompts) setCurrentStep(3);
-            else if (response.data.generatedScript) setCurrentStep(2);
+            const loadedStory = response.data;
+            // Ensure dates are Date objects if they come from Firestore as Timestamps
+             if (loadedStory.createdAt && !(loadedStory.createdAt instanceof Date)) {
+                loadedStory.createdAt = (loadedStory.createdAt as any).toDate();
+            }
+            if (loadedStory.updatedAt && !(loadedStory.updatedAt instanceof Date)) {
+                loadedStory.updatedAt = (loadedStory.updatedAt as any).toDate();
+            }
+            setStoryData(loadedStory);
+            
+            // Determine current step based on loaded data
+            if (loadedStory.generatedImages && loadedStory.generatedImages.length > 0 && loadedStory.imagePrompts && loadedStory.generatedImages.length === loadedStory.imagePrompts.length) setCurrentStep(6);
+            else if (loadedStory.imagePrompts && loadedStory.imagePrompts.length > 0) setCurrentStep(5);
+            else if (loadedStory.narrationAudioUrl) setCurrentStep(4);
+            else if (loadedStory.detailsPrompts && (loadedStory.detailsPrompts.characterPrompts || loadedStory.detailsPrompts.itemPrompts || loadedStory.detailsPrompts.locationPrompts)) setCurrentStep(3);
+            else if (loadedStory.generatedScript) setCurrentStep(2);
             else setCurrentStep(1);
           } else {
-            toast({ title: 'Error', description: response.error || 'Failed to load story.', variant: 'destructive' });
-            router.push('/dashboard'); 
+            toast({ title: 'Error Loading Story', description: response.error || 'Failed to load story. Creating a new one.', variant: 'destructive' });
+            // Don't redirect, allow user to create new story if load fails or storyId is invalid
+            // router.push('/dashboard'); 
+             setStoryData({...initialStoryState, userId: user.uid}); // Reset to initial for new story
+             setCurrentStep(1);
           }
         })
-        .finally(() => handleSetLoading('page', false));
+        .finally(() => setPageLoading(false)); // Use dedicated state
     } else {
-       handleSetLoading('page', false); 
+       setPageLoading(false); // Use dedicated state
+       if(user?.uid) { // Ensure userId is set for a completely new story
+        setStoryData(prev => ({...prev, userId: user.uid}));
+       }
     }
-    setPageLoading(false);
   }, [storyId, user, router, toast, authLoading]);
 
 
@@ -195,16 +207,29 @@ export default function CreateStoryPage() {
     const result = await generateImageFromPrompt(prompt);
     if (result.success && result.imageUrl) {
       const newImage: GeneratedImage = { prompt, imageUrl: result.imageUrl, dataAiHint: result.dataAiHint };
-      const updatedImages = [...(storyData.generatedImages || [])];
-      const existingImageIndex = updatedImages.findIndex(img => img.prompt === prompt);
-      if (existingImageIndex > -1) {
-        updatedImages[existingImageIndex] = newImage;
+      // Ensure generatedImages is always an array
+      const currentGeneratedImages = Array.isArray(storyData.generatedImages) ? storyData.generatedImages : [];
+      
+      // Find if an image for this prompt (or at this index) already exists
+      let updatedImages = [...currentGeneratedImages];
+      const existingImageIndexForPrompt = updatedImages.findIndex(img => img.prompt === prompt);
+      
+      if (existingImageIndexForPrompt > -1) {
+        updatedImages[existingImageIndexForPrompt] = newImage;
       } else {
-        // Ensure we store images in the order of their prompts if possible, or simply add
-        // A more robust solution might involve mapping by prompt index if order is critical
-        updatedImages.splice(index, 0, newImage); 
-        // Or simply: updatedImages.push(newImage); if order isn't strictly tied to prompt index for storage
+         // If we need to maintain order based on prompt index strictly:
+         // Create a new array with the correct length if needed, then insert
+         const newImagesArray = Array(storyData.imagePrompts?.length || 0).fill(null);
+         currentGeneratedImages.forEach((img, i) => {
+            const originalPromptIndex = storyData.imagePrompts?.indexOf(img.prompt);
+            if(originalPromptIndex !== undefined && originalPromptIndex > -1) {
+                newImagesArray[originalPromptIndex] = img;
+            }
+         });
+         newImagesArray[index] = newImage;
+         updatedImages = newImagesArray.filter(Boolean); // Remove any nulls if prompts changed
       }
+
       updateStoryData({ generatedImages: updatedImages });
       toast({ title: `Image ${index + 1} Generated!`, description: 'Visual for prompt ready.', className: 'bg-primary text-primary-foreground' });
     } else {
@@ -220,8 +245,9 @@ export default function CreateStoryPage() {
     if (!storyData.imagePrompts || storyData.imagePrompts.length === 0) return;
     handleSetLoading('allImages', true);
     
+    const currentGeneratedImages = Array.isArray(storyData.generatedImages) ? storyData.generatedImages : [];
     const imagesToGenerate = storyData.imagePrompts.map((prompt, index) => ({ prompt, index })).filter(
-      p => !(storyData.generatedImages || []).some(img => img.prompt === p.prompt)
+      p => !currentGeneratedImages.some(img => img.prompt === p.prompt)
     );
 
     const results = await Promise.all(
@@ -241,19 +267,23 @@ export default function CreateStoryPage() {
     
     if (successfulNewImages.length > 0) {
       setStoryData(prev => {
-        const combined = [...(prev.generatedImages || []), ...successfulNewImages];
-        const uniqueImages = Array.from(new Map(combined.map(img => [img.prompt, img])).values());
-        // Attempt to sort generatedImages based on the order of imagePrompts
-        const orderedImages = prev.imagePrompts?.map(p => uniqueImages.find(img => img.prompt === p)).filter(Boolean) as GeneratedImage[] || uniqueImages;
+        const existingImages = Array.isArray(prev.generatedImages) ? prev.generatedImages : [];
+        // Combine existing with new successful ones
+        const combined = [...existingImages, ...successfulNewImages];
+        // Remove duplicates by prompt, keeping the latest
+        const uniqueImagesByPrompt = Array.from(new Map(combined.map(img => [img.prompt, img])).values());
+        
+        // Attempt to order generatedImages based on the order of imagePrompts
+        const orderedImages = prev.imagePrompts?.map(p => uniqueImagesByPrompt.find(img => img.prompt === p)).filter(Boolean) as GeneratedImage[] || uniqueImagesByPrompt;
         return { ...prev, generatedImages: orderedImages };
       });
     }
     
-    if (successfulNewImages.length === imagesToGenerate.length) {
+    if (successfulNewImages.length === imagesToGenerate.length && imagesToGenerate.length > 0) {
       toast({ title: 'All Remaining Images Generated!', description: 'All visuals are ready for your story.', className: 'bg-primary text-primary-foreground' });
     } else if (successfulNewImages.length > 0) {
       toast({ title: 'Image Generation Partially Completed', description: 'Some images were generated. Check individual prompts for failures.', variant: 'default' });
-    } else if (imagesToGenerate.length > 0) {
+    } else if (imagesToGenerate.length > 0) { // Only show fail if there was something to generate
        toast({ title: 'Image Generation Failed', description: 'Could not generate any new images.', variant: 'destructive' });
     }
 
@@ -282,7 +312,7 @@ export default function CreateStoryPage() {
     if (result.success && result.storyId) {
       updateStoryData({ id: result.storyId }); // Update local state with the new/confirmed ID
       toast({ title: 'Story Saved!', description: 'Your masterpiece is safely stored.', className: 'bg-primary text-primary-foreground' });
-      if (!storyId) { // If it was a new story, update URL
+      if (!storyId) { // If it was a new story, update URL to prevent creating duplicates on next save
           router.replace(`/create-story?storyId=${result.storyId}`, { scroll: false });
       }
     } else {
@@ -307,8 +337,8 @@ export default function CreateStoryPage() {
     return <div className="text-center p-8"><p>Redirecting to login...</p></div>
   }
 
-  const allImagesGenerated = storyData.imagePrompts && storyData.generatedImages && storyData.imagePrompts.length > 0 && storyData.imagePrompts.length === storyData.generatedImages.length;
-  const isSaveButtonDisabled = !storyData.title?.trim() || isLoading.save;
+  const allImagesGenerated = storyData.imagePrompts && storyData.imagePrompts.length > 0 && storyData.generatedImages && storyData.generatedImages.length === storyData.imagePrompts.length;
+  const isSaveButtonDisabled = !storyData.title?.trim() || isLoading.save || !user?.uid;
 
 
   return (
@@ -345,7 +375,7 @@ export default function CreateStoryPage() {
             <p className="text-xs text-muted-foreground mt-1">Step {currentStep} of 6</p>
           </div>
 
-          <Accordion type="single" collapsible defaultValue="step-1" value={`step-${currentStep}`} className="w-full">
+          <Accordion type="single" collapsible defaultValue="step-1" value={`step-${currentStep}`} className="w-full" onValueChange={(value) => setCurrentStep(parseInt(value.split('-')[1]))}>
             {/* Step 1: User Prompt */}
             <AccordionItem value="step-1">
               <AccordionTrigger className="text-xl font-semibold hover:no-underline data-[state=open]:text-primary">
@@ -365,11 +395,12 @@ export default function CreateStoryPage() {
                     className="text-base mt-1"
                   />
                 </div>
+                {/* Display generated script here if available, even in step 1 for review */}
                 {storyData.generatedScript && (
                   <div className="mt-4">
-                    <Label htmlFor="generatedScriptDisplay" className="block text-md font-medium">Generated Story Script (Review)</Label>
+                    <Label htmlFor="generatedScriptDisplayStep1" className="block text-md font-medium">Generated Story Script (Review)</Label>
                     <Textarea
-                      id="generatedScriptDisplay"
+                      id="generatedScriptDisplayStep1"
                       value={storyData.generatedScript}
                       readOnly
                       rows={10}
@@ -383,14 +414,14 @@ export default function CreateStoryPage() {
                 </Button>
                  {storyData.generatedScript && (
                    <p className="text-sm text-muted-foreground">
-                     You can re-generate the script and title if you wish. The generated script will be shown in Step 2 for further actions.
+                     You can re-generate the script and title if you wish. The updated script will be shown here and in Step 2.
                    </p>
                  )}
               </AccordionContent>
             </AccordionItem>
 
             {/* Step 2: Generated Script & Details */}
-            <AccordionItem value="step-2" disabled={currentStep < 2}>
+            <AccordionItem value="step-2" disabled={!storyData.generatedScript}>
               <AccordionTrigger className="text-xl font-semibold hover:no-underline data-[state=open]:text-primary">
                 <div className="flex items-center">
                   <FileText className="w-6 h-6 mr-3" /> Step 2: Review Script & Generate Details
@@ -407,37 +438,38 @@ export default function CreateStoryPage() {
                     </Button>
                   </div>
                 )}
+                 {!storyData.generatedScript && <p className="text-muted-foreground">Please generate a script in Step 1 first.</p>}
               </AccordionContent>
             </AccordionItem>
 
             {/* Step 3: Narration */}
-            <AccordionItem value="step-3" disabled={currentStep < 3}>
+            <AccordionItem value="step-3" disabled={!(storyData.detailsPrompts && (storyData.detailsPrompts.characterPrompts || storyData.detailsPrompts.itemPrompts || storyData.detailsPrompts.locationPrompts))}>
               <AccordionTrigger className="text-xl font-semibold hover:no-underline data-[state=open]:text-primary">
                 <div className="flex items-center">
                  <Mic className="w-6 h-6 mr-3" /> Step 3: Generate Narration
                 </div>
               </AccordionTrigger>
               <AccordionContent className="pt-4 space-y-4">
-                {storyData.detailsPrompts && (
+                {storyData.detailsPrompts && (storyData.detailsPrompts.characterPrompts || storyData.detailsPrompts.itemPrompts || storyData.detailsPrompts.locationPrompts) ? (
                   <div>
                     <Label className="block text-md font-medium">Character, Item & Location Prompts</Label>
                      <Accordion type="multiple" className="w-full mt-1 bg-muted/30 rounded-md">
                         <AccordionItem value="chars">
                             <AccordionTrigger className="px-3 py-2 text-sm hover:no-underline">View Character Prompts</AccordionTrigger>
                             <AccordionContent className="px-3 pb-2">
-                                <Textarea value={storyData.detailsPrompts.characterPrompts || "No character prompts generated."} readOnly rows={5} className="bg-muted/50 text-xs"/>
+                                <Textarea value={storyData.detailsPrompts.characterPrompts || "No character prompts generated."} readOnly rows={5} className="bg-muted/50 text-xs whitespace-pre-wrap"/>
                             </AccordionContent>
                         </AccordionItem>
                         <AccordionItem value="items">
                             <AccordionTrigger className="px-3 py-2 text-sm hover:no-underline">View Item Prompts</AccordionTrigger>
                             <AccordionContent className="px-3 pb-2">
-                                 <Textarea value={storyData.detailsPrompts.itemPrompts || "No item prompts generated."} readOnly rows={5} className="bg-muted/50 text-xs"/>
+                                 <Textarea value={storyData.detailsPrompts.itemPrompts || "No item prompts generated."} readOnly rows={5} className="bg-muted/50 text-xs whitespace-pre-wrap"/>
                             </AccordionContent>
                         </AccordionItem>
                         <AccordionItem value="locations">
                             <AccordionTrigger className="px-3 py-2 text-sm hover:no-underline">View Location Prompts</AccordionTrigger>
                             <AccordionContent className="px-3 pb-2">
-                                 <Textarea value={storyData.detailsPrompts.locationPrompts || "No location prompts generated."} readOnly rows={5} className="bg-muted/50 text-xs"/>
+                                 <Textarea value={storyData.detailsPrompts.locationPrompts || "No location prompts generated."} readOnly rows={5} className="bg-muted/50 text-xs whitespace-pre-wrap"/>
                             </AccordionContent>
                         </AccordionItem>
                     </Accordion>
@@ -447,19 +479,21 @@ export default function CreateStoryPage() {
                       Generate Narration Audio
                     </Button>
                   </div>
+                ) : (
+                  <p className="text-muted-foreground">Please generate character, item, or location details in Step 2 first.</p>
                 )}
               </AccordionContent>
             </AccordionItem>
 
             {/* Step 4: Image Prompts */}
-            <AccordionItem value="step-4" disabled={currentStep < 4}>
+            <AccordionItem value="step-4" disabled={!storyData.narrationAudioUrl}>
               <AccordionTrigger className="text-xl font-semibold hover:no-underline data-[state=open]:text-primary">
                 <div className="flex items-center">
                   <LucideImage className="w-6 h-6 mr-3" /> Step 4: Generate Image Prompts
                 </div>
               </AccordionTrigger>
               <AccordionContent className="pt-4 space-y-4">
-                {storyData.narrationAudioUrl && (
+                {storyData.narrationAudioUrl ? (
                   <div>
                     <Label className="block text-md font-medium">Narration Audio</Label>
                     <audio controls src={storyData.narrationAudioUrl} className="w-full mt-1">Your browser does not support the audio element.</audio>
@@ -483,25 +517,27 @@ export default function CreateStoryPage() {
                       Generate Image Prompts
                     </Button>
                   </div>
+                ): (
+                     <p className="text-muted-foreground">Please generate narration audio in Step 3 first.</p>
                 )}
               </AccordionContent>
             </AccordionItem>
 
             {/* Step 5: Image Generation */}
-            <AccordionItem value="step-5" disabled={currentStep < 5}>
+            <AccordionItem value="step-5" disabled={!(storyData.imagePrompts && storyData.imagePrompts.length > 0)}>
               <AccordionTrigger className="text-xl font-semibold hover:no-underline data-[state=open]:text-primary">
                 <div className="flex items-center">
                   <ImageIcon className="w-6 h-6 mr-3" /> Step 5: Generate Images
                 </div>
               </AccordionTrigger>
               <AccordionContent className="pt-4 space-y-4">
-                {storyData.imagePrompts && storyData.imagePrompts.length > 0 && (
+                {(storyData.imagePrompts && storyData.imagePrompts.length > 0) ? (
                   <div>
                     <div className="flex justify-between items-center mb-2">
                         <Label className="block text-md font-medium">Image Prompts ({storyData.imagePrompts.length} total)</Label>
                         <Button 
                             onClick={handleGenerateAllImages} 
-                            disabled={isLoading.allImages || (storyData.generatedImages?.length === storyData.imagePrompts.length) || storyData.imagePrompts.every((_, idx) => isLoading[`image-${idx}`])} 
+                            disabled={isLoading.allImages || allImagesGenerated || storyData.imagePrompts.every((_, idx) => isLoading[`image-${idx}`])} 
                             variant="outline"
                         >
                             {isLoading.allImages ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
@@ -536,36 +572,43 @@ export default function CreateStoryPage() {
                        </div>
                     )}
                   </div>
+                ) : (
+                     <p className="text-muted-foreground">Please generate image prompts in Step 4 first.</p>
                 )}
               </AccordionContent>
             </AccordionItem>
 
             {/* Step 6: Video Assembly (Placeholder) */}
-            <AccordionItem value="step-6" disabled={currentStep < 6}>
+            <AccordionItem value="step-6" disabled={!allImagesGenerated}>
               <AccordionTrigger className="text-xl font-semibold hover:no-underline data-[state=open]:text-primary">
                 <div className="flex items-center">
                   <Clapperboard className="w-6 h-6 mr-3" /> Step 6: Assemble & Export Video
                 </div>
               </AccordionTrigger>
               <AccordionContent className="pt-4 space-y-4">
-                <p className="text-muted-foreground">Once all images are generated, you can assemble your video.</p>
-                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 mt-4">
-                  {storyData.generatedImages?.map((img, index) => (
-                    <div key={index} className="border rounded-md overflow-hidden aspect-square relative group shadow-md">
-                      <Image src={img.imageUrl} alt={`Scene ${index + 1}`} layout="fill" objectFit="cover" data-ai-hint={img.dataAiHint || "animation frame"}/>
-                      <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                        <p className="text-white text-xs p-1 text-center">{img.prompt.substring(0,50)}...</p>
-                      </div>
+                 {!allImagesGenerated && <p className="text-muted-foreground">Please generate all images in Step 5 first.</p>}
+                {allImagesGenerated && (
+                  <>
+                    <p className="text-muted-foreground">Review your generated images below. Video assembly is coming soon!</p>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 mt-4">
+                      {storyData.generatedImages?.map((img, index) => (
+                        <div key={index} className="border rounded-md overflow-hidden aspect-square relative group shadow-md">
+                          <Image src={img.imageUrl} alt={`Scene ${index + 1}`} layout="fill" objectFit="cover" data-ai-hint={img.dataAiHint || "animation frame"}/>
+                          <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                            <p className="text-white text-xs p-1 text-center">{img.prompt.substring(0,50)}...</p>
+                          </div>
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
-                <Button disabled className="mt-4 bg-primary hover:bg-primary/90 text-primary-foreground opacity-50 cursor-not-allowed" title="Video assembly coming soon!">
-                  <Clapperboard className="mr-2 h-4 w-4" /> Assemble Video (Coming Soon)
-                </Button>
-                 <div className="flex items-center p-3 text-sm text-primary bg-primary/10 border border-primary/20 rounded-md">
-                  <Info className="h-5 w-5 mr-2 shrink-0" />
-                  <span>Video assembly and MP4 export features are currently under development. Stay tuned!</span>
-                </div>
+                    <Button disabled className="mt-4 bg-primary hover:bg-primary/90 text-primary-foreground opacity-50 cursor-not-allowed" title="Video assembly coming soon!">
+                      <Clapperboard className="mr-2 h-4 w-4" /> Assemble Video (Coming Soon)
+                    </Button>
+                    <div className="flex items-center p-3 text-sm text-primary bg-primary/10 border border-primary/20 rounded-md">
+                      <Info className="h-5 w-5 mr-2 shrink-0" />
+                      <span>Video assembly and MP4 export features are currently under development. Stay tuned!</span>
+                    </div>
+                  </>
+                )}
               </AccordionContent>
             </AccordionItem>
           </Accordion>
@@ -577,7 +620,7 @@ export default function CreateStoryPage() {
                 <AlertDialogTrigger asChild>
                   <Button size="lg" disabled={isSaveButtonDisabled} className="bg-green-600 hover:bg-green-700 text-white">
                     <Save className="mr-2 h-4 w-4" />
-                    {isLoading.save ? 'Saving...' : (storyData.id ? 'Save Changes' : 'Save Story')}
+                    {isLoading.save ? 'Saving...' : (storyData.id ? 'Update Story' : 'Save New Story')}
                   </Button>
                 </AlertDialogTrigger>
                 <AlertDialogContent>
@@ -589,7 +632,7 @@ export default function CreateStoryPage() {
                   </AlertDialogHeader>
                   <AlertDialogFooter>
                     <AlertDialogCancel disabled={isLoading.save}>Cancel</AlertDialogCancel>
-                    <AlertDialogAction onClick={handleConfirmSaveStory} disabled={isLoading.save || !storyData.title?.trim()} className="bg-green-600 hover:bg-green-700">
+                    <AlertDialogAction onClick={handleConfirmSaveStory} disabled={isSaveButtonDisabled} className="bg-green-600 hover:bg-green-700">
                        {isLoading.save ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
                        Yes, Save Story
                     </AlertDialogAction>
@@ -602,4 +645,3 @@ export default function CreateStoryPage() {
     </div>
   );
 }
-
