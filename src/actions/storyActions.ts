@@ -1,11 +1,10 @@
-
 "use server";
 
 import { generateScript as aiGenerateScript, type GenerateScriptInput } from '@/ai/flows/generate-script';
 import { generateCharacterPrompts as aiGenerateCharacterPrompts, type GenerateCharacterPromptsInput } from '@/ai/flows/generate-character-prompts';
 import { generateNarrationAudio as aiGenerateNarrationAudio, type GenerateNarrationAudioInput } from '@/ai/flows/generate-narration-audio';
 import { generateImagePrompts as aiGenerateImagePrompts, type GenerateImagePromptsInput } from '@/ai/flows/generate-image-prompts';
-import { generateTitle as aiGenerateTitle, type GenerateTitleInput } from '@/ai/flows/generate-title'; // Added import for generateTitle
+import { generateTitle as aiGenerateTitle, type GenerateTitleInput } from '@/ai/flows/generate-title'; 
 
 import type { Story } from '@/types/story';
 import { db } from '@/lib/firebase'; 
@@ -67,58 +66,65 @@ export async function generateImagePrompts(input: GenerateImagePromptsInput) {
   }
 }
 
-export async function saveStory(storyData: Story, userId: string): Promise<{ success: boolean; storyId?: string; error?: string }> {
-  if (!userId) {
-    return { success: false, error: "User not authenticated." };
+export async function saveStory(storyData: Story, authenticatedUserId: string): Promise<{ success: boolean; storyId?: string; error?: string }> {
+  if (!authenticatedUserId || typeof authenticatedUserId !== 'string' || authenticatedUserId.trim() === '') {
+    console.error("[saveStory Action] Error: Authenticated User ID is invalid or missing:", authenticatedUserId);
+    return { success: false, error: "User not authenticated or user ID is invalid." };
   }
 
   try {
-    // Explicitly include userId in the data to be saved for both create and update.
-    const dataToSave: Partial<Story> & { userId: string; createdAt?: Timestamp; updatedAt: Timestamp } = {
-      ...storyData, // Spread storyData first
-      userId, // Ensure userId is set from the authenticated user
+    // Construct the base payload, ensuring required fields and validated authenticatedUserId are used.
+    // Optional fields from storyData are included if they exist.
+    const payload: any = {
+      userId: authenticatedUserId, // Always use the UID of the authenticated user making the request
       title: storyData.title || "Untitled Story",
       userPrompt: storyData.userPrompt || "",
       updatedAt: serverTimestamp() as Timestamp,
     };
-    
-    // Remove id from dataToSave if it exists, as it's used for doc reference
-    if ('id' in dataToSave) {
-      delete (dataToSave as any).id;
-    }
-    
-    if (!storyData.id) { // For new story
-        dataToSave.createdAt = serverTimestamp() as Timestamp;
-    } else { // For existing story, ensure createdAt is not overwritten if it exists
-        if (storyData.createdAt) {
-            dataToSave.createdAt = storyData.createdAt instanceof Date ? Timestamp.fromDate(storyData.createdAt) : storyData.createdAt;
-        }
-    }
-    
-    // Firestore does not allow undefined values. Filter them out.
-    Object.keys(dataToSave).forEach(key => {
-      if ((dataToSave as any)[key] === undefined) {
-        delete (dataToSave as any)[key];
+
+    // Add optional fields from storyData if they are defined
+    if (storyData.generatedScript !== undefined) payload.generatedScript = storyData.generatedScript;
+    if (storyData.detailsPrompts !== undefined) payload.detailsPrompts = storyData.detailsPrompts;
+    if (storyData.narrationAudioUrl !== undefined) payload.narrationAudioUrl = storyData.narrationAudioUrl;
+    if (storyData.narrationAudioDurationSeconds !== undefined) payload.narrationAudioDurationSeconds = storyData.narrationAudioDurationSeconds;
+    if (storyData.imagePrompts !== undefined) payload.imagePrompts = storyData.imagePrompts;
+    if (storyData.generatedImages !== undefined) payload.generatedImages = storyData.generatedImages;
+    // videoUrl is not used yet
+
+    // Remove any remaining undefined properties to prevent Firestore errors
+    Object.keys(payload).forEach(key => {
+      if (payload[key] === undefined) {
+        delete payload[key];
       }
     });
-
-
+    
     if (storyData.id) {
       // Update existing story
       const storyRef = doc(db, "stories", storyData.id);
-      await updateDoc(storyRef, dataToSave);
+      
+      // Preserve existing createdAt timestamp if it exists on the storyData passed from client
+      // This ensures we don't accidentally remove it or try to set it to serverTimestamp() on update.
+      if (storyData.createdAt) {
+        payload.createdAt = storyData.createdAt instanceof Date ? Timestamp.fromDate(storyData.createdAt) : storyData.createdAt;
+      } else {
+        // If storyData from client doesn't have createdAt (e.g., it was never set or an old doc),
+        // we don't add it to the update payload to avoid issues.
+        // Firestore update will merge, so existing createdAt (if any on doc) remains.
+      }
+
+      await updateDoc(storyRef, payload);
       revalidatePath('/dashboard');
       revalidatePath(`/create-story?storyId=${storyData.id}`);
       return { success: true, storyId: storyData.id };
     } else {
       // Create new story
-      // Ensure userId is part of the document being created
-      const docRef = await addDoc(collection(db, "stories"), dataToSave);
+      payload.createdAt = serverTimestamp() as Timestamp; // Set createdAt for new stories
+      const docRef = await addDoc(collection(db, "stories"), payload);
       revalidatePath('/dashboard');
       return { success: true, storyId: docRef.id };
     }
   } catch (error) {
-    console.error("Error saving story to Firestore:", error);
+    console.error("[saveStory Action] Error saving story to Firestore:", error);
     let errorMessage = "Failed to save story.";
     const firebaseError = error as FirestoreError;
     if (firebaseError && firebaseError.code) {
@@ -143,7 +149,6 @@ export async function getStory(storyId: string, userId: string): Promise<{ succe
       if (story.userId !== userId) {
         return { success: false, error: "Unauthorized access to story." };
       }
-       // Convert Firestore Timestamps to Date objects if they exist
       if (story.createdAt && story.createdAt instanceof Timestamp) {
         story.createdAt = story.createdAt.toDate();
       }
@@ -189,4 +194,3 @@ export async function generateImageFromPrompt(prompt: string): Promise<{ success
 
   return { success: true, imageUrl, dataAiHint: keywords };
 }
-

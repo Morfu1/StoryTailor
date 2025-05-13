@@ -1,4 +1,3 @@
-
 "use client";
 
 import type { Story, GeneratedImage, StoryCharacterLocationItemPrompts } from '@/types/story';
@@ -71,7 +70,12 @@ export default function CreateStoryPage() {
         return;
     }
 
-    updateStoryData({ userId: user.uid }); 
+    // Set userId in storyData if it's not already set from a loaded story
+    // This is mostly for new stories, as loaded stories will have it.
+    if (user.uid && !storyData.userId) {
+      updateStoryData({ userId: user.uid }); 
+    }
+
 
     if (storyId && user) {
       handleSetLoading('page', true);
@@ -117,7 +121,6 @@ export default function CreateStoryPage() {
             toast({ title: 'Title Generated!', description: 'A title for your story has been created.', className: 'bg-primary text-primary-foreground' });
         } else {
             toast({ title: 'Title Generation Failed', description: titleResult.error || 'Could not generate a title. Please enter one manually.', variant: 'default' });
-            // Fallback to a simple title if AI fails
             const promptSegment = storyData.userPrompt.trim().substring(0, 30);
             currentTitle = promptSegment.length > 0 ? 
                             (promptSegment.length < storyData.userPrompt.trim().length ? `${promptSegment}... (Draft)` : `${promptSegment} (Draft)`)
@@ -196,7 +199,10 @@ export default function CreateStoryPage() {
       if (existingImageIndex > -1) {
         updatedImages[existingImageIndex] = newImage;
       } else {
-        updatedImages.push(newImage);
+        // Ensure we store images in the order of their prompts if possible, or simply add
+        // A more robust solution might involve mapping by prompt index if order is critical
+        updatedImages.splice(index, 0, newImage); 
+        // Or simply: updatedImages.push(newImage); if order isn't strictly tied to prompt index for storage
       }
       updateStoryData({ generatedImages: updatedImages });
       toast({ title: `Image ${index + 1} Generated!`, description: 'Visual for prompt ready.', className: 'bg-primary text-primary-foreground' });
@@ -212,48 +218,56 @@ export default function CreateStoryPage() {
   const handleGenerateAllImages = async () => {
     if (!storyData.imagePrompts || storyData.imagePrompts.length === 0) return;
     handleSetLoading('allImages', true);
-    const newGeneratedImages: GeneratedImage[] = []; 
-    let allSucceeded = true;
     
-    const existingPrompts = new Set(storyData.generatedImages?.map(img => img.prompt) || []);
+    const imagesToGenerate = storyData.imagePrompts.map((prompt, index) => ({ prompt, index })).filter(
+      p => !(storyData.generatedImages || []).some(img => img.prompt === p.prompt)
+    );
 
-    for (let i = 0; i < storyData.imagePrompts.length; i++) {
-      const prompt = storyData.imagePrompts[i];
-      if (existingPrompts.has(prompt)) {
-        const existingImage = storyData.generatedImages?.find(img => img.prompt === prompt);
-        if(existingImage) newGeneratedImages.push(existingImage);
-        continue;
-      }
-
-      handleSetLoading(`image-${i}`, true); 
-      const result = await generateImageFromPrompt(prompt);
-      if (result.success && result.imageUrl) {
-        newGeneratedImages.push({ prompt, imageUrl: result.imageUrl, dataAiHint: result.dataAiHint });
-      } else {
-        allSucceeded = false;
+    const results = await Promise.all(
+      imagesToGenerate.map(async ({prompt, index}) => {
+        handleSetLoading(`image-${index}`, true);
+        const result = await generateImageFromPrompt(prompt);
+        handleSetLoading(`image-${index}`, false);
+        if (result.success && result.imageUrl) {
+          return { prompt, imageUrl: result.imageUrl, dataAiHint: result.dataAiHint, success: true, index };
+        }
         toast({ title: 'Image Generation Error', description: result.error || `Failed for prompt: "${prompt.substring(0,30)}..."`, variant: 'destructive' });
-      }
-      handleSetLoading(`image-${i}`, false);
+        return { prompt, success: false, index };
+      })
+    );
+
+    const successfulNewImages = results.filter(r => r.success).map(r => ({prompt: r.prompt, imageUrl: r.imageUrl!, dataAiHint: r.dataAiHint}));
+    
+    if (successfulNewImages.length > 0) {
       setStoryData(prev => {
-        const combined = [...(prev.generatedImages || []), ...newGeneratedImages];
+        const combined = [...(prev.generatedImages || []), ...successfulNewImages];
         const uniqueImages = Array.from(new Map(combined.map(img => [img.prompt, img])).values());
-        return { ...prev, generatedImages: uniqueImages };
+        // Attempt to sort generatedImages based on the order of imagePrompts
+        const orderedImages = prev.imagePrompts?.map(p => uniqueImages.find(img => img.prompt === p)).filter(Boolean) as GeneratedImage[] || uniqueImages;
+        return { ...prev, generatedImages: orderedImages };
       });
     }
-
-    if (allSucceeded) {
-      toast({ title: 'All Images Generated!', description: 'All visuals are ready for your story.', className: 'bg-primary text-primary-foreground' });
-    } else {
-      toast({ title: 'Image Generation Partially Failed', description: 'Some images could not be generated. Check individual prompts.', variant: 'default' });
+    
+    if (successfulNewImages.length === imagesToGenerate.length) {
+      toast({ title: 'All Remaining Images Generated!', description: 'All visuals are ready for your story.', className: 'bg-primary text-primary-foreground' });
+    } else if (successfulNewImages.length > 0) {
+      toast({ title: 'Image Generation Partially Completed', description: 'Some images were generated. Check individual prompts for failures.', variant: 'default' });
+    } else if (imagesToGenerate.length > 0) {
+       toast({ title: 'Image Generation Failed', description: 'Could not generate any new images.', variant: 'destructive' });
     }
+
+
     handleSetLoading('allImages', false);
-    setCurrentStep(6);
+    if (storyData.imagePrompts && storyData.generatedImages?.length === storyData.imagePrompts?.length) {
+      setCurrentStep(6);
+    }
   };
 
 
   const handleConfirmSaveStory = async () => {
-    if (!user) {
-      toast({ title: 'Authentication Error', description: 'You must be logged in to save a story.', variant: 'destructive' });
+    if (!user || !user.uid || typeof user.uid !== 'string' || user.uid.trim() === '') {
+      toast({ title: 'Authentication Error', description: 'User session is invalid or User ID is missing. Please re-login.', variant: 'destructive' });
+      setIsSaveConfirmOpen(false); 
       return;
     }
     if (!storyData.title || !storyData.title.trim()) {
@@ -262,12 +276,13 @@ export default function CreateStoryPage() {
       return;
     }
     handleSetLoading('save', true);
-    const result = await saveStory({ ...storyData, userId: user.uid }, user.uid); 
+    // Pass the full storyData and the confirmed user.uid separately
+    const result = await saveStory(storyData, user.uid); 
     if (result.success && result.storyId) {
-      updateStoryData({ id: result.storyId });
+      updateStoryData({ id: result.storyId }); // Update local state with the new/confirmed ID
       toast({ title: 'Story Saved!', description: 'Your masterpiece is safely stored.', className: 'bg-primary text-primary-foreground' });
-      if (!storyId) { 
-          router.replace(`/create-story?storyId=${result.storyId}`);
+      if (!storyId) { // If it was a new story, update URL
+          router.replace(`/create-story?storyId=${result.storyId}`, { scroll: false });
       }
     } else {
       toast({ title: 'Error Saving Story', description: result.error || 'Could not save your story.', variant: 'destructive' });
@@ -292,7 +307,7 @@ export default function CreateStoryPage() {
   }
 
   const allImagesGenerated = storyData.imagePrompts && storyData.generatedImages && storyData.imagePrompts.length > 0 && storyData.imagePrompts.length === storyData.generatedImages.length;
-  const isSaveButtonDisabled = !storyData.title?.trim() || !user || isLoading.save;
+  const isSaveButtonDisabled = !storyData.title?.trim() || isLoading.save;
 
 
   return (
@@ -301,7 +316,7 @@ export default function CreateStoryPage() {
         <CardHeader className="bg-card-foreground/5">
           <CardTitle className="text-3xl font-bold tracking-tight text-primary flex items-center">
              <Sparkles className="w-8 h-8 mr-3 text-accent" />
-            {storyId ? 'Edit Your Story' : 'Create a New Story'}
+            {storyData.id ? 'Edit Your Story' : 'Create a New Story'}
           </CardTitle>
           <CardDescription>
             Follow the steps below to bring your animated story to life. Click Save Story anytime to store your progress.
@@ -466,7 +481,7 @@ export default function CreateStoryPage() {
                         <Label className="block text-md font-medium">Image Prompts ({storyData.imagePrompts.length} total)</Label>
                         <Button 
                             onClick={handleGenerateAllImages} 
-                            disabled={isLoading.allImages || storyData.imagePrompts.every((_, idx) => isLoading[`image-${idx}`] || storyData.generatedImages?.some(img => img.prompt === storyData.imagePrompts![idx]))} 
+                            disabled={isLoading.allImages || (storyData.generatedImages?.length === storyData.imagePrompts.length) || storyData.imagePrompts.every((_, idx) => isLoading[`image-${idx}`])} 
                             variant="outline"
                         >
                             {isLoading.allImages ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
@@ -522,7 +537,7 @@ export default function CreateStoryPage() {
                         <p className="text-white text-xs p-1 text-center">{img.prompt.substring(0,50)}...</p>
                       </div>
                     </div>
-                  ))}\
+                  ))}
                 </div>
                 <Button disabled className="mt-4 bg-primary hover:bg-primary/90 text-primary-foreground opacity-50 cursor-not-allowed" title="Video assembly coming soon!">
                   <Clapperboard className="mr-2 h-4 w-4" /> Assemble Video (Coming Soon)
@@ -542,7 +557,7 @@ export default function CreateStoryPage() {
                 <AlertDialogTrigger asChild>
                   <Button size="lg" disabled={isSaveButtonDisabled} className="bg-green-600 hover:bg-green-700 text-white">
                     <Save className="mr-2 h-4 w-4" />
-                    {isLoading.save ? 'Saving...' : (storyId ? 'Save Changes' : 'Save Story')}
+                    {isLoading.save ? 'Saving...' : (storyData.id ? 'Save Changes' : 'Save Story')}
                   </Button>
                 </AlertDialogTrigger>
                 <AlertDialogContent>
