@@ -1,3 +1,4 @@
+
 "use server";
 
 import { generateScript as aiGenerateScript, type GenerateScriptInput } from '@/ai/flows/generate-script';
@@ -7,8 +8,8 @@ import { generateImagePrompts as aiGenerateImagePrompts, type GenerateImagePromp
 import { generateTitle as aiGenerateTitle, type GenerateTitleInput } from '@/ai/flows/generate-title'; 
 
 import type { Story } from '@/types/story';
-import { db } from '@/lib/firebase'; 
-import { collection, addDoc, updateDoc, doc, serverTimestamp, getDoc, type FirestoreError, Timestamp } from 'firebase/firestore';
+
+import { dbAdmin, firebaseAdmin } from '@/lib/firebaseAdmin'; 
 import { revalidatePath } from 'next/cache';
 
 
@@ -66,122 +67,152 @@ export async function generateImagePrompts(input: GenerateImagePromptsInput) {
   }
 }
 
+interface FirebaseErrorWithCode extends Error {
+  code?: string;
+}
+
 export async function saveStory(storyData: Story, authenticatedUserId: string): Promise<{ success: boolean; storyId?: string; error?: string }> {
+  console.log("[saveStory Action] Initiated. Authenticated User ID:", authenticatedUserId);
+  
+  if (!dbAdmin) {
+    console.error("[saveStory Action] Firebase Admin SDK (dbAdmin) is not initialized. Cannot save story.");
+    return { success: false, error: "Server configuration error: Database connection not available." };
+  }
   if (!authenticatedUserId || typeof authenticatedUserId !== 'string' || authenticatedUserId.trim() === '') {
     console.error("[saveStory Action] Error: Authenticated User ID is invalid or missing:", authenticatedUserId);
     return { success: false, error: "User not authenticated or user ID is invalid." };
   }
 
+  console.log("[saveStory Action] Received storyData.id for save/update:", storyData.id); 
+
   try {
-    // Construct the base payload, ensuring required fields and validated authenticatedUserId are used.
-    // Optional fields from storyData are included if they exist.
+    // Construct the base payload, ensuring userId is always from the authenticated session
     const payload: any = {
-      userId: authenticatedUserId, // Always use the UID of the authenticated user making the request
+      ...storyData, // Spread incoming story data
+      userId: authenticatedUserId, // CRITICAL: Always use the authenticated user's ID
       title: storyData.title || "Untitled Story",
       userPrompt: storyData.userPrompt || "",
-      updatedAt: serverTimestamp() as Timestamp,
+      updatedAt: firebaseAdmin.firestore.FieldValue.serverTimestamp(), 
     };
 
-    // Add optional fields from storyData if they are defined
-    if (storyData.generatedScript !== undefined) payload.generatedScript = storyData.generatedScript;
-    if (storyData.detailsPrompts !== undefined) payload.detailsPrompts = storyData.detailsPrompts;
-    if (storyData.narrationAudioUrl !== undefined) payload.narrationAudioUrl = storyData.narrationAudioUrl;
-    if (storyData.narrationAudioDurationSeconds !== undefined) payload.narrationAudioDurationSeconds = storyData.narrationAudioDurationSeconds;
-    if (storyData.imagePrompts !== undefined) payload.imagePrompts = storyData.imagePrompts;
-    if (storyData.generatedImages !== undefined) payload.generatedImages = storyData.generatedImages;
-    // videoUrl is not used yet
+    // Remove the 'id' field from the payload itself, as it's used for document reference
+    // and should not be part of the document data if Firestore auto-generates it or if it's the doc name.
+    delete payload.id; 
 
-    // Remove any remaining undefined properties to prevent Firestore errors
+    // Handle createdAt for new vs existing stories
+    if (storyData.id) { // Existing story
+      if (storyData.createdAt) {
+        // Preserve existing createdAt: Convert Date to Admin Timestamp if necessary
+        payload.createdAt = storyData.createdAt instanceof Date 
+          ? firebaseAdmin.firestore.Timestamp.fromDate(storyData.createdAt) 
+          : storyData.createdAt;
+      } else {
+        // If somehow an existing story is missing createdAt, set it. Unlikely if created properly.
+        console.warn(`[saveStory Action] Existing story ${storyData.id} is missing createdAt. Setting it now.`);
+        payload.createdAt = firebaseAdmin.firestore.FieldValue.serverTimestamp();
+      }
+    } else { // New story
+      payload.createdAt = firebaseAdmin.firestore.FieldValue.serverTimestamp();
+    }
+    
+    // Ensure no undefined values are sent to Firestore
     Object.keys(payload).forEach(key => {
       if (payload[key] === undefined) {
-        delete payload[key];
+        // Firestore does not allow 'undefined'. Convert to null or remove.
+        // For this app, let's remove them to keep documents clean.
+        delete payload[key]; 
       }
     });
     
+    console.log("[saveStory Action] Final payload to Firestore:", JSON.stringify(payload, null, 2));
+    
     if (storyData.id) {
-      // Update existing story
-      const storyRef = doc(db, "stories", storyData.id);
-      
-      // Preserve existing createdAt timestamp if it exists on the storyData passed from client
-      // This ensures we don't accidentally remove it or try to set it to serverTimestamp() on update.
-      if (storyData.createdAt) {
-        payload.createdAt = storyData.createdAt instanceof Date ? Timestamp.fromDate(storyData.createdAt) : storyData.createdAt;
-      } else {
-        // If storyData from client doesn't have createdAt (e.g., it was never set or an old doc),
-        // we don't add it to the update payload to avoid issues.
-        // Firestore update will merge, so existing createdAt (if any on doc) remains.
-      }
-
-      await updateDoc(storyRef, payload);
+      console.log(`[saveStory Action] Attempting to UPDATE story with ID: ${storyData.id} in collection "stories"`);
+      const storyRef = dbAdmin.collection("stories").doc(storyData.id);
+      await storyRef.update(payload);
+      console.log(`[saveStory Action] Successfully UPDATED story ${storyData.id}`);
       revalidatePath('/dashboard');
       revalidatePath(`/create-story?storyId=${storyData.id}`);
       return { success: true, storyId: storyData.id };
     } else {
-      // Create new story
-      payload.createdAt = serverTimestamp() as Timestamp; // Set createdAt for new stories
-      const docRef = await addDoc(collection(db, "stories"), payload);
+      console.log(`[saveStory Action] Attempting to CREATE new story in collection "stories"`);
+      const docRef = await dbAdmin.collection("stories").add(payload);
+      console.log(`[saveStory Action] Successfully CREATED new story with ID: ${docRef.id}`);
       revalidatePath('/dashboard');
       return { success: true, storyId: docRef.id };
     }
   } catch (error) {
-    console.error("[saveStory Action] Error saving story to Firestore:", error);
+    console.error("[saveStory Action] Error saving story to Firestore (Admin SDK):", error);
     let errorMessage = "Failed to save story.";
-    const firebaseError = error as FirestoreError;
+    const firebaseError = error as FirebaseErrorWithCode;
     if (firebaseError && firebaseError.code) {
-      errorMessage = `Failed to save story: ${firebaseError.message} (Code: ${firebaseError.code})`;
+      errorMessage = `Failed to save story (Admin SDK error): ${firebaseError.message} (Code: ${firebaseError.code})`;
     } else if (error instanceof Error) {
-      errorMessage = `Failed to save story: ${error.message}`;
+      errorMessage = `Failed to save story (Admin SDK error): ${error.message}`;
     }
+    // Log the full error object for more details if available
+    console.error("[saveStory Action] Full error object:", JSON.stringify(error, null, 2));
     return { success: false, error: errorMessage };
   }
 }
 
 export async function getStory(storyId: string, userId: string): Promise<{ success: boolean; data?: Story; error?: string }> {
-   if (!userId) {
+  if (!dbAdmin) {
+    console.error("[getStory Action] Firebase Admin SDK (dbAdmin) is not initialized. Cannot fetch story.");
+    return { success: false, error: "Server configuration error: Database connection not available." };
+  }
+  if (!userId) {
+    console.warn("[getStory Action] Attempt to fetch story without userId.");
     return { success: false, error: "User not authenticated." };
   }
   try {
-    const storyRef = doc(db, "stories", storyId);
-    const docSnap = await getDoc(storyRef);
+    const storyRef = dbAdmin.collection("stories").doc(storyId);
+    const docSnap = await storyRef.get();
 
-    if (docSnap.exists()) {
+    if (docSnap.exists) {
       const story = { id: docSnap.id, ...docSnap.data() } as Story;
+      
       if (story.userId !== userId) {
+        console.warn(`[getStory Action] Unauthorized attempt to access story ${storyId} by user ${userId}. Story belongs to ${story.userId}`);
         return { success: false, error: "Unauthorized access to story." };
       }
-      if (story.createdAt && story.createdAt instanceof Timestamp) {
-        story.createdAt = story.createdAt.toDate();
+
+      if (story.createdAt && story.createdAt instanceof firebaseAdmin.firestore.Timestamp) {
+        story.createdAt = (story.createdAt as admin.firestore.Timestamp).toDate();
       }
-      if (story.updatedAt && story.updatedAt instanceof Timestamp) {
-        story.updatedAt = story.updatedAt.toDate();
+      if (story.updatedAt && story.updatedAt instanceof firebaseAdmin.firestore.Timestamp) {
+        story.updatedAt = (story.updatedAt as admin.firestore.Timestamp).toDate();
       }
       return { success: true, data: story };
     } else {
       return { success: false, error: "Story not found." };
     }
   } catch (error) {
-    console.error("Error fetching story from Firestore:", error);
+    console.error("[getStory Action] Error fetching story from Firestore (Admin SDK):", error);
     let errorMessage = "Failed to fetch story.";
-    const firebaseError = error as FirestoreError;
+    const firebaseError = error as FirebaseErrorWithCode;
     if (firebaseError && firebaseError.code) {
-      errorMessage = `Failed to fetch story: ${firebaseError.message} (Code: ${firebaseError.code})`;
+      errorMessage = `Failed to fetch story (Admin SDK): ${firebaseError.message} (Code: ${firebaseError.code})`;
     } else if (error instanceof Error) {
-      errorMessage = `Failed to fetch story: ${error.message}`;
+      errorMessage = `Failed to fetch story (Admin SDK): ${error.message}`;
     }
     return { success: false, error: errorMessage };
   }
 }
 
 export async function generateImageFromPrompt(prompt: string): Promise<{ success: boolean, imageUrl?: string, error?: string, dataAiHint?: string }> {
-  await new Promise(resolve => setTimeout(resolve, 1500));
+  // Placeholder - simulate AI image generation
+  await new Promise(resolve => setTimeout(resolve, 1500)); // Simulate delay
   
+  // Basic keyword extraction for data-ai-hint
   let keywords = "abstract"; 
-  const mentionedItems = prompt.match(/@\w+/g); 
+  const mentionedItems = prompt.match(/@\w+/g); // Check for @mentions
   if (mentionedItems && mentionedItems.length > 0) {
       keywords = mentionedItems.map(item => item.substring(1).toLowerCase()).slice(0,2).join(" ");
   } else {
+      // Fallback to first few meaningful words if no @mentions
       const words = prompt.toLowerCase().split(" ");
-      const commonWords = ["a", "an", "the", "of", "in", "is", "and", "shot", "at", "with"];
+      const commonWords = ["a", "an", "the", "of", "in", "is", "and", "shot", "at", "with", "scene", "visualize", "generate"];
       const meaningfulWords = words.filter(w => !commonWords.includes(w) && w.length > 3);
       if (meaningfulWords.length > 0) {
           keywords = meaningfulWords.slice(0,2).join(" ");
