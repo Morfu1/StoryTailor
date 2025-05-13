@@ -73,38 +73,34 @@ export async function saveStory(storyData: Story, userId: string): Promise<{ suc
   }
 
   try {
+    // Explicitly include userId in the data to be saved for both create and update.
     const dataToSave: Partial<Story> & { userId: string; createdAt?: Timestamp; updatedAt: Timestamp } = {
-      userId,
+      ...storyData, // Spread storyData first
+      userId, // Ensure userId is set from the authenticated user
       title: storyData.title || "Untitled Story",
       userPrompt: storyData.userPrompt || "",
-      generatedScript: storyData.generatedScript,
-      detailsPrompts: storyData.detailsPrompts,
-      narrationAudioUrl: storyData.narrationAudioUrl,
-      narrationAudioDurationSeconds: storyData.narrationAudioDurationSeconds,
-      imagePrompts: storyData.imagePrompts,
-      generatedImages: storyData.generatedImages,
       updatedAt: serverTimestamp() as Timestamp,
     };
     
+    // Remove id from dataToSave if it exists, as it's used for doc reference
+    if ('id' in dataToSave) {
+      delete (dataToSave as any).id;
+    }
+    
     if (!storyData.id) { // For new story
         dataToSave.createdAt = serverTimestamp() as Timestamp;
-    }
-
-    // Firestore does not allow undefined values. Filter them out.
-    // Also, ensure all properties of Story are potentially included if they exist on storyData
-    Object.keys(storyData).forEach(key => {
-      const K = key as keyof Story;
-      if (storyData[K] !== undefined && !(K in dataToSave) && K !== 'id' && K !== 'createdAt' && K !== 'updatedAt' && K !== 'userId') {
-        (dataToSave as any)[K] = storyData[K];
-      }
-    });
-    
-    // Final pass to remove any undefined from explicitly set fields or storyData loop
-    for (const key in dataToSave) {
-        if ((dataToSave as any)[key] === undefined) {
-            delete (dataToSave as any)[key];
+    } else { // For existing story, ensure createdAt is not overwritten if it exists
+        if (storyData.createdAt) {
+            dataToSave.createdAt = storyData.createdAt instanceof Date ? Timestamp.fromDate(storyData.createdAt) : storyData.createdAt;
         }
     }
+    
+    // Firestore does not allow undefined values. Filter them out.
+    Object.keys(dataToSave).forEach(key => {
+      if ((dataToSave as any)[key] === undefined) {
+        delete (dataToSave as any)[key];
+      }
+    });
 
 
     if (storyData.id) {
@@ -116,6 +112,7 @@ export async function saveStory(storyData: Story, userId: string): Promise<{ suc
       return { success: true, storyId: storyData.id };
     } else {
       // Create new story
+      // Ensure userId is part of the document being created
       const docRef = await addDoc(collection(db, "stories"), dataToSave);
       revalidatePath('/dashboard');
       return { success: true, storyId: docRef.id };
