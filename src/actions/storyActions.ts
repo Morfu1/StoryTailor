@@ -1,4 +1,3 @@
-
 "use server";
 
 import type { GenerateCharacterPromptsInput } from '@/ai/flows/generate-character-prompts';
@@ -209,14 +208,27 @@ export async function generateImageFromPrompt(prompt: string): Promise<{ success
 
 
 async function uploadAudioToFirebaseStorage(audioDataUri: string, userId: string, storyId: string): Promise<string> {
-  if (!firebaseAdmin.apps.length) {
-    throw new Error("Firebase Admin SDK not initialized for storage operations.");
+  console.log('[uploadAudioToFirebaseStorage] Initiating audio upload...');
+  if (!firebaseAdmin.apps.length || !firebaseAdmin.app()) {
+    console.error("[uploadAudioToFirebaseStorage] CRITICAL: Firebase Admin SDK app is not initialized. Cannot perform storage operations.");
+    throw new Error("Firebase Admin SDK app is not initialized for storage operations.");
   }
-  const storage = getAdminStorage(firebaseAdmin.app());
-  const bucket = storage.bucket(process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET); // Ensure this env var is set
+  const adminAppInstance = firebaseAdmin.app();
+  const storage = getAdminStorage(adminAppInstance);
+
+  const bucketName = process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET;
+
+  if (!bucketName || bucketName.trim() === "") {
+    console.error("[uploadAudioToFirebaseStorage] CRITICAL: NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET environment variable is not set or is empty. Cannot determine storage bucket.");
+    throw new Error("Firebase Storage bucket name is not configured. Please set NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET in your .env.local file.");
+  }
+  console.log(`[uploadAudioToFirebaseStorage] INFO: Attempting to use Firebase Storage bucket: '${bucketName}'`);
+
+  const bucket = storage.bucket(bucketName);
 
   if (!audioDataUri.startsWith('data:audio/mpeg;base64,')) {
-    throw new Error('Invalid audio data URI format.');
+    console.error('[uploadAudioToFirebaseStorage] ERROR: Invalid audio data URI format.');
+    throw new Error('Invalid audio data URI format. Expected data:audio/mpeg;base64,...');
   }
 
   const base64Data = audioDataUri.substring('data:audio/mpeg;base64,'.length);
@@ -225,28 +237,26 @@ async function uploadAudioToFirebaseStorage(audioDataUri: string, userId: string
   const filePath = `users/${userId}/stories/${storyId}/narration.mp3`;
   const file = bucket.file(filePath);
 
+  console.log(`[uploadAudioToFirebaseStorage] INFO: Uploading audio buffer (${audioBuffer.length} bytes) to gs://${bucketName}/${filePath}`);
+
   await file.save(audioBuffer, {
     metadata: {
       contentType: 'audio/mpeg',
     },
   });
 
-  // Make the file public (or use signed URLs for more control)
-  // await file.makePublic();
-  // const publicUrl = file.publicUrl();
-
-  // Using getSignedUrl for better security, valid for 1 hour by default
+  // Using getSignedUrl for better security
   const [signedUrl] = await file.getSignedUrl({
     action: 'read',
     expires: Date.now() + 1000 * 60 * 60 * 24 * 7 // 7 days expiry for simplicity
   });
 
-  console.log(`[uploadAudioToFirebaseStorage] Audio uploaded to ${filePath}, URL: ${signedUrl}`);
+  console.log(`[uploadAudioToFirebaseStorage] SUCCESS: Audio uploaded to ${filePath}. Signed URL (valid for 7 days): ${signedUrl}`);
   return signedUrl;
 }
 
 
-export async function saveStory(storyData: Story, userId: string): Promise<{ success: boolean; storyId?: string; error?: string }> {
+export async function saveStory(storyData: Story, userId: string): Promise<{ success: boolean; storyId?: string; error?: string, data?: { narrationAudioUrl?: string} }> {
   console.log('---------------------------------------------------------------------');
   console.log("[saveStory Action] Initiated. User ID:", userId, "Story ID (if exists):", storyData.id);
   
@@ -262,23 +272,32 @@ export async function saveStory(storyData: Story, userId: string): Promise<{ suc
     return { success: false, error: "User not authenticated or user ID is invalid." };
   }
 
-  const storyIdForPath = storyData.id || dbAdmin.collection("stories").doc().id; // Generate a new ID if one doesn't exist for storage path
+  const storyIdForPath = storyData.id || dbAdmin.collection("stories").doc().id; 
 
   let processedStoryData = { ...storyData };
+  let newNarrationUrl: string | undefined = undefined;
 
-  // Handle audio upload if narrationAudioUrl is a data URI
   if (processedStoryData.narrationAudioUrl && processedStoryData.narrationAudioUrl.startsWith('data:audio/mpeg;base64,')) {
     try {
-      console.log("[saveStory Action] narrationAudioUrl is a data URI. Attempting upload to Firebase Storage.");
+      console.log("[saveStory Action] INFO: narrationAudioUrl is a data URI. Attempting upload to Firebase Storage.");
       const storageUrl = await uploadAudioToFirebaseStorage(processedStoryData.narrationAudioUrl, userId, storyIdForPath);
-      processedStoryData.narrationAudioUrl = storageUrl;
-      console.log("[saveStory Action] Audio successfully uploaded. narrationAudioUrl updated to Firebase Storage URL:", storageUrl);
-    } catch (uploadError) {
-      console.error("[saveStory Action] Error uploading narration audio to Firebase Storage:", uploadError);
-      return { success: false, error: `Failed to upload narration audio: ${uploadError instanceof Error ? uploadError.message : String(uploadError)}` };
+      processedStoryData.narrationAudioUrl = storageUrl; // Update with the actual storage URL
+      newNarrationUrl = storageUrl;
+      console.log("[saveStory Action] SUCCESS: Audio successfully uploaded. narrationAudioUrl updated to Firebase Storage URL:", storageUrl);
+    } catch (uploadError: any) {
+      console.error("[saveStory Action] ERROR: Error uploading narration audio to Firebase Storage:", uploadError);
+      // Attempt to parse Firebase Storage error if possible
+      let detailedErrorMessage = `Failed to upload narration audio: ${uploadError.message || String(uploadError)}`;
+      if (uploadError.errors && Array.isArray(uploadError.errors) && uploadError.errors.length > 0) {
+        detailedErrorMessage += ` Details: ${uploadError.errors.map((e: any) => e.message || JSON.stringify(e)).join(', ')}`;
+      } else if (uploadError.code) {
+        detailedErrorMessage += ` (Code: ${uploadError.code})`;
+      }
+      console.error("[saveStory Action] Full Upload Error Object:", JSON.stringify(uploadError, null, 2));
+      return { success: false, error: detailedErrorMessage };
     }
   } else {
-    console.log("[saveStory Action] narrationAudioUrl is not a new data URI or is undefined. Skipping Firebase Storage upload for audio.");
+    console.log("[saveStory Action] INFO: narrationAudioUrl is not a new data URI or is undefined. Skipping Firebase Storage upload for audio. Current URL:", processedStoryData.narrationAudioUrl);
   }
 
 
@@ -308,7 +327,6 @@ export async function saveStory(storyData: Story, userId: string): Promise<{ suc
   if (dataToSave.generatedImages === undefined) delete dataToSave.generatedImages;
   else if (!Array.isArray(dataToSave.generatedImages)) dataToSave.generatedImages = []; 
 
-  // Ensure elevenLabsVoiceId is included or deleted if undefined
   if (dataToSave.elevenLabsVoiceId === undefined) {
     delete dataToSave.elevenLabsVoiceId;
   }
@@ -316,31 +334,32 @@ export async function saveStory(storyData: Story, userId: string): Promise<{ suc
 
   Object.keys(dataToSave).forEach(key => {
     if (dataToSave[key] === undefined) {
-      console.log(`[saveStory Action] Deleting undefined key: ${key}`);
+      console.log(`[saveStory Action] DEBUG: Deleting undefined key: ${key} from dataToSave.`);
       delete dataToSave[key];
     }
   });
   
-  console.log("[saveStory Action] Data prepared for Firestore:", JSON.stringify(dataToSave, null, 2));
+  console.log("[saveStory Action] INFO: Data prepared for Firestore:", JSON.stringify(dataToSave, null, 2));
 
 
   try {
-    if (storyData.id) { // storyData.id refers to the original ID before any potential new ID generation for pathing
-      console.log(`[saveStory Action] Attempting to UPDATE document 'stories/${storyData.id}'`);
+    if (storyData.id) { 
+      console.log(`[saveStory Action] INFO: Attempting to UPDATE document 'stories/${storyData.id}'`);
       const storyRef = dbAdmin.collection("stories").doc(storyData.id);
       
       const docSnap = await storyRef.get();
       if (!docSnap.exists) {
-        console.error(`[saveStory Action] Error: Story with ID ${storyData.id} not found for update.`);
+        console.error(`[saveStory Action] ERROR: Story with ID ${storyData.id} not found for update.`);
         return { success: false, error: "Story not found. Cannot update." };
       }
       const existingStoryData = docSnap.data();
       if (existingStoryData?.userId !== userId) {
-        console.error(`[saveStory Action] Error: User ${userId} attempting to update story ${storyData.id} owned by ${existingStoryData?.userId}.`);
+        console.error(`[saveStory Action] ERROR: User ${userId} attempting to update story ${storyData.id} owned by ${existingStoryData?.userId}.`);
         return { success: false, error: "Unauthorized: You can only update your own stories." };
       }
       if ('createdAt' in dataToSave && existingStoryData?.createdAt) {
          delete dataToSave.createdAt; 
+         console.log("[saveStory Action] DEBUG: Removed 'createdAt' from update payload as it already exists.");
       }
 
 
@@ -348,19 +367,18 @@ export async function saveStory(storyData: Story, userId: string): Promise<{ suc
       console.log(`[saveStory Action] SUCCESS: Document 'stories/${storyData.id}' updated.`);
       revalidatePath('/dashboard');
       revalidatePath(`/create-story?storyId=${storyData.id}`);
-      return { success: true, storyId: storyData.id };
+      return { success: true, storyId: storyData.id, data: { narrationAudioUrl: newNarrationUrl || storyData.narrationAudioUrl } };
     } else {
       dataToSave.createdAt = firebaseAdmin.firestore.FieldValue.serverTimestamp(); 
-      console.log("[saveStory Action] Attempting to ADD new document to 'stories' collection with ID:", storyIdForPath);
-      // Use set with the generated storyIdForPath to ensure consistency if audio was uploaded
+      console.log("[saveStory Action] INFO: Attempting to ADD new document to 'stories' collection with ID:", storyIdForPath);
       const storyRef = dbAdmin.collection("stories").doc(storyIdForPath);
       await storyRef.set(dataToSave);
       console.log(`[saveStory Action] SUCCESS: Document added to 'stories' with ID: ${storyIdForPath}`);
       revalidatePath('/dashboard');
-      return { success: true, storyId: storyIdForPath };
+      return { success: true, storyId: storyIdForPath, data: { narrationAudioUrl: newNarrationUrl } };
     }
   } catch (error) {
-    console.error("[saveStory Action] Error during Firestore operation:", error);
+    console.error("[saveStory Action] ERROR: Error during Firestore operation:", error);
     let errorMessage = "Failed to save story.";
     const firebaseError = error as FirebaseErrorWithCode;
 
@@ -374,7 +392,7 @@ export async function saveStory(storyData: Story, userId: string): Promise<{ suc
     } else if (error instanceof Error) {
       errorMessage = `Failed to save story: ${error.message}`;
     }
-    console.error("[saveStory Action] Full error object:", JSON.stringify(error, null, 2));
+    console.error("[saveStory Action] Full error object during Firestore operation:", JSON.stringify(error, null, 2));
     return { success: false, error: errorMessage };
   } finally {
      console.log('---------------------------------------------------------------------');
@@ -382,68 +400,3 @@ export async function saveStory(storyData: Story, userId: string): Promise<{ suc
      console.log('---------------------------------------------------------------------');
   }
 }
-
-// BASIC TEST SAVE FUNCTION - MINIMALIST APPROACH TO TEST ADMIN SDK CONNECTION
-// This function is now commented out to use the original saveStory.
-/*
-export async function saveStoryBasicTest(storyData: Partial<Story>, authenticatedUserId: string): Promise<{ success: boolean; storyId?: string; error?: string }> {
-  console.log('---------------------------------------------------------------------');
-  console.log("[saveStory Action - BASIC TEST] Initiated.");
-  console.log("[saveStory Action - BASIC TEST] Authenticated User ID:", authenticatedUserId);
-  console.log("[saveStory Action - BASIC TEST] Received Story Title:", storyData.title);
-  console.log('---------------------------------------------------------------------');
-  
-  if (!dbAdmin) {
-    const errorMessage = "Server configuration error: Database connection (dbAdmin) is not available. Firebase Admin SDK might not be initialized. Check server logs for firebaseAdmin.ts output.";
-    console.error("[saveStory Action - BASIC TEST] CRITICAL ERROR:", errorMessage);
-    console.error("[saveStory Action - BASIC TEST] This usually means GOOGLE_APPLICATION_CREDENTIALS is not set correctly, the service account key is invalid/inaccessible, or the Admin SDK failed to initialize for other reasons detailed in firebaseAdmin.ts logs.");
-    return { success: false, error: errorMessage };
-  }
-  console.log("[saveStory Action - BASIC TEST] INFO: `dbAdmin` IS defined. Proceeding with Firestore operation.");
-
-  if (!authenticatedUserId || typeof authenticatedUserId !== 'string' || authenticatedUserId.trim() === '') {
-    console.error("[saveStory Action - BASIC TEST] Error: Authenticated User ID is invalid or missing:", authenticatedUserId);
-    return { success: false, error: "User not authenticated or user ID is invalid." };
-  }
-
-  // For this basic test, we will only save a minimal document.
-  const testPayload: any = {
-    userId: authenticatedUserId,
-    title: storyData.title || `Test Story ${new Date().toISOString()}`,
-    userPrompt: storyData.userPrompt || "Test prompt",
-    createdAt: firebaseAdmin.firestore.FieldValue.serverTimestamp(),
-    updatedAt: firebaseAdmin.firestore.FieldValue.serverTimestamp(),
-    _testMarker: "BASIC_SAVE_TEST_DOCUMENT_V2"
-  };
-
-  try {
-    console.log("[saveStory Action - BASIC TEST] Attempting to ADD new document to 'stories' collection with payload:", JSON.stringify(testPayload, null, 2));
-    const docRef = await dbAdmin.collection("stories").add(testPayload);
-    console.log(`[saveStory Action - BASIC TEST] SUCCESS: Document written to 'stories' collection with ID: ${docRef.id}`);
-    revalidatePath('/dashboard');
-    return { success: true, storyId: docRef.id };
-
-  } catch (error) {
-    console.error("[saveStory Action - BASIC TEST] Error during Firestore .add() operation:", error);
-    let errorMessage = "Failed to save test story.";
-    const firebaseError = error as FirebaseErrorWithCode;
-
-    if (firebaseError && firebaseError.code) {
-      errorMessage = `Failed to save test story (Firestore Error): ${firebaseError.message} (Code: ${firebaseError.code})`;
-      if (firebaseError.code === 'permission-denied' || firebaseError.code === 7) {
-        console.error("[saveStory Action - BASIC TEST] PERMISSION DENIED: This means the Admin SDK connected to Firestore, but the authenticated service account does not have permission to write to the 'stories' collection. Check Firestore Security Rules (ensure they are temporarily open for this test as instructed) AND IAM permissions for the service account in GCP console.");
-      } else if (firebaseError.code === 'unauthenticated' || firebaseError.code === 16) {
-         console.error("[saveStory Action - BASIC TEST] UNAUTHENTICATED: This indicates an issue with Admin SDK authentication, possibly related to credentials.");
-      }
-    } else if (error instanceof Error) {
-      errorMessage = `Failed to save test story: ${error.message}`;
-    }
-    console.error("[saveStory Action - BASIC TEST] Full error object:", JSON.stringify(error, null, 2));
-    return { success: false, error: errorMessage };
-  } finally {
-    console.log('---------------------------------------------------------------------');
-    console.log("[saveStory Action - BASIC TEST] Completed.");
-    console.log('---------------------------------------------------------------------');
-  }
-}
-*/
