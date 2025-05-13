@@ -1,4 +1,3 @@
-
 import { initializeApp, getApps, type FirebaseApp } from 'firebase/app';
 import { getAuth, type Auth } from 'firebase/auth';
 import { getFirestore, type Firestore } from 'firebase/firestore';
@@ -23,7 +22,7 @@ if (!getApps().length) {
 }
 
 const auth: Auth = getAuth(app);
-// Explicitly connect to the 'storytailordb' Firestore instance
+// Explicitly connect to the 'storytailordb' Firestore instance for the client-side SDK.
 const db: Firestore = getFirestore(app, 'storytailordb');
 
 export { app, auth, db };
