@@ -1,3 +1,4 @@
+
 "use client";
 
 import type { Story, GeneratedImage, StoryCharacterLocationItemPrompts } from '@/types/story';
@@ -353,19 +354,38 @@ export default function CreateStoryPage() {
                 </div>
               </AccordionTrigger>
               <AccordionContent className="pt-4 space-y-4">
-                <Label htmlFor="userPrompt" className="block text-md font-medium">Your Story Prompt</Label>
-                <Textarea
-                  id="userPrompt"
-                  placeholder="e.g., A brave little fox explores a magical forest, learns about courage, and meets talking animals..."
-                  value={storyData.userPrompt}
-                  onChange={(e) => updateStoryData({ userPrompt: e.target.value })}
-                  rows={6}
-                  className="text-base"
-                />
+                <div>
+                  <Label htmlFor="userPrompt" className="block text-md font-medium">Your Story Prompt</Label>
+                  <Textarea
+                    id="userPrompt"
+                    placeholder="e.g., A brave little fox explores a magical forest, learns about courage, and meets talking animals..."
+                    value={storyData.userPrompt}
+                    onChange={(e) => updateStoryData({ userPrompt: e.target.value })}
+                    rows={6}
+                    className="text-base mt-1"
+                  />
+                </div>
+                {storyData.generatedScript && (
+                  <div className="mt-4">
+                    <Label htmlFor="generatedScriptDisplay" className="block text-md font-medium">Generated Story Script (Review)</Label>
+                    <Textarea
+                      id="generatedScriptDisplay"
+                      value={storyData.generatedScript}
+                      readOnly
+                      rows={10}
+                      className="text-base mt-1 bg-muted/50"
+                    />
+                  </div>
+                )}
                 <Button onClick={handleGenerateScript} disabled={isLoading.script || !storyData.userPrompt.trim()} className="bg-accent hover:bg-accent/90 text-accent-foreground">
                   {isLoading.script ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
                   {storyData.generatedScript ? 'Re-generate Script & Title' : 'Generate Script & Title'}
                 </Button>
+                 {storyData.generatedScript && (
+                   <p className="text-sm text-muted-foreground">
+                     You can re-generate the script and title if you wish. The generated script will be shown in Step 2 for further actions.
+                   </p>
+                 )}
               </AccordionContent>
             </AccordionItem>
 
@@ -582,3 +602,4 @@ export default function CreateStoryPage() {
     </div>
   );
 }
+

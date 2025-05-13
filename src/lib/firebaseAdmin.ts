@@ -1,123 +1,104 @@
-
 import * as admin from 'firebase-admin';
 import type { Firestore } from 'firebase-admin/firestore';
 import { getFirestore as getAdminFirestore } from 'firebase-admin/firestore';
+import fs from 'fs'; // Re-import fs
+import path from 'path'; // Re-import path
 
 console.log('---------------------------------------------------------------------');
-console.log('[firebaseAdmin] MODULE LOAD: Attempting Firebase Admin SDK setup...');
-console.log('---------------------------------------------------------------------');
+console.log('[firebaseAdmin] MODULE LOAD (Manual Key Parse): Attempting Firebase Admin SDK setup...');
+console.log('--------------------------------------------------------------------');
 
 let dbAdmin: Firestore | undefined;
 let adminApp: admin.app.App | undefined;
 
 const GAC_PATH = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+const PROJECT_ID = "storytailor-f089f"; // Your Firebase Project ID
 
+console.log(`[firebaseAdmin] INFO (Manual Key Parse): Using PROJECT_ID: "${PROJECT_ID}"`);
 if (GAC_PATH) {
-  console.log(`[firebaseAdmin] INFO: GOOGLE_APPLICATION_CREDENTIALS is SET to: "${GAC_PATH}"`);
-  // You could add a check here to see if the file exists, e.g., using fs.existsSync,
-  // but fs module might not be straightforward in all Next.js edge/serverless environments.
-  // For now, we rely on Firebase Admin SDK's error if it can't find/read the file.
+  console.log(`[firebaseAdmin] INFO (Manual Key Parse): GOOGLE_APPLICATION_CREDENTIALS is SET to: "${GAC_PATH}"`);
 } else {
-  console.warn(
-    '[firebaseAdmin] WARNING: GOOGLE_APPLICATION_CREDENTIALS environment variable is NOT SET. ' +
-    'Firebase Admin SDK will attempt to use Application Default Credentials (ADC). ' +
-    'This is expected if running in a GCP environment (e.g., Cloud Functions, App Engine, Cloud Run). ' +
-    'For local development or non-GCP servers, this variable MUST be set to the absolute path of your service account key JSON file.'
-  );
+  console.error('[firebaseAdmin] CRITICAL (Manual Key Parse): GOOGLE_APPLICATION_CREDENTIALS is NOT SET. Cannot initialize with service account.');
 }
 
+const databaseId = 'storytailordb'; // Your target Firestore database ID
+
 if (!admin.apps.length) {
-  console.log('[firebaseAdmin] INFO: No existing Firebase Admin app instances. Attempting to initialize a new one...');
-  try {
-    // admin.initializeApp() will use GOOGLE_APPLICATION_CREDENTIALS if set and valid,
-    // or ADC if GOOGLE_APPLICATION_CREDENTIALS is not set.
-    // The credential object is not explicitly passed here, relying on the environment variable.
-    admin.initializeApp({
-        // If GOOGLE_APPLICATION_CREDENTIALS is set via environment, it's used automatically.
-        // If not set, ADC is attempted.
-        // If you wanted to explicitly use ADC, you'd do:
-        // credential: admin.credential.applicationDefault(),
-        // projectId is also usually inferred from credentials or ADC.
-        // projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID, // Can be specified if needed
-    });
-    adminApp = admin.app(); // Get the default app instance
-    console.log(`[firebaseAdmin] SUCCESS: Firebase Admin SDK initializeApp() completed.`);
-    console.log(`[firebaseAdmin] INFO: Initialized app name: "${adminApp.name}"`);
-    console.log(`[firebaseAdmin] INFO: Project ID from initialized app: "${adminApp.options.projectId || 'N/A (Could not read from app options)'}"`);
-    
-    if (!adminApp.options.projectId && process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID) {
-        console.warn(`[firebaseAdmin] WARNING: Initialized app does not have a projectId in its options. This is unusual. Using NEXT_PUBLIC_FIREBASE_PROJECT_ID ('${process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID}') for Firestore connection if needed, but the Admin SDK might not be fully configured.`);
-    } else if (adminApp.options.projectId && process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID && adminApp.options.projectId !== process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID) {
-        console.warn(`[firebaseAdmin] POTENTIAL MISMATCH: Initialized Admin App Project ID ("${adminApp.options.projectId}") does not match NEXT_PUBLIC_FIREBASE_PROJECT_ID ("${process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID}"). Ensure credentials point to the correct project.`);
-    }
+  console.log('[firebaseAdmin] INFO (Manual Key Parse): No existing Firebase Admin app instances. Attempting to initialize a new one...');
+  if (GAC_PATH) { // Only attempt if GAC_PATH is set
+    try {
+      const absoluteKeyPath = path.resolve(GAC_PATH);
+      console.log(`[firebaseAdmin] INFO (Manual Key Parse): Absolute path to service account key being checked: "${absoluteKeyPath}"`);
 
+      if (fs.existsSync(absoluteKeyPath)) {
+        console.log(`[firebaseAdmin] INFO (Manual Key Parse): Service account key file FOUND at "${absoluteKeyPath}". Reading and parsing...`);
+        const keyFileContent = fs.readFileSync(absoluteKeyPath, 'utf8');
+        const serviceAccountObject = JSON.parse(keyFileContent);
+        console.log('[firebaseAdmin] INFO (Manual Key Parse): Service account key file parsed successfully.');
 
-  } catch (error) {
-    adminApp = undefined;
-    console.error('[firebaseAdmin] CRITICAL ERROR during Firebase Admin SDK initializeApp():');
-    if (error instanceof Error) {
+        const appOptions: admin.AppOptions = {
+          credential: admin.credential.cert(serviceAccountObject), // Pass the parsed object
+          projectId: PROJECT_ID
+        };
+        console.log('[firebaseAdmin] INFO (Manual Key Parse): Attempting admin.initializeApp() with parsed key object and options:', JSON.stringify(appOptions, null, 2));
+        admin.initializeApp(appOptions);
+        adminApp = admin.app(); // Get the default app
+        console.log(`[firebaseAdmin] SUCCESS (Manual Key Parse): Firebase Admin SDK initializeApp() completed.`);
+        console.log(`[firebaseAdmin] INFO (Manual Key Parse): Initialized app name: "${adminApp.name}"`);
+        console.log(`[firebaseAdmin] INFO (Manual Key Parse): Project ID from initialized app: "${adminApp.options.projectId || 'N/A'}"`);
+        if (adminApp.options.projectId !== PROJECT_ID) {
+          console.warn(`[firebaseAdmin] MISMATCH (Manual Key Parse): Initialized app PID ("${adminApp.options.projectId}") vs configured PID ("${PROJECT_ID}")`);
+        }
+      } else {
+        console.error(`[firebaseAdmin] CRITICAL (Manual Key Parse): Service account key file NOT FOUND at "${absoluteKeyPath}".`);
+        // This will prevent initialization if key file is mandatory
+      }
+    } catch (error: any) {
+      adminApp = undefined;
+      console.error('[firebaseAdmin] CRITICAL ERROR (Manual Key Parse) during Firebase Admin SDK initializeApp() or key parsing:');
       console.error(`  Error Type: ${error.name}`);
       console.error(`  Error Message: ${error.message}`);
-      if (error.message.includes('ENOENT') || error.message.includes('file not found')) {
-          console.error(`  TROUBLESHOOTING: The service account key file specified by GOOGLE_APPLICATION_CREDENTIALS ("${GAC_PATH || 'Not Set'}") might be missing, not found at the specified path, or the path is incorrect.`);
-      } else if (error.message.includes('Error parsing service account credential') || error.message.includes('Invalid JSON')) {
-          console.error(`  TROUBLESHOOTING: The service account key file ("${GAC_PATH || 'Not Set'}") might be malformed, not a valid JSON key file, or corrupted.`);
-      } else if (error.message.includes('Missing project ID')) {
-          console.error(`  TROUBLESHOOTING: A project ID could not be determined. Ensure your service account key is valid or Application Default Credentials are configured with a project ID.`);
-      } else if (error.message.includes('Could not load the default credentials')) {
-          console.error(`  TROUBLESHOOTING: GOOGLE_APPLICATION_CREDENTIALS is not set or invalid, AND Application Default Credentials could not be found/loaded. This usually means you're not in a GCP environment and haven't provided a service account key path.`);
-      }
       if (error.stack) console.error(`  Stack Trace: ${error.stack}`);
-    } else {
-      console.error('  Caught a non-Error object during initializeApp():', error);
+      console.error('[firebaseAdmin] RESULT (Manual Key Parse): Firebase Admin SDK initialization FAILED. \`dbAdmin\` will be undefined.');
     }
-    console.error('[firebaseAdmin] RESULT: Firebase Admin SDK initialization FAILED. `dbAdmin` will be undefined.');
+  } else {
+    console.error('[firebaseAdmin] ERROR (Manual Key Parse): GAC_PATH not set, cannot initialize new app instance with service account.');
   }
 } else {
-  adminApp = admin.apps[0]; // Use the first existing app
+  console.log('[firebaseAdmin] INFO (Manual Key Parse): Firebase Admin app instance(s) already exist. Attempting to use default app.');
+  adminApp = admin.app(); 
   if (adminApp) {
-    console.log(`[firebaseAdmin] INFO: Firebase Admin SDK already initialized. Using existing app: "${adminApp.name}" (Project ID: "${adminApp.options.projectId || 'N/A'}")`);
+     console.log(`[firebaseAdmin] INFO (Manual Key Parse): Using existing app: "${adminApp.name}" (Project ID: "${adminApp.options.projectId || 'N/A'}")`);
+     if (adminApp.options.projectId !== PROJECT_ID) {
+        console.warn(`[firebaseAdmin] MISMATCH (Manual Key Parse): Existing app PID ("${adminApp.options.projectId}") vs configured PID ("${PROJECT_ID}")`);
+     }
   } else {
-     console.error('[firebaseAdmin] CRITICAL ERROR: admin.apps array is not empty, but the first element is undefined. This should not happen.');
+      console.error('[firebaseAdmin] ERROR (Manual Key Parse): admin.apps not empty, but admin.app() returned no default app.');
   }
 }
 
 if (adminApp) {
   try {
-    const databaseId = 'storytailordb'; // The ID of your specific Firestore database
-    console.log(`[firebaseAdmin] INFO: Attempting to get Firestore Admin instance for database ID: "${databaseId}" using app: "${adminApp.name}".`);
+    console.log(`[firebaseAdmin] INFO (Manual Key Parse): Attempting to get Firestore Admin instance for database ID: "${databaseId}" using app: "${adminApp.name}".`);
     dbAdmin = getAdminFirestore(adminApp, databaseId);
-    console.log(`[firebaseAdmin] SUCCESS: Firestore Admin SDK instance for "${databaseId}" (dbAdmin) obtained.`);
-  } catch (error) {
-    dbAdmin = undefined; 
-    console.error(`[firebaseAdmin] CRITICAL ERROR obtaining Firestore Admin instance for database ID "${'storytailordb'}":`);
-     if (error instanceof Error) {
-      console.error(`  Error Type: ${error.name}`);
-      console.error(`  Error Message: ${error.message}`);
-      if (error.message.includes('Could not load the default credentials') && !GAC_PATH) {
-         console.error(`  TROUBLESHOOTING: This often means GOOGLE_APPLICATION_CREDENTIALS is not set and Application Default Credentials could not be found or are not configured for Firestore access.`);
-      } else if (error.message.includes('PROJECT_NOT_FOUND') || (error.message.includes('7 PERMISSION_DENIED') && error.message.includes('Cloud Firestore API has not been used'))) {
-         console.error(`  TROUBLESHOOTING: The project ID ("${adminApp.options.projectId || process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'unknown'}") might be incorrect, or the Cloud Firestore API might not be enabled for this project. Visit https://console.cloud.google.com/apis/library/firestore.googleapis.com to enable it for the correct project.`);
-      } else if (error.message.includes('NOT_FOUND') && error.message.includes(`database ${'storytailordb'}`)) {
-         console.error(`  TROUBLESHOOTING: The specified Firestore database with ID "${'storytailordb'}" might not exist in project "${adminApp.options.projectId || 'unknown'}". Ensure it has been created.`);
-      }
-      if (error.stack) console.error(`  Stack Trace: ${error.stack}`);
-    } else {
-      console.error('  Caught a non-Error object during getAdminFirestore():', error);
-    }
-    console.error(`[firebaseAdmin] RESULT: Creation of dbAdmin for database "${'storytailordb'}" FAILED.`);
+    console.log(`[firebaseAdmin] SUCCESS (Manual Key Parse): Firestore Admin SDK instance for "${databaseId}" (dbAdmin) obtained.`);
+  } catch (error: any) {
+    dbAdmin = undefined;
+    console.error(`[firebaseAdmin] CRITICAL ERROR (Manual Key Parse) obtaining Firestore Admin instance for database "${databaseId}":`);
+    console.error(`  Error Type: ${error.name}`);
+    console.error(`  Error Message: ${error.message}`);
+    if (error.stack) console.error(`  Stack Trace: ${error.stack}`);
+    console.error(`[firebaseAdmin] RESULT (Manual Key Parse): Creation of dbAdmin for database "${databaseId}" FAILED.`);
   }
 } else {
-  console.error('[firebaseAdmin] RESULT: Firebase Admin App not available. Firestore Admin instance (dbAdmin) cannot be created.');
-  dbAdmin = undefined;
+  console.error('[firebaseAdmin] RESULT (Manual Key Parse): Firebase Admin App not available. Firestore Admin instance (dbAdmin) cannot be created.');
 }
 
-// Final diagnostic log
 console.log('---------------------------------------------------------------------');
 if (dbAdmin) {
-  console.log('[firebaseAdmin] FINAL STATUS: `dbAdmin` IS DEFINED. Server-side Firestore operations should be possible.');
+  console.log('[firebaseAdmin] FINAL STATUS (Manual Key Parse): \`dbAdmin\` IS DEFINED. Server-side Firestore operations should be possible.');
 } else {
-  console.error('[firebaseAdmin] FINAL STATUS: `dbAdmin` IS UNDEFINED. Server-side Firestore operations WILL FAIL with "Database connection not available". Review logs above for initialization errors.');
+  console.error('[firebaseAdmin] FINAL STATUS (Manual Key Parse): \`dbAdmin\` IS UNDEFINED. Server-side Firestore operations WILL FAIL.');
 }
 console.log('---------------------------------------------------------------------');
 
