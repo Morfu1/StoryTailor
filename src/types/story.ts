@@ -12,6 +12,13 @@ export interface GeneratedImage {
   dataAiHint?: string; // For placeholder image keyword search
 }
 
+export interface ElevenLabsVoice {
+  voice_id: string;
+  name: string;
+  category?: string;
+  // Add other fields from ElevenLabs API if needed, e.g., preview_url
+}
+
 export interface Story {
   id?: string; // Firestore document ID
   userId: string;
@@ -21,6 +28,7 @@ export interface Story {
   detailsPrompts?: StoryCharacterLocationItemPrompts;
   narrationAudioUrl?: string; // Data URI or URL
   narrationAudioDurationSeconds?: number;
+  elevenLabsVoiceId?: string; // To store the selected ElevenLabs voice ID
   imagePrompts?: string[];
   generatedImages?: GeneratedImage[];
   // videoUrl?: string; // For future video assembly

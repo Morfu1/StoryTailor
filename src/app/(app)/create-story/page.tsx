@@ -1,7 +1,7 @@
 
 "use client";
 
-import type { Story, GeneratedImage, StoryCharacterLocationItemPrompts } from '@/types/story';
+import type { Story, GeneratedImage, StoryCharacterLocationItemPrompts, ElevenLabsVoice } from '@/types/story';
 import { useAuth } from '@/components/auth-provider';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -23,8 +23,15 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { generateTitle, generateScript, generateCharacterPrompts, generateNarrationAudio, generateImagePrompts, saveStory, getStory, generateImageFromPrompt } from '@/actions/storyActions';
-import { Bot, Clapperboard, ImageIcon, Loader2, Mic, Save, Sparkles, FileText, Image as LucideImage, AlertCircle, CheckCircle, Info, Pencil } from 'lucide-react';
+import { Bot, Clapperboard, ImageIcon, Loader2, Mic, Save, Sparkles, FileText, Image as LucideImage, AlertCircle, CheckCircle, Info, Pencil, ListMusic } from 'lucide-react';
 import Image from 'next/image';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState, useCallback } from 'react';
@@ -37,6 +44,7 @@ const initialStoryState: Story = {
   detailsPrompts: undefined,
   narrationAudioUrl: undefined,
   narrationAudioDurationSeconds: undefined,
+  elevenLabsVoiceId: undefined,
   imagePrompts: [],
   generatedImages: [],
 };
@@ -51,9 +59,11 @@ export default function CreateStoryPage() {
   const [storyData, setStoryData] = useState<Story>(initialStoryState);
   const [isLoading, setIsLoading] = useState<Record<string, boolean>>({});
   const [currentStep, setCurrentStep] = useState(1);
-  const [pageLoading, setPageLoading] = useState(true); // Renamed from `isLoading.page` for clarity
+  const [pageLoading, setPageLoading] = useState(true);
   const [imagesPerMinute, setImagesPerMinute] = useState(5);
   const [isSaveConfirmOpen, setIsSaveConfirmOpen] = useState(false);
+  const [elevenLabsVoices, setElevenLabsVoices] = useState<ElevenLabsVoice[]>([]);
+  const [selectedVoiceId, setSelectedVoiceId] = useState<string | undefined>(undefined);
 
 
   const updateStoryData = (updates: Partial<Story>) => {
@@ -76,12 +86,11 @@ export default function CreateStoryPage() {
     }
 
     if (storyId && user) {
-      setPageLoading(true); // Use dedicated state for page loading
+      setPageLoading(true); 
       getStory(storyId, user.uid)
         .then(response => {
           if (response.success && response.data) {
             const loadedStory = response.data;
-            // Ensure dates are Date objects if they come from Firestore as Timestamps
              if (loadedStory.createdAt && !(loadedStory.createdAt instanceof Date)) {
                 loadedStory.createdAt = (loadedStory.createdAt as any).toDate();
             }
@@ -89,8 +98,10 @@ export default function CreateStoryPage() {
                 loadedStory.updatedAt = (loadedStory.updatedAt as any).toDate();
             }
             setStoryData(loadedStory);
+            if (loadedStory.elevenLabsVoiceId) {
+              setSelectedVoiceId(loadedStory.elevenLabsVoiceId);
+            }
             
-            // Determine current step based on loaded data
             if (loadedStory.generatedImages && loadedStory.generatedImages.length > 0 && loadedStory.imagePrompts && loadedStory.generatedImages.length === loadedStory.imagePrompts.length) setCurrentStep(6);
             else if (loadedStory.imagePrompts && loadedStory.imagePrompts.length > 0) setCurrentStep(5);
             else if (loadedStory.narrationAudioUrl) setCurrentStep(4);
@@ -99,16 +110,14 @@ export default function CreateStoryPage() {
             else setCurrentStep(1);
           } else {
             toast({ title: 'Error Loading Story', description: response.error || 'Failed to load story. Creating a new one.', variant: 'destructive' });
-            // Don't redirect, allow user to create new story if load fails or storyId is invalid
-            // router.push('/dashboard'); 
-             setStoryData({...initialStoryState, userId: user.uid}); // Reset to initial for new story
+             setStoryData({...initialStoryState, userId: user.uid}); 
              setCurrentStep(1);
           }
         })
-        .finally(() => setPageLoading(false)); // Use dedicated state
+        .finally(() => setPageLoading(false)); 
     } else {
-       setPageLoading(false); // Use dedicated state
-       if(user?.uid) { // Ensure userId is set for a completely new story
+       setPageLoading(false); 
+       if(user?.uid) { 
         setStoryData(prev => ({...prev, userId: user.uid}));
        }
     }
@@ -170,16 +179,33 @@ export default function CreateStoryPage() {
   const handleGenerateNarration = async () => {
     if (!storyData.generatedScript) return;
     handleSetLoading('narration', true);
-    const result = await generateNarrationAudio({ script: storyData.generatedScript });
+
+    // If voices are not loaded, fetch them. Otherwise, generate audio with selected voice.
+    const input = selectedVoiceId
+      ? { script: storyData.generatedScript, voiceId: selectedVoiceId }
+      : { script: storyData.generatedScript };
+
+    const result = await generateNarrationAudio(input);
+
     if (result.success && result.data) {
-      updateStoryData({ narrationAudioUrl: result.data.audioDataUri, narrationAudioDurationSeconds: result.data.duration });
-      setCurrentStep(4);
-      toast({ title: 'Narration Generated!', description: 'Audio narration is ready.', className: 'bg-primary text-primary-foreground' });
+      if (result.data.voices) {
+        setElevenLabsVoices(result.data.voices);
+        toast({ title: 'Voices Loaded', description: 'Please select a voice to generate narration.', className: 'bg-primary text-primary-foreground' });
+      } else if (result.data.audioDataUri) {
+        updateStoryData({ 
+          narrationAudioUrl: result.data.audioDataUri, 
+          narrationAudioDurationSeconds: result.data.duration,
+          elevenLabsVoiceId: selectedVoiceId // Save the voiceId used for generation
+        });
+        setCurrentStep(4);
+        toast({ title: 'Narration Generated!', description: 'Audio narration is ready.', className: 'bg-primary text-primary-foreground' });
+      }
     } else {
-      toast({ title: 'Error', description: result.error || 'Failed to generate narration.', variant: 'destructive' });
+      toast({ title: 'Narration Error', description: result.error || 'Failed to process narration.', variant: 'destructive' });
     }
     handleSetLoading('narration', false);
   };
+
 
   const handleGenerateImagePrompts = async () => {
     if (!storyData.generatedScript || !storyData.detailsPrompts || !storyData.narrationAudioDurationSeconds) return;
@@ -207,27 +233,23 @@ export default function CreateStoryPage() {
     const result = await generateImageFromPrompt(prompt);
     if (result.success && result.imageUrl) {
       const newImage: GeneratedImage = { prompt, imageUrl: result.imageUrl, dataAiHint: result.dataAiHint };
-      // Ensure generatedImages is always an array
       const currentGeneratedImages = Array.isArray(storyData.generatedImages) ? storyData.generatedImages : [];
       
-      // Find if an image for this prompt (or at this index) already exists
       let updatedImages = [...currentGeneratedImages];
       const existingImageIndexForPrompt = updatedImages.findIndex(img => img.prompt === prompt);
       
       if (existingImageIndexForPrompt > -1) {
         updatedImages[existingImageIndexForPrompt] = newImage;
       } else {
-         // If we need to maintain order based on prompt index strictly:
-         // Create a new array with the correct length if needed, then insert
          const newImagesArray = Array(storyData.imagePrompts?.length || 0).fill(null);
-         currentGeneratedImages.forEach((img, i) => {
+         currentGeneratedImages.forEach((img) => {
             const originalPromptIndex = storyData.imagePrompts?.indexOf(img.prompt);
             if(originalPromptIndex !== undefined && originalPromptIndex > -1) {
                 newImagesArray[originalPromptIndex] = img;
             }
          });
          newImagesArray[index] = newImage;
-         updatedImages = newImagesArray.filter(Boolean); // Remove any nulls if prompts changed
+         updatedImages = newImagesArray.filter(Boolean); 
       }
 
       updateStoryData({ generatedImages: updatedImages });
@@ -236,7 +258,7 @@ export default function CreateStoryPage() {
       toast({ title: 'Image Generation Error', description: result.error || `Failed to generate image ${index + 1}.`, variant: 'destructive' });
     }
     handleSetLoading(`image-${index}`, false);
-     if (storyData.imagePrompts && storyData.generatedImages?.length === storyData.imagePrompts?.length) {
+     if (storyData.imagePrompts && storyData.generatedImages?.length === storyData.imagePrompts?.length && storyData.generatedImages.every(img => img !== null)) {
       setCurrentStep(6);
     }
   };
@@ -259,7 +281,7 @@ export default function CreateStoryPage() {
           return { prompt, imageUrl: result.imageUrl, dataAiHint: result.dataAiHint, success: true, index };
         }
         toast({ title: 'Image Generation Error', description: result.error || `Failed for prompt: "${prompt.substring(0,30)}..."`, variant: 'destructive' });
-        return { prompt, success: false, index };
+        return { prompt, success: false, index, error: result.error };
       })
     );
 
@@ -268,12 +290,9 @@ export default function CreateStoryPage() {
     if (successfulNewImages.length > 0) {
       setStoryData(prev => {
         const existingImages = Array.isArray(prev.generatedImages) ? prev.generatedImages : [];
-        // Combine existing with new successful ones
         const combined = [...existingImages, ...successfulNewImages];
-        // Remove duplicates by prompt, keeping the latest
         const uniqueImagesByPrompt = Array.from(new Map(combined.map(img => [img.prompt, img])).values());
         
-        // Attempt to order generatedImages based on the order of imagePrompts
         const orderedImages = prev.imagePrompts?.map(p => uniqueImagesByPrompt.find(img => img.prompt === p)).filter(Boolean) as GeneratedImage[] || uniqueImagesByPrompt;
         return { ...prev, generatedImages: orderedImages };
       });
@@ -283,13 +302,13 @@ export default function CreateStoryPage() {
       toast({ title: 'All Remaining Images Generated!', description: 'All visuals are ready for your story.', className: 'bg-primary text-primary-foreground' });
     } else if (successfulNewImages.length > 0) {
       toast({ title: 'Image Generation Partially Completed', description: 'Some images were generated. Check individual prompts for failures.', variant: 'default' });
-    } else if (imagesToGenerate.length > 0) { // Only show fail if there was something to generate
-       toast({ title: 'Image Generation Failed', description: 'Could not generate any new images.', variant: 'destructive' });
+    } else if (imagesToGenerate.length > 0) { 
+       toast({ title: 'Image Generation Failed', description: `Could not generate new images. Errors: ${results.filter(r=>!r.success).map(r => r.error).join(', ')}`, variant: 'destructive' });
     }
 
 
     handleSetLoading('allImages', false);
-    if (storyData.imagePrompts && storyData.generatedImages?.length === storyData.imagePrompts?.length) {
+    if (storyData.imagePrompts && storyData.generatedImages?.length === storyData.imagePrompts?.length && storyData.generatedImages.every(img => img !== null)) {
       setCurrentStep(6);
     }
   };
@@ -307,12 +326,17 @@ export default function CreateStoryPage() {
       return;
     }
     handleSetLoading('save', true);
-    // Pass the full storyData and the confirmed user.uid separately
-    const result = await saveStory(storyData, user.uid); 
+    
+    const storyToSave = { ...storyData };
+    if (selectedVoiceId && !storyToSave.elevenLabsVoiceId) {
+        storyToSave.elevenLabsVoiceId = selectedVoiceId;
+    }
+
+    const result = await saveStory(storyToSave, user.uid); 
     if (result.success && result.storyId) {
-      updateStoryData({ id: result.storyId }); // Update local state with the new/confirmed ID
+      updateStoryData({ id: result.storyId, elevenLabsVoiceId: storyToSave.elevenLabsVoiceId }); 
       toast({ title: 'Story Saved!', description: 'Your masterpiece is safely stored.', className: 'bg-primary text-primary-foreground' });
-      if (!storyId) { // If it was a new story, update URL to prevent creating duplicates on next save
+      if (!storyId) { 
           router.replace(`/create-story?storyId=${result.storyId}`, { scroll: false });
       }
     } else {
@@ -337,8 +361,16 @@ export default function CreateStoryPage() {
     return <div className="text-center p-8"><p>Redirecting to login...</p></div>
   }
 
-  const allImagesGenerated = storyData.imagePrompts && storyData.imagePrompts.length > 0 && storyData.generatedImages && storyData.generatedImages.length === storyData.imagePrompts.length;
+  const allImagesGenerated = storyData.imagePrompts && storyData.imagePrompts.length > 0 && storyData.generatedImages && storyData.generatedImages.length === storyData.imagePrompts.length && storyData.generatedImages.every(img => img !== null);
   const isSaveButtonDisabled = !storyData.title?.trim() || isLoading.save || !user?.uid;
+
+  const narrationButtonText = () => {
+    if (isLoading.narration) return "Processing...";
+    if (storyData.narrationAudioUrl) return "Re-generate Narration";
+    if (elevenLabsVoices.length > 0) return "Generate Narration with Selected Voice";
+    return "Load Voices & Generate Narration";
+  };
+  const isNarrationButtonDisabled = isLoading.narration || !storyData.generatedScript || (elevenLabsVoices.length > 0 && !storyData.narrationAudioUrl && !selectedVoiceId);
 
 
   return (
@@ -375,7 +407,7 @@ export default function CreateStoryPage() {
             <p className="text-xs text-muted-foreground mt-1">Step {currentStep} of 6</p>
           </div>
 
-          <Accordion type="single" collapsible defaultValue="step-1" value={`step-${currentStep}`} className="w-full" onValueChange={(value) => setCurrentStep(parseInt(value.split('-')[1]))}>
+          <Accordion type="single" collapsible defaultValue="step-1" value={`step-${currentStep}`} className="w-full" onValueChange={(value) => { if(value) setCurrentStep(parseInt(value.split('-')[1]))}}>
             {/* Step 1: User Prompt */}
             <AccordionItem value="step-1">
               <AccordionTrigger className="text-xl font-semibold hover:no-underline data-[state=open]:text-primary">
@@ -395,7 +427,6 @@ export default function CreateStoryPage() {
                     className="text-base mt-1"
                   />
                 </div>
-                {/* Display generated script here if available, even in step 1 for review */}
                 {storyData.generatedScript && (
                   <div className="mt-4">
                     <Label htmlFor="generatedScriptDisplayStep1" className="block text-md font-medium">Generated Story Script (Review)</Label>
@@ -473,11 +504,36 @@ export default function CreateStoryPage() {
                             </AccordionContent>
                         </AccordionItem>
                     </Accordion>
+                    
+                    {elevenLabsVoices.length > 0 && !storyData.narrationAudioUrl && (
+                      <div className="mt-4">
+                        <Label htmlFor="elevenLabsVoice" className="block text-md font-medium">Select Voice</Label>
+                        <Select value={selectedVoiceId} onValueChange={setSelectedVoiceId}>
+                          <SelectTrigger className="w-full mt-1">
+                            <SelectValue placeholder="Choose a voice..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {elevenLabsVoices.map(voice => (
+                              <SelectItem key={voice.voice_id} value={voice.voice_id}>
+                                {voice.name} ({voice.category || 'Standard'})
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
 
-                     <Button onClick={handleGenerateNarration} disabled={isLoading.narration || !storyData.generatedScript} className="mt-4 bg-accent hover:bg-accent/90 text-accent-foreground">
-                      {isLoading.narration ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Mic className="mr-2 h-4 w-4" />}
-                      Generate Narration Audio
+                     <Button onClick={handleGenerateNarration} disabled={isNarrationButtonDisabled} className="mt-4 bg-accent hover:bg-accent/90 text-accent-foreground">
+                        {isLoading.narration ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : (storyData.narrationAudioUrl ? <Mic className="mr-2 h-4 w-4" /> : <ListMusic className="mr-2 h-4 w-4" />)}
+                        {narrationButtonText()}
                     </Button>
+                    {storyData.narrationAudioUrl && (
+                        <div className="mt-4">
+                            <Label className="block text-md font-medium">Generated Narration Audio</Label>
+                             <audio controls src={storyData.narrationAudioUrl} className="w-full mt-1">Your browser does not support the audio element.</audio>
+                             <p className="text-sm text-muted-foreground mt-1">Duration: {storyData.narrationAudioDurationSeconds?.toFixed(2) || 'N/A'} seconds</p>
+                        </div>
+                    )}
                   </div>
                 ) : (
                   <p className="text-muted-foreground">Please generate character, item, or location details in Step 2 first.</p>
@@ -495,7 +551,7 @@ export default function CreateStoryPage() {
               <AccordionContent className="pt-4 space-y-4">
                 {storyData.narrationAudioUrl ? (
                   <div>
-                    <Label className="block text-md font-medium">Narration Audio</Label>
+                    <Label className="block text-md font-medium">Narration Audio (Review)</Label>
                     <audio controls src={storyData.narrationAudioUrl} className="w-full mt-1">Your browser does not support the audio element.</audio>
                     <p className="text-sm text-muted-foreground mt-1">Duration: {storyData.narrationAudioDurationSeconds?.toFixed(2) || 'N/A'} seconds</p>
 
@@ -592,6 +648,7 @@ export default function CreateStoryPage() {
                     <p className="text-muted-foreground">Review your generated images below. Video assembly is coming soon!</p>
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 mt-4">
                       {storyData.generatedImages?.map((img, index) => (
+                        img && // Ensure img is not null before rendering
                         <div key={index} className="border rounded-md overflow-hidden aspect-square relative group shadow-md">
                           <Image src={img.imageUrl} alt={`Scene ${index + 1}`} layout="fill" objectFit="cover" data-ai-hint={img.dataAiHint || "animation frame"}/>
                           <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
