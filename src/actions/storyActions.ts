@@ -14,6 +14,7 @@ import { generateTitle as aiGenerateTitle } from '@/ai/flows/generate-title';
 import { firebaseAdmin, dbAdmin } from '@/lib/firebaseAdmin';
 import type { Story, ElevenLabsVoice } from '@/types/story';
 import type { Timestamp as AdminTimestamp } from 'firebase-admin/firestore';
+import { getStorage as getAdminStorage } from 'firebase-admin/storage';
 import { revalidatePath } from 'next/cache';
 
 // Log dbAdmin status when this module is loaded (server-side)
@@ -207,6 +208,44 @@ export async function generateImageFromPrompt(prompt: string): Promise<{ success
 }
 
 
+async function uploadAudioToFirebaseStorage(audioDataUri: string, userId: string, storyId: string): Promise<string> {
+  if (!firebaseAdmin.apps.length) {
+    throw new Error("Firebase Admin SDK not initialized for storage operations.");
+  }
+  const storage = getAdminStorage(firebaseAdmin.app());
+  const bucket = storage.bucket(process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET); // Ensure this env var is set
+
+  if (!audioDataUri.startsWith('data:audio/mpeg;base64,')) {
+    throw new Error('Invalid audio data URI format.');
+  }
+
+  const base64Data = audioDataUri.substring('data:audio/mpeg;base64,'.length);
+  const audioBuffer = Buffer.from(base64Data, 'base64');
+  
+  const filePath = `users/${userId}/stories/${storyId}/narration.mp3`;
+  const file = bucket.file(filePath);
+
+  await file.save(audioBuffer, {
+    metadata: {
+      contentType: 'audio/mpeg',
+    },
+  });
+
+  // Make the file public (or use signed URLs for more control)
+  // await file.makePublic();
+  // const publicUrl = file.publicUrl();
+
+  // Using getSignedUrl for better security, valid for 1 hour by default
+  const [signedUrl] = await file.getSignedUrl({
+    action: 'read',
+    expires: Date.now() + 1000 * 60 * 60 * 24 * 7 // 7 days expiry for simplicity
+  });
+
+  console.log(`[uploadAudioToFirebaseStorage] Audio uploaded to ${filePath}, URL: ${signedUrl}`);
+  return signedUrl;
+}
+
+
 export async function saveStory(storyData: Story, userId: string): Promise<{ success: boolean; storyId?: string; error?: string }> {
   console.log('---------------------------------------------------------------------');
   console.log("[saveStory Action] Initiated. User ID:", userId, "Story ID (if exists):", storyData.id);
@@ -223,8 +262,28 @@ export async function saveStory(storyData: Story, userId: string): Promise<{ suc
     return { success: false, error: "User not authenticated or user ID is invalid." };
   }
 
+  const storyIdForPath = storyData.id || dbAdmin.collection("stories").doc().id; // Generate a new ID if one doesn't exist for storage path
+
+  let processedStoryData = { ...storyData };
+
+  // Handle audio upload if narrationAudioUrl is a data URI
+  if (processedStoryData.narrationAudioUrl && processedStoryData.narrationAudioUrl.startsWith('data:audio/mpeg;base64,')) {
+    try {
+      console.log("[saveStory Action] narrationAudioUrl is a data URI. Attempting upload to Firebase Storage.");
+      const storageUrl = await uploadAudioToFirebaseStorage(processedStoryData.narrationAudioUrl, userId, storyIdForPath);
+      processedStoryData.narrationAudioUrl = storageUrl;
+      console.log("[saveStory Action] Audio successfully uploaded. narrationAudioUrl updated to Firebase Storage URL:", storageUrl);
+    } catch (uploadError) {
+      console.error("[saveStory Action] Error uploading narration audio to Firebase Storage:", uploadError);
+      return { success: false, error: `Failed to upload narration audio: ${uploadError instanceof Error ? uploadError.message : String(uploadError)}` };
+    }
+  } else {
+    console.log("[saveStory Action] narrationAudioUrl is not a new data URI or is undefined. Skipping Firebase Storage upload for audio.");
+  }
+
+
   const dataToSave: any = {
-    ...storyData,
+    ...processedStoryData,
     userId: userId, 
     updatedAt: firebaseAdmin.firestore.FieldValue.serverTimestamp(),
   };
@@ -266,7 +325,7 @@ export async function saveStory(storyData: Story, userId: string): Promise<{ suc
 
 
   try {
-    if (storyData.id) {
+    if (storyData.id) { // storyData.id refers to the original ID before any potential new ID generation for pathing
       console.log(`[saveStory Action] Attempting to UPDATE document 'stories/${storyData.id}'`);
       const storyRef = dbAdmin.collection("stories").doc(storyData.id);
       
@@ -292,11 +351,13 @@ export async function saveStory(storyData: Story, userId: string): Promise<{ suc
       return { success: true, storyId: storyData.id };
     } else {
       dataToSave.createdAt = firebaseAdmin.firestore.FieldValue.serverTimestamp(); 
-      console.log("[saveStory Action] Attempting to ADD new document to 'stories' collection");
-      const docRef = await dbAdmin.collection("stories").add(dataToSave);
-      console.log(`[saveStory Action] SUCCESS: Document added to 'stories' with ID: ${docRef.id}`);
+      console.log("[saveStory Action] Attempting to ADD new document to 'stories' collection with ID:", storyIdForPath);
+      // Use set with the generated storyIdForPath to ensure consistency if audio was uploaded
+      const storyRef = dbAdmin.collection("stories").doc(storyIdForPath);
+      await storyRef.set(dataToSave);
+      console.log(`[saveStory Action] SUCCESS: Document added to 'stories' with ID: ${storyIdForPath}`);
       revalidatePath('/dashboard');
-      return { success: true, storyId: docRef.id };
+      return { success: true, storyId: storyIdForPath };
     }
   } catch (error) {
     console.error("[saveStory Action] Error during Firestore operation:", error);

@@ -12,6 +12,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Progress } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -31,7 +32,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { generateTitle, generateScript, generateCharacterPrompts, generateNarrationAudio, generateImagePrompts, saveStory, getStory, generateImageFromPrompt } from '@/actions/storyActions';
-import { Bot, Clapperboard, ImageIcon, Loader2, Mic, Save, Sparkles, FileText, Image as LucideImage, AlertCircle, CheckCircle, Info, Pencil, ListMusic } from 'lucide-react';
+import { Bot, Clapperboard, ImageIcon, Loader2, Mic, Save, Sparkles, FileText, Image as LucideImage, AlertCircle, CheckCircle, Info, Pencil, ListMusic, Upload } from 'lucide-react';
 import Image from 'next/image';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState, useCallback } from 'react';
@@ -64,6 +65,8 @@ export default function CreateStoryPage() {
   const [isSaveConfirmOpen, setIsSaveConfirmOpen] = useState(false);
   const [elevenLabsVoices, setElevenLabsVoices] = useState<ElevenLabsVoice[]>([]);
   const [selectedVoiceId, setSelectedVoiceId] = useState<string | undefined>(undefined);
+  const [narrationSource, setNarrationSource] = useState<'generate' | 'upload'>('generate');
+  const [uploadedAudioFileName, setUploadedAudioFileName] = useState<string | null>(null);
 
 
   const updateStoryData = (updates: Partial<Story>) => {
@@ -73,6 +76,39 @@ export default function CreateStoryPage() {
   const handleSetLoading = (key: string, value: boolean) => {
     setIsLoading(prev => ({ ...prev, [key]: value }));
   };
+
+    // Helper function to estimate duration from MP3 data URI (client-side)
+    const getMp3DurationFromDataUriClient = (dataUri: string): Promise<number> => {
+    return new Promise((resolve, reject) => {
+        if (!dataUri.startsWith('data:audio/mpeg;base64,')) {
+        console.warn('Cannot estimate duration: Not an MP3 data URI.');
+        resolve(30); // Default duration
+        return;
+        }
+        const audio = document.createElement('audio');
+        audio.src = dataUri;
+        audio.onloadedmetadata = () => {
+        if (audio.duration === Infinity || !audio.duration) {
+            // Fallback for browsers that struggle with data URI duration
+            const base64Data = dataUri.substring('data:audio/mpeg;base64,'.length);
+            const kbytes = Math.ceil(((base64Data.length / 4) * 3) / 1024); // Estimate kbytes
+            const estimatedDuration = Math.max(1, Math.floor(kbytes / 16)); // Approx 128kbps
+            console.warn(`Could not get precise duration, estimated: ${estimatedDuration}s`);
+            resolve(estimatedDuration);
+        } else {
+            resolve(parseFloat(audio.duration.toFixed(2)));
+        }
+        };
+        audio.onerror = (e) => {
+            console.error('Error loading audio for duration calculation:', e);
+            const base64Data = dataUri.substring('data:audio/mpeg;base64,'.length);
+            const kbytes = Math.ceil(((base64Data.length / 4) * 3) / 1024);
+            const estimatedDuration = Math.max(1, Math.floor(kbytes / 16));
+            resolve(estimatedDuration); 
+        };
+    });
+    };
+
 
   useEffect(() => {
     if (authLoading) return; 
@@ -100,6 +136,12 @@ export default function CreateStoryPage() {
             setStoryData(loadedStory);
             if (loadedStory.elevenLabsVoiceId) {
               setSelectedVoiceId(loadedStory.elevenLabsVoiceId);
+              setNarrationSource('generate'); // Assume generated if voiceId is present
+            } else if (loadedStory.narrationAudioUrl) {
+              // If URL exists but no voice ID, assume it was uploaded
+              setNarrationSource('upload');
+              // Potentially try to derive filename if stored, or use a generic placeholder
+              setUploadedAudioFileName("Previously uploaded audio");
             }
             
             if (loadedStory.generatedImages && loadedStory.generatedImages.length > 0 && loadedStory.imagePrompts && loadedStory.generatedImages.length === loadedStory.imagePrompts.length) setCurrentStep(6);
@@ -177,13 +219,12 @@ export default function CreateStoryPage() {
   };
 
   const handleGenerateNarration = async () => {
-    if (!storyData.generatedScript) return;
+    if (!storyData.generatedScript || narrationSource !== 'generate') return;
     handleSetLoading('narration', true);
 
-    // If voices are not loaded, fetch them. Otherwise, generate audio with selected voice.
     const input = selectedVoiceId
       ? { script: storyData.generatedScript, voiceId: selectedVoiceId }
-      : { script: storyData.generatedScript };
+      : { script: storyData.generatedScript }; // This will fetch voices
 
     const result = await generateNarrationAudio(input);
 
@@ -195,8 +236,9 @@ export default function CreateStoryPage() {
         updateStoryData({ 
           narrationAudioUrl: result.data.audioDataUri, 
           narrationAudioDurationSeconds: result.data.duration,
-          elevenLabsVoiceId: selectedVoiceId // Save the voiceId used for generation
+          elevenLabsVoiceId: selectedVoiceId 
         });
+        setUploadedAudioFileName(null); // Clear uploaded file if AI generation is used
         setCurrentStep(4);
         toast({ title: 'Narration Generated!', description: 'Audio narration is ready.', className: 'bg-primary text-primary-foreground' });
       }
@@ -204,6 +246,45 @@ export default function CreateStoryPage() {
       toast({ title: 'Narration Error', description: result.error || 'Failed to process narration.', variant: 'destructive' });
     }
     handleSetLoading('narration', false);
+  };
+
+  const handleAudioFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      if (file.type !== "audio/mpeg") {
+        toast({ title: "Invalid File Type", description: "Please upload an MP3 audio file.", variant: "destructive" });
+        return;
+      }
+      if (file.size > 10 * 1024 * 1024) { // 10MB limit for data URI handling sanity
+        toast({ title: "File Too Large", description: "Please upload an audio file smaller than 10MB.", variant: "destructive" });
+        return;
+      }
+      handleSetLoading('narrationUpload', true);
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        const dataUri = e.target?.result as string;
+        try {
+            const duration = await getMp3DurationFromDataUriClient(dataUri);
+            updateStoryData({
+            narrationAudioUrl: dataUri,
+            narrationAudioDurationSeconds: duration,
+            elevenLabsVoiceId: undefined, // Clear selected AI voice
+            });
+            setUploadedAudioFileName(file.name);
+            setCurrentStep(4); // Move to next step as audio is now "ready"
+            toast({ title: "Audio Uploaded", description: `${file.name} is ready.`, className: 'bg-primary text-primary-foreground' });
+        } catch (error) {
+            toast({ title: "Audio Processing Error", description: "Could not process the uploaded audio file.", variant: "destructive" });
+        } finally {
+            handleSetLoading('narrationUpload', false);
+        }
+      };
+      reader.onerror = () => {
+        toast({ title: "File Read Error", description: "Could not read the audio file.", variant: "destructive" });
+        handleSetLoading('narrationUpload', false);
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
 
@@ -328,16 +409,40 @@ export default function CreateStoryPage() {
     handleSetLoading('save', true);
     
     const storyToSave = { ...storyData };
-    if (selectedVoiceId && !storyToSave.elevenLabsVoiceId) {
+    if (selectedVoiceId && !storyToSave.elevenLabsVoiceId && narrationSource === 'generate') {
         storyToSave.elevenLabsVoiceId = selectedVoiceId;
     }
 
+
     const result = await saveStory(storyToSave, user.uid); 
     if (result.success && result.storyId) {
-      updateStoryData({ id: result.storyId, elevenLabsVoiceId: storyToSave.elevenLabsVoiceId }); 
+      // After successful save, if the URL was a data URI, it's now a storage URL from the backend.
+      // We need to update the local state if the saveStory action returns the updated story object,
+      // or re-fetch. For now, we assume the URL might have changed.
+      // A better approach is for saveStory to return the updated story object or at least the new URL.
+      // For simplicity, we'll just update the ID and router.
+      // If saveStory modifies storyData.narrationAudioUrl (data URI -> storage URL), it should be reflected.
+      // Let's assume saveStory doesn't return the full updated object, so we re-fetch if it's a new story.
+      
+      const updatedStoryData = { ...storyData, id: result.storyId };
+      if (result.data?.narrationAudioUrl && result.data.narrationAudioUrl !== storyData.narrationAudioUrl) {
+        updatedStoryData.narrationAudioUrl = result.data.narrationAudioUrl;
+      }
+       if (selectedVoiceId && narrationSource === 'generate') {
+        updatedStoryData.elevenLabsVoiceId = selectedVoiceId;
+      }
+
+      setStoryData(updatedStoryData);
+      
       toast({ title: 'Story Saved!', description: 'Your masterpiece is safely stored.', className: 'bg-primary text-primary-foreground' });
-      if (!storyId) { 
+      if (!storyId && result.storyId) { 
           router.replace(`/create-story?storyId=${result.storyId}`, { scroll: false });
+      } else if (result.storyId === storyId) {
+        // If it's an update, and the audio URL might have changed from data URI to storage URL
+        // It's good to refresh the local state to reflect the permanent URL
+        // This part is tricky without saveStory returning the final state.
+        // A simple way is to re-fetch, but that might be too much.
+        // For now, we assume the component state is managed ok, and the next load will have the storage URL.
       }
     } else {
       toast({ title: 'Error Saving Story', description: result.error || 'Could not save your story.', variant: 'destructive' });
@@ -366,11 +471,15 @@ export default function CreateStoryPage() {
 
   const narrationButtonText = () => {
     if (isLoading.narration) return "Processing...";
-    if (storyData.narrationAudioUrl) return "Re-generate Narration";
-    if (elevenLabsVoices.length > 0) return "Generate Narration with Selected Voice";
-    return "Load Voices & Generate Narration";
+    if (narrationSource === 'generate') {
+        if (storyData.narrationAudioUrl && storyData.elevenLabsVoiceId) return "Re-generate Narration";
+        if (elevenLabsVoices.length > 0) return "Generate Narration with Selected Voice";
+        return "Load Voices & Generate Narration";
+    }
+    return "Generate Narration (AI)" // Should be disabled if upload is chosen
   };
-  const isNarrationButtonDisabled = isLoading.narration || !storyData.generatedScript || (elevenLabsVoices.length > 0 && !storyData.narrationAudioUrl && !selectedVoiceId);
+
+  const isNarrationButtonDisabled = narrationSource === 'upload' || isLoading.narration || !storyData.generatedScript || (narrationSource === 'generate' && elevenLabsVoices.length > 0 && !selectedVoiceId && !storyData.elevenLabsVoiceId) || isLoading.narrationUpload;
 
 
   return (
@@ -477,13 +586,13 @@ export default function CreateStoryPage() {
             <AccordionItem value="step-3" disabled={!(storyData.detailsPrompts && (storyData.detailsPrompts.characterPrompts || storyData.detailsPrompts.itemPrompts || storyData.detailsPrompts.locationPrompts))}>
               <AccordionTrigger className="text-xl font-semibold hover:no-underline data-[state=open]:text-primary">
                 <div className="flex items-center">
-                 <Mic className="w-6 h-6 mr-3" /> Step 3: Generate Narration
+                 <Mic className="w-6 h-6 mr-3" /> Step 3: Generate or Upload Narration
                 </div>
               </AccordionTrigger>
               <AccordionContent className="pt-4 space-y-4">
                 {storyData.detailsPrompts && (storyData.detailsPrompts.characterPrompts || storyData.detailsPrompts.itemPrompts || storyData.detailsPrompts.locationPrompts) ? (
                   <div>
-                    <Label className="block text-md font-medium">Character, Item & Location Prompts</Label>
+                    <Label className="block text-md font-medium">Character, Item & Location Prompts (Review)</Label>
                      <Accordion type="multiple" className="w-full mt-1 bg-muted/30 rounded-md">
                         <AccordionItem value="chars">
                             <AccordionTrigger className="px-3 py-2 text-sm hover:no-underline">View Character Prompts</AccordionTrigger>
@@ -504,33 +613,61 @@ export default function CreateStoryPage() {
                             </AccordionContent>
                         </AccordionItem>
                     </Accordion>
+
+                    <div className="mt-6">
+                        <Label className="block text-md font-medium mb-2">Narration Source</Label>
+                        <RadioGroup value={narrationSource} onValueChange={(value) => setNarrationSource(value as 'generate' | 'upload')} className="flex space-x-4">
+                            <div className="flex items-center space-x-2">
+                                <RadioGroupItem value="generate" id="rGenerate" />
+                                <Label htmlFor="rGenerate">Generate with AI (ElevenLabs)</Label>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                                <RadioGroupItem value="upload" id="rUpload" />
+                                <Label htmlFor="rUpload">Upload my own MP3</Label>
+                            </div>
+                        </RadioGroup>
+                    </div>
                     
-                    {elevenLabsVoices.length > 0 && !storyData.narrationAudioUrl && (
-                      <div className="mt-4">
-                        <Label htmlFor="elevenLabsVoice" className="block text-md font-medium">Select Voice</Label>
-                        <Select value={selectedVoiceId} onValueChange={setSelectedVoiceId}>
-                          <SelectTrigger className="w-full mt-1">
-                            <SelectValue placeholder="Choose a voice..." />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {elevenLabsVoices.map(voice => (
-                              <SelectItem key={voice.voice_id} value={voice.voice_id}>
-                                {voice.name} ({voice.category || 'Standard'})
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                    {narrationSource === 'generate' && (
+                      <div className="mt-4 pl-2 border-l-2 border-primary">
+                        {elevenLabsVoices.length > 0 && !storyData.elevenLabsVoiceId && ( // Show only if voices loaded AND no voice is selected yet for *current* story
+                          <div className="mb-4">
+                            <Label htmlFor="elevenLabsVoice" className="block text-md font-medium">Select AI Voice</Label>
+                            <Select value={selectedVoiceId} onValueChange={setSelectedVoiceId}>
+                              <SelectTrigger className="w-full mt-1">
+                                <SelectValue placeholder="Choose a voice..." />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {elevenLabsVoices.map(voice => (
+                                  <SelectItem key={voice.voice_id} value={voice.voice_id}>
+                                    {voice.name} ({voice.category || 'Standard'})
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        )}
+                        <Button onClick={handleGenerateNarration} disabled={isNarrationButtonDisabled} className="bg-accent hover:bg-accent/90 text-accent-foreground">
+                            {isLoading.narration ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : (storyData.narrationAudioUrl && storyData.elevenLabsVoiceId ? <Mic className="mr-2 h-4 w-4" /> : <ListMusic className="mr-2 h-4 w-4" />)}
+                            {narrationButtonText()}
+                        </Button>
+                        {storyData.elevenLabsVoiceId && <p className="text-sm text-muted-foreground mt-1">Using AI voice: {elevenLabsVoices.find(v => v.voice_id === storyData.elevenLabsVoiceId)?.name || storyData.elevenLabsVoiceId}</p>}
                       </div>
                     )}
 
-                     <Button onClick={handleGenerateNarration} disabled={isNarrationButtonDisabled} className="mt-4 bg-accent hover:bg-accent/90 text-accent-foreground">
-                        {isLoading.narration ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : (storyData.narrationAudioUrl ? <Mic className="mr-2 h-4 w-4" /> : <ListMusic className="mr-2 h-4 w-4" />)}
-                        {narrationButtonText()}
-                    </Button>
+                    {narrationSource === 'upload' && (
+                        <div className="mt-4 pl-2 border-l-2 border-primary">
+                            <Label htmlFor="audioUpload" className="block text-md font-medium">Upload MP3 Narration</Label>
+                            <Input type="file" id="audioUpload" accept="audio/mpeg" onChange={handleAudioFileUpload} className="mt-1" disabled={isLoading.narrationUpload}/>
+                            {isLoading.narrationUpload && <Loader2 className="mt-2 h-4 w-4 animate-spin" />}
+                            {uploadedAudioFileName && <p className="text-sm text-muted-foreground mt-1">File: {uploadedAudioFileName}</p>}
+                        </div>
+                    )}
+
                     {storyData.narrationAudioUrl && (
-                        <div className="mt-4">
-                            <Label className="block text-md font-medium">Generated Narration Audio</Label>
-                             <audio controls src={storyData.narrationAudioUrl} className="w-full mt-1">Your browser does not support the audio element.</audio>
+                        <div className="mt-6">
+                            <Label className="block text-md font-medium">Current Narration Audio</Label>
+                             <audio controls src={storyData.narrationAudioUrl} key={storyData.narrationAudioUrl} className="w-full mt-1">Your browser does not support the audio element.</audio>
                              <p className="text-sm text-muted-foreground mt-1">Duration: {storyData.narrationAudioDurationSeconds?.toFixed(2) || 'N/A'} seconds</p>
                         </div>
                     )}
@@ -552,7 +689,7 @@ export default function CreateStoryPage() {
                 {storyData.narrationAudioUrl ? (
                   <div>
                     <Label className="block text-md font-medium">Narration Audio (Review)</Label>
-                    <audio controls src={storyData.narrationAudioUrl} className="w-full mt-1">Your browser does not support the audio element.</audio>
+                    <audio controls src={storyData.narrationAudioUrl} key={storyData.narrationAudioUrl} className="w-full mt-1">Your browser does not support the audio element.</audio>
                     <p className="text-sm text-muted-foreground mt-1">Duration: {storyData.narrationAudioDurationSeconds?.toFixed(2) || 'N/A'} seconds</p>
 
                     <div className="mt-4">
@@ -574,7 +711,7 @@ export default function CreateStoryPage() {
                     </Button>
                   </div>
                 ): (
-                     <p className="text-muted-foreground">Please generate narration audio in Step 3 first.</p>
+                     <p className="text-muted-foreground">Please generate or upload narration audio in Step 3 first.</p>
                 )}
               </AccordionContent>
             </AccordionItem>

@@ -1,6 +1,7 @@
 import { initializeApp, getApps, type FirebaseApp } from 'firebase/app';
 import { getAuth, type Auth } from 'firebase/auth';
 import { getFirestore, type Firestore } from 'firebase/firestore';
+import { getStorage, type FirebaseStorage } from 'firebase/storage'; // Added import for Firebase Storage
 
 // For Firebase JS SDK v7.20.0 and later, measurementId is optional
 // It's crucial to use environment variables for Firebase config in a real application.
@@ -24,5 +25,6 @@ if (!getApps().length) {
 const auth: Auth = getAuth(app);
 // Explicitly connect to the 'storytailordb' Firestore instance for the client-side SDK.
 const db: Firestore = getFirestore(app, 'storytailordb');
+const storage: FirebaseStorage = getStorage(app); // Initialize Firebase Storage
 
-export { app, auth, db };
+export { app, auth, db, storage }; // Export storage
