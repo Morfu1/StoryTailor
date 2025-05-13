@@ -804,7 +804,14 @@ export default function CreateStoryPage() {
 
           <Separator className="my-8" />
 
-          <div className="flex justify-end">
+          <div className="flex justify-end items-center space-x-4">
+             {allImagesGenerated && storyData.id && (
+                <Button asChild size="lg" className="bg-primary hover:bg-primary/90 text-primary-foreground">
+                  <Link href={`/assemble-video?storyId=${storyData.id}`}>
+                    <Film className="mr-2 h-4 w-4" /> Assemble & Export Video
+                  </Link>
+                </Button>
+              )}
              <AlertDialog open={isSaveConfirmOpen} onOpenChange={setIsSaveConfirmOpen}>
                 <AlertDialogTrigger asChild>
                   <Button size="lg" disabled={isSaveButtonDisabled} className="bg-green-600 hover:bg-green-700 text-white">
