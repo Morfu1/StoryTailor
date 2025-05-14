@@ -146,6 +146,11 @@ export default function CreateStoryPage() {
               setUploadedAudioFileName("Previously uploaded audio");
             }
             
+            if (loadedStory.generatedScript) {
+              // Ensure generatedScript is string, if undefined, keep as is.
+              updateStoryData({ generatedScript: loadedStory.generatedScript || '' });
+            }
+
             if (loadedStory.generatedImages && loadedStory.generatedImages.length > 0 && loadedStory.imagePrompts && loadedStory.generatedImages.length === loadedStory.imagePrompts.length && loadedStory.generatedImages.every(img => img !== null)) initialStep = 6;
             else if (loadedStory.imagePrompts && loadedStory.imagePrompts.length > 0) initialStep = 5;
             else if (loadedStory.narrationAudioUrl) initialStep = 4;
@@ -158,7 +163,7 @@ export default function CreateStoryPage() {
 
           } else {
             toast({ title: 'Error Loading Story', description: response.error || 'Failed to load story. Creating a new one.', variant: 'destructive' });
-             setStoryData({...initialStoryState, userId: user.uid}); 
+             setStoryData({...initialStoryState, userId: user.uid, generatedScript: initialStoryState.generatedScript || ''}); 
              setCurrentStep(1);
              setActiveAccordionItem('step-1');
           }
@@ -167,7 +172,7 @@ export default function CreateStoryPage() {
     } else {
        setPageLoading(false); 
        if(user?.uid) { 
-        setStoryData(prev => ({...prev, userId: user.uid}));
+        setStoryData(prev => ({...prev, userId: user.uid, generatedScript: prev.generatedScript || ''}));
        }
        setCurrentStep(initialStep); // ensure currentStep is set even if no storyId
        setActiveAccordionItem(`step-${initialStep}`); // ensure accordion is also set
@@ -525,6 +530,9 @@ export default function CreateStoryPage() {
             value={activeAccordionItem} 
             className="w-full" 
             onValueChange={(value) => {
+              if (isScriptManuallyEditing) {
+                setIsScriptManuallyEditing(false);
+              }
               setActiveAccordionItem(value); 
               if (value) {
                 setCurrentStep(parseInt(value.split('-')[1]));
@@ -550,7 +558,7 @@ export default function CreateStoryPage() {
                     className="text-base mt-1"
                   />
                 </div>
-                {storyData.generatedScript && (
+                {storyData.generatedScript !== undefined && (
                   <div className="mt-4">
                     <Label htmlFor="generatedScriptDisplayStep1" className="block text-md font-medium">Generated Story Script (Review)</Label>
                     <Textarea
@@ -566,9 +574,9 @@ export default function CreateStoryPage() {
                 <div className="flex space-x-2">
                     <Button onClick={handleGenerateScript} disabled={isLoading.script || !storyData.userPrompt.trim()} className="bg-accent hover:bg-accent/90 text-accent-foreground">
                     {isLoading.script ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
-                    {storyData.generatedScript ? 'Re-generate Script & Title' : 'Generate Script & Title'}
+                    {storyData.generatedScript !== undefined ? 'Re-generate Script & Title' : 'Generate Script & Title'}
                     </Button>
-                    {storyData.generatedScript && (
+                    {storyData.generatedScript !== undefined && (
                         <Button 
                             variant="outline" 
                             onClick={() => setIsScriptManuallyEditing(!isScriptManuallyEditing)}
@@ -579,7 +587,7 @@ export default function CreateStoryPage() {
                         </Button>
                     )}
                 </div>
-                 {storyData.generatedScript && (
+                 {storyData.generatedScript !== undefined && (
                    <p className="text-sm text-muted-foreground">
                      You can re-generate the script (which overwrites manual edits) or edit it manually. The updated script will be used in Step 2.
                    </p>
@@ -588,14 +596,14 @@ export default function CreateStoryPage() {
             </AccordionItem>
 
             {/* Step 2: Generated Script & Details */}
-            <AccordionItem value="step-2" disabled={!storyData.generatedScript}>
+            <AccordionItem value="step-2" disabled={storyData.generatedScript === undefined}>
               <AccordionTrigger className="text-xl font-semibold hover:no-underline data-[state=open]:text-primary">
                 <div className="flex items-center">
                   <FileText className="w-6 h-6 mr-3" /> Step 2: Review Script & Generate Details
                 </div>
               </AccordionTrigger>
               <AccordionContent className="pt-4 space-y-4">
-                {storyData.generatedScript && (
+                {storyData.generatedScript !== undefined && (
                   <div>
                     <Label className="block text-md font-medium">Generated Script (Final from Step 1)</Label>
                     <Textarea value={storyData.generatedScript} readOnly rows={10} className="mt-1 bg-muted/50 text-base"/>
@@ -605,7 +613,7 @@ export default function CreateStoryPage() {
                     </Button>
                   </div>
                 )}
-                 {!storyData.generatedScript && <p className="text-muted-foreground">Please generate a script in Step 1 first.</p>}
+                 {storyData.generatedScript === undefined && <p className="text-muted-foreground">Please generate a script in Step 1 first.</p>}
               </AccordionContent>
             </AccordionItem>
 
