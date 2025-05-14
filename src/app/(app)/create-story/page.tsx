@@ -74,6 +74,7 @@ export default function CreateStoryPage() {
   const [isCharacterPromptsEditing, setIsCharacterPromptsEditing] = useState(false);
   const [isItemPromptsEditing, setIsItemPromptsEditing] = useState(false);
   const [isLocationPromptsEditing, setIsLocationPromptsEditing] = useState(false);
+  const [isImagePromptEditing, setIsImagePromptEditing] = useState<boolean[]>([]);
 
 
   const updateStoryData = (updates: Partial<Story>) => {
@@ -165,6 +166,9 @@ export default function CreateStoryPage() {
             
             setCurrentStep(initialStep);
             setActiveAccordionItem(`step-${initialStep}`);
+            if (loadedStory.imagePrompts) {
+                setIsImagePromptEditing(Array(loadedStory.imagePrompts.length).fill(false));
+            }
 
           } else {
             toast({ title: 'Error Loading Story', description: response.error || 'Failed to load story. Creating a new one.', variant: 'destructive' });
@@ -328,6 +332,7 @@ export default function CreateStoryPage() {
     });
     if (result.success && result.data) {
       updateStoryData({ imagePrompts: result.data.imagePrompts });
+      setIsImagePromptEditing(Array(result.data.imagePrompts.length).fill(false));
       setCurrentStep(5);
       toast({ title: 'Image Prompts Generated!', description: 'Prompts for your animation visuals are ready.', className: 'bg-primary text-primary-foreground' });
     } else {
@@ -335,6 +340,23 @@ export default function CreateStoryPage() {
     }
     handleSetLoading('imagePrompts', false);
   };
+
+  const handleImagePromptChange = (index: number, value: string) => {
+    if (storyData.imagePrompts) {
+      const updatedPrompts = [...storyData.imagePrompts];
+      updatedPrompts[index] = value;
+      updateStoryData({ imagePrompts: updatedPrompts });
+    }
+  };
+
+  const toggleImagePromptEdit = (index: number) => {
+    setIsImagePromptEditing(prev => {
+        const newState = [...prev];
+        newState[index] = !newState[index];
+        return newState;
+    });
+  };
+
 
   const handleGenerateSingleImage = async (prompt: string, index: number) => {
     handleSetLoading(`image-${index}`, true);
@@ -545,6 +567,9 @@ export default function CreateStoryPage() {
                 setIsItemPromptsEditing(false);
                 setIsLocationPromptsEditing(false);
               }
+              if (activeAccordionItem === 'step-4' && value !== 'step-4' && isImagePromptEditing.some(Boolean)) {
+                setIsImagePromptEditing(Array(storyData.imagePrompts?.length || 0).fill(false));
+              }
               setActiveAccordionItem(value); 
               if (value) {
                 setCurrentStep(parseInt(value.split('-')[1]));
@@ -581,7 +606,7 @@ export default function CreateStoryPage() {
                       rows={10}
                       className={cn(
                         "text-base mt-1",
-                        !isScriptManuallyEditing ? 'bg-muted/50' : 'bg-background'
+                        !isScriptManuallyEditing ? 'bg-muted/50' : 'bg-background ring-2 ring-primary'
                       )}
                     />
                   </div>
@@ -782,16 +807,13 @@ export default function CreateStoryPage() {
             <AccordionItem value="step-4" disabled={!storyData.narrationAudioUrl}>
               <AccordionTrigger className="text-xl font-semibold hover:no-underline data-[state=open]:text-primary">
                 <div className="flex items-center">
-                  <LucideImage className="w-6 h-6 mr-3" /> Step 4: Generate Image Prompts
+                  <LucideImage className="w-6 h-6 mr-3" /> Step 4: Generate &amp; Edit Image Prompts
                 </div>
               </AccordionTrigger>
               <AccordionContent className="pt-4 space-y-4">
                 {storyData.narrationAudioUrl ? (
                   <div>
-                    <Label className="block text-md font-medium">Narration Audio (Review)</Label>
-                    <audio controls src={storyData.narrationAudioUrl} key={storyData.narrationAudioUrl} className="w-full mt-1">Your browser does not support the audio element.</audio>
-                    <p className="text-sm text-muted-foreground mt-1">Duration: {storyData.narrationAudioDurationSeconds?.toFixed(2) || 'N/A'} seconds</p>
-
+                     <p className="text-sm text-muted-foreground mt-1">Audio Duration: {storyData.narrationAudioDurationSeconds?.toFixed(2) || 'N/A'} seconds. Based on this, we'll generate prompts for images.</p>
                     <div className="mt-4">
                         <Label htmlFor="imagesPerMinute" className="block text-md font-medium">Images per Minute of Audio</Label>
                         <Input
@@ -807,8 +829,44 @@ export default function CreateStoryPage() {
 
                     <Button onClick={handleGenerateImagePrompts} disabled={isLoading.imagePrompts || !storyData.narrationAudioDurationSeconds} className="mt-4 bg-accent hover:bg-accent/90 text-accent-foreground">
                       {isLoading.imagePrompts ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <LucideImage className="mr-2 h-4 w-4" />}
-                      Generate Image Prompts
+                      {storyData.imagePrompts && storyData.imagePrompts.length > 0 ? 'Re-generate Image Prompts' : 'Generate Image Prompts'}
                     </Button>
+
+                    {storyData.imagePrompts && storyData.imagePrompts.length > 0 && (
+                      <div className="mt-6">
+                        <Label className="block text-md font-medium">Generated Image Prompts (Review & Edit)</Label>
+                        <div className="space-y-3 mt-2 max-h-96 overflow-y-auto pr-2 rounded-md border p-3 bg-muted/20">
+                          {storyData.imagePrompts.map((prompt, index) => (
+                            <div key={index} className="relative">
+                              <Textarea
+                                value={prompt}
+                                readOnly={!isImagePromptEditing[index]}
+                                onChange={(e) => handleImagePromptChange(index, e.target.value)}
+                                onBlur={() => {
+                                    if(isImagePromptEditing[index]) {
+                                        toggleImagePromptEdit(index);
+                                    }
+                                }}
+                                rows={3}
+                                className={cn(
+                                  "text-xs whitespace-pre-wrap w-full pr-8", // Added pr-8 for pencil icon space
+                                  isImagePromptEditing[index] ? 'bg-background ring-2 ring-primary' : 'bg-card border-transparent'
+                                )}
+                                placeholder={`Image prompt ${index + 1}...`}
+                              />
+                              <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                className="absolute top-1 right-1 h-6 w-6" 
+                                onClick={() => toggleImagePromptEdit(index)}
+                              >
+                                <Pencil className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ): (
                      <p className="text-muted-foreground">Please generate or upload narration audio in Step 3 first.</p>
@@ -954,4 +1012,3 @@ export default function CreateStoryPage() {
     </div>
   );
 }
-
