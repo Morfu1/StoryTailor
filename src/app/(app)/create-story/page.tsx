@@ -1,3 +1,4 @@
+
 "use client";
 
 import type { Story, GeneratedImage, StoryCharacterLocationItemPrompts, ElevenLabsVoice } from '@/types/story';
@@ -60,6 +61,7 @@ export default function CreateStoryPage() {
   const [storyData, setStoryData] = useState<Story>(initialStoryState);
   const [isLoading, setIsLoading] = useState<Record<string, boolean>>({});
   const [currentStep, setCurrentStep] = useState(1);
+  const [activeAccordionItem, setActiveAccordionItem] = useState<string | undefined>(`step-${currentStep}`);
   const [pageLoading, setPageLoading] = useState(true);
   const [imagesPerMinute, setImagesPerMinute] = useState(5);
   const [isSaveConfirmOpen, setIsSaveConfirmOpen] = useState(false);
@@ -121,6 +123,7 @@ export default function CreateStoryPage() {
       updateStoryData({ userId: user.uid }); 
     }
 
+    let initialStep = 1;
     if (storyId && user) {
       setPageLoading(true); 
       getStory(storyId, user.uid)
@@ -136,24 +139,27 @@ export default function CreateStoryPage() {
             setStoryData(loadedStory);
             if (loadedStory.elevenLabsVoiceId) {
               setSelectedVoiceId(loadedStory.elevenLabsVoiceId);
-              setNarrationSource('generate'); // Assume generated if voiceId is present
+              setNarrationSource('generate'); 
             } else if (loadedStory.narrationAudioUrl) {
-              // If URL exists but no voice ID, assume it was uploaded
               setNarrationSource('upload');
-              // Potentially try to derive filename if stored, or use a generic placeholder
               setUploadedAudioFileName("Previously uploaded audio");
             }
             
-            if (loadedStory.generatedImages && loadedStory.generatedImages.length > 0 && loadedStory.imagePrompts && loadedStory.generatedImages.length === loadedStory.imagePrompts.length && loadedStory.generatedImages.every(img => img !== null)) setCurrentStep(6);
-            else if (loadedStory.imagePrompts && loadedStory.imagePrompts.length > 0) setCurrentStep(5);
-            else if (loadedStory.narrationAudioUrl) setCurrentStep(4);
-            else if (loadedStory.detailsPrompts && (loadedStory.detailsPrompts.characterPrompts || loadedStory.detailsPrompts.itemPrompts || loadedStory.detailsPrompts.locationPrompts)) setCurrentStep(3);
-            else if (loadedStory.generatedScript) setCurrentStep(2);
-            else setCurrentStep(1);
+            if (loadedStory.generatedImages && loadedStory.generatedImages.length > 0 && loadedStory.imagePrompts && loadedStory.generatedImages.length === loadedStory.imagePrompts.length && loadedStory.generatedImages.every(img => img !== null)) initialStep = 6;
+            else if (loadedStory.imagePrompts && loadedStory.imagePrompts.length > 0) initialStep = 5;
+            else if (loadedStory.narrationAudioUrl) initialStep = 4;
+            else if (loadedStory.detailsPrompts && (loadedStory.detailsPrompts.characterPrompts || loadedStory.detailsPrompts.itemPrompts || loadedStory.detailsPrompts.locationPrompts)) initialStep = 3;
+            else if (loadedStory.generatedScript) initialStep = 2;
+            else initialStep = 1;
+            
+            setCurrentStep(initialStep);
+            setActiveAccordionItem(`step-${initialStep}`);
+
           } else {
             toast({ title: 'Error Loading Story', description: response.error || 'Failed to load story. Creating a new one.', variant: 'destructive' });
              setStoryData({...initialStoryState, userId: user.uid}); 
              setCurrentStep(1);
+             setActiveAccordionItem('step-1');
           }
         })
         .finally(() => setPageLoading(false)); 
@@ -162,8 +168,15 @@ export default function CreateStoryPage() {
        if(user?.uid) { 
         setStoryData(prev => ({...prev, userId: user.uid}));
        }
+       setCurrentStep(initialStep); // ensure currentStep is set even if no storyId
+       setActiveAccordionItem(`step-${initialStep}`); // ensure accordion is also set
     }
   }, [storyId, user, router, toast, authLoading]);
+
+  // Sync activeAccordionItem when currentStep changes programmatically
+  useEffect(() => {
+    setActiveAccordionItem(`step-${currentStep}`);
+  }, [currentStep]);
 
 
   const handleGenerateScript = async () => {
@@ -504,7 +517,20 @@ export default function CreateStoryPage() {
             <p className="text-xs text-muted-foreground mt-1">Step {currentStep} of 6</p>
           </div>
 
-          <Accordion type="single" collapsible defaultValue="step-1" value={`step-${currentStep}`} className="w-full" onValueChange={(value) => { if(value) setCurrentStep(parseInt(value.split('-')[1]))}}>
+          <Accordion 
+            type="single" 
+            collapsible 
+            value={activeAccordionItem} 
+            className="w-full" 
+            onValueChange={(value) => {
+              setActiveAccordionItem(value); // value can be string | undefined
+              if (value) {
+                setCurrentStep(parseInt(value.split('-')[1]));
+              }
+              // If value is undefined, accordion is closed, currentStep might remain on the last opened step or be reset
+              // For now, we let currentStep remain, it mainly drives disabling/enabling and progress bar.
+            }}
+          >
             {/* Step 1: User Prompt */}
             <AccordionItem value="step-1">
               <AccordionTrigger className="text-xl font-semibold hover:no-underline data-[state=open]:text-primary">
