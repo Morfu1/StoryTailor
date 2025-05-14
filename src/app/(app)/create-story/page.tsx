@@ -32,7 +32,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { generateTitle, generateScript, generateCharacterPrompts, generateNarrationAudio, generateImagePrompts, saveStory, getStory, generateImageFromPrompt } from '@/actions/storyActions';
-import { Bot, Clapperboard, ImageIcon, Loader2, Mic, Save, Sparkles, FileText, Image as LucideImage, AlertCircle, CheckCircle, Info, Pencil, ListMusic, Upload, Film } from 'lucide-react';
+import { Bot, Clapperboard, ImageIcon, Loader2, Mic, Save, Sparkles, FileText, Image as LucideImage, AlertCircle, CheckCircle, Info, Pencil, ListMusic, Upload, Film, Edit2 } from 'lucide-react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -69,6 +69,7 @@ export default function CreateStoryPage() {
   const [selectedVoiceId, setSelectedVoiceId] = useState<string | undefined>(undefined);
   const [narrationSource, setNarrationSource] = useState<'generate' | 'upload'>('generate');
   const [uploadedAudioFileName, setUploadedAudioFileName] = useState<string | null>(null);
+  const [isScriptManuallyEditing, setIsScriptManuallyEditing] = useState(false);
 
 
   const updateStoryData = (updates: Partial<Story>) => {
@@ -186,6 +187,7 @@ export default function CreateStoryPage() {
     }
     
     handleSetLoading('script', true);
+    setIsScriptManuallyEditing(false); // Reset manual editing mode
 
     let currentTitle = storyData.title;
     if (!currentTitle.trim() && storyData.userPrompt.trim()) {
@@ -523,12 +525,10 @@ export default function CreateStoryPage() {
             value={activeAccordionItem} 
             className="w-full" 
             onValueChange={(value) => {
-              setActiveAccordionItem(value); // value can be string | undefined
+              setActiveAccordionItem(value); 
               if (value) {
                 setCurrentStep(parseInt(value.split('-')[1]));
               }
-              // If value is undefined, accordion is closed, currentStep might remain on the last opened step or be reset
-              // For now, we let currentStep remain, it mainly drives disabling/enabling and progress bar.
             }}
           >
             {/* Step 1: User Prompt */}
@@ -556,19 +556,32 @@ export default function CreateStoryPage() {
                     <Textarea
                       id="generatedScriptDisplayStep1"
                       value={storyData.generatedScript}
-                      readOnly
+                      readOnly={!isScriptManuallyEditing}
+                      onChange={(e) => updateStoryData({ generatedScript: e.target.value })}
                       rows={10}
-                      className="text-base mt-1 bg-muted/50"
+                      className={`text-base mt-1 ${!isScriptManuallyEditing ? 'bg-muted/50' : 'bg-background'}`}
                     />
                   </div>
                 )}
-                <Button onClick={handleGenerateScript} disabled={isLoading.script || !storyData.userPrompt.trim()} className="bg-accent hover:bg-accent/90 text-accent-foreground">
-                  {isLoading.script ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
-                  {storyData.generatedScript ? 'Re-generate Script & Title' : 'Generate Script & Title'}
-                </Button>
+                <div className="flex space-x-2">
+                    <Button onClick={handleGenerateScript} disabled={isLoading.script || !storyData.userPrompt.trim()} className="bg-accent hover:bg-accent/90 text-accent-foreground">
+                    {isLoading.script ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
+                    {storyData.generatedScript ? 'Re-generate Script & Title' : 'Generate Script & Title'}
+                    </Button>
+                    {storyData.generatedScript && (
+                        <Button 
+                            variant="outline" 
+                            onClick={() => setIsScriptManuallyEditing(!isScriptManuallyEditing)}
+                            disabled={isLoading.script}
+                        >
+                            <Edit2 className="mr-2 h-4 w-4" />
+                            {isScriptManuallyEditing ? 'Done Editing Script' : 'Edit Script Manually'}
+                        </Button>
+                    )}
+                </div>
                  {storyData.generatedScript && (
                    <p className="text-sm text-muted-foreground">
-                     You can re-generate the script and title if you wish. The updated script will be shown here and in Step 2.
+                     You can re-generate the script (which overwrites manual edits) or edit it manually. The updated script will be used in Step 2.
                    </p>
                  )}
               </AccordionContent>
@@ -584,7 +597,7 @@ export default function CreateStoryPage() {
               <AccordionContent className="pt-4 space-y-4">
                 {storyData.generatedScript && (
                   <div>
-                    <Label className="block text-md font-medium">Generated Script</Label>
+                    <Label className="block text-md font-medium">Generated Script (Final from Step 1)</Label>
                     <Textarea value={storyData.generatedScript} readOnly rows={10} className="mt-1 bg-muted/50 text-base"/>
                     <Button onClick={handleGenerateDetails} disabled={isLoading.details || !storyData.generatedScript} className="mt-4 bg-accent hover:bg-accent/90 text-accent-foreground">
                       {isLoading.details ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Bot className="mr-2 h-4 w-4" />}
