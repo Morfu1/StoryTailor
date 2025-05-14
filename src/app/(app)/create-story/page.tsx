@@ -37,6 +37,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState, useCallback } from 'react';
+import { cn } from '@/lib/utils';
 
 const initialStoryState: Story = {
   userId: '',
@@ -149,8 +150,6 @@ export default function CreateStoryPage() {
               setUploadedAudioFileName("Previously uploaded audio");
             }
             
-            // Ensure generatedScript is string or undefined, not null or other types.
-            // If it's an empty string from DB, keep it as empty string.
             updateStoryData({ 
                 generatedScript: loadedStory.generatedScript || undefined,
                 detailsPrompts: loadedStory.detailsPrompts || { characterPrompts: "", itemPrompts: "", locationPrompts: "" }
@@ -180,12 +179,11 @@ export default function CreateStoryPage() {
        if(user?.uid) { 
         setStoryData(prev => ({...prev, userId: user.uid, generatedScript: prev.generatedScript || undefined}));
        }
-       setCurrentStep(initialStep); // ensure currentStep is set even if no storyId
-       setActiveAccordionItem(`step-${initialStep}`); // ensure accordion is also set
+       setCurrentStep(initialStep); 
+       setActiveAccordionItem(`step-${initialStep}`); 
     }
   }, [storyId, user, router, toast, authLoading]);
 
-  // Sync activeAccordionItem when currentStep changes programmatically
   useEffect(() => {
     setActiveAccordionItem(`step-${currentStep}`);
   }, [currentStep]);
@@ -198,7 +196,7 @@ export default function CreateStoryPage() {
     }
     
     handleSetLoading('script', true);
-    setIsScriptManuallyEditing(false); // Reset manual editing mode
+    setIsScriptManuallyEditing(false); 
 
     let currentTitle = storyData.title;
     if (!currentTitle.trim() && storyData.userPrompt.trim()) {
@@ -253,7 +251,7 @@ export default function CreateStoryPage() {
 
     const input = selectedVoiceId
       ? { script: storyData.generatedScript, voiceId: selectedVoiceId }
-      : { script: storyData.generatedScript }; // This will fetch voices
+      : { script: storyData.generatedScript }; 
 
     const result = await generateNarrationAudio(input);
 
@@ -267,7 +265,7 @@ export default function CreateStoryPage() {
           narrationAudioDurationSeconds: result.data.duration,
           elevenLabsVoiceId: selectedVoiceId 
         });
-        setUploadedAudioFileName(null); // Clear uploaded file if AI generation is used
+        setUploadedAudioFileName(null); 
         setCurrentStep(4);
         toast({ title: 'Narration Generated!', description: 'Audio narration is ready.', className: 'bg-primary text-primary-foreground' });
       }
@@ -284,7 +282,7 @@ export default function CreateStoryPage() {
         toast({ title: "Invalid File Type", description: "Please upload an MP3 audio file.", variant: "destructive" });
         return;
       }
-      if (file.size > 10 * 1024 * 1024) { // 10MB limit for data URI handling sanity
+      if (file.size > 10 * 1024 * 1024) { 
         toast({ title: "File Too Large", description: "Please upload an audio file smaller than 10MB.", variant: "destructive" });
         return;
       }
@@ -297,10 +295,10 @@ export default function CreateStoryPage() {
             updateStoryData({
             narrationAudioUrl: dataUri,
             narrationAudioDurationSeconds: duration,
-            elevenLabsVoiceId: undefined, // Clear selected AI voice
+            elevenLabsVoiceId: undefined, 
             });
             setUploadedAudioFileName(file.name);
-            setCurrentStep(4); // Move to next step as audio is now "ready"
+            setCurrentStep(4); 
             toast({ title: "Audio Uploaded", description: `${file.name} is ready.`, className: 'bg-primary text-primary-foreground' });
         } catch (error) {
             toast({ title: "Audio Processing Error", description: "Could not process the uploaded audio file.", variant: "destructive" });
@@ -353,7 +351,7 @@ export default function CreateStoryPage() {
       } else {
          const newImagesArray = Array(storyData.imagePrompts?.length || 0).fill(null);
          currentGeneratedImages.forEach((img) => {
-            if (img) { // Check if img is not null
+            if (img) { 
               const originalPromptIndex = storyData.imagePrompts?.indexOf(img.prompt);
               if(originalPromptIndex !== undefined && originalPromptIndex > -1) {
                   newImagesArray[originalPromptIndex] = img;
@@ -381,7 +379,7 @@ export default function CreateStoryPage() {
     
     const currentGeneratedImages = Array.isArray(storyData.generatedImages) ? storyData.generatedImages : [];
     const imagesToGenerate = storyData.imagePrompts.map((prompt, index) => ({ prompt, index })).filter(
-      p => !currentGeneratedImages.some(img => img && img.prompt === p.prompt) // Check if img is not null
+      p => !currentGeneratedImages.some(img => img && img.prompt === p.prompt) 
     );
 
     const results = await Promise.all(
@@ -401,7 +399,7 @@ export default function CreateStoryPage() {
     
     if (successfulNewImages.length > 0) {
       setStoryData(prev => {
-        const existingImages = Array.isArray(prev.generatedImages) ? prev.generatedImages.filter(img => img !== null) as GeneratedImage[] : []; // Filter out nulls
+        const existingImages = Array.isArray(prev.generatedImages) ? prev.generatedImages.filter(img => img !== null) as GeneratedImage[] : []; 
         const combined = [...existingImages, ...successfulNewImages];
         const uniqueImagesByPrompt = Array.from(new Map(combined.map(img => [img.prompt, img])).values());
         
@@ -493,7 +491,7 @@ export default function CreateStoryPage() {
         if (elevenLabsVoices.length > 0) return "Generate Narration with Selected Voice";
         return "Load Voices & Generate Narration";
     }
-    return "Generate Narration (AI)" // Should be disabled if upload is chosen
+    return "Generate Narration (AI)" 
   };
 
   const isNarrationButtonDisabled = narrationSource === 'upload' || isLoading.narration || !storyData.generatedScript || (narrationSource === 'generate' && elevenLabsVoices.length > 0 && !selectedVoiceId && !storyData.elevenLabsVoiceId) || isLoading.narrationUpload;
@@ -539,10 +537,10 @@ export default function CreateStoryPage() {
             value={activeAccordionItem} 
             className="w-full" 
             onValueChange={(value) => {
-              if (isScriptManuallyEditing) {
+              if (isScriptManuallyEditing && activeAccordionItem === 'step-1' && value !== 'step-1') {
                 setIsScriptManuallyEditing(false);
               }
-              if (value !== 'step-2' && (isCharacterPromptsEditing || isItemPromptsEditing || isLocationPromptsEditing)) {
+              if (activeAccordionItem === 'step-2' && value !== 'step-2' && (isCharacterPromptsEditing || isItemPromptsEditing || isLocationPromptsEditing)) {
                 setIsCharacterPromptsEditing(false);
                 setIsItemPromptsEditing(false);
                 setIsLocationPromptsEditing(false);
@@ -581,7 +579,10 @@ export default function CreateStoryPage() {
                       readOnly={!isScriptManuallyEditing}
                       onChange={(e) => updateStoryData({ generatedScript: e.target.value })}
                       rows={10}
-                      className={`text-base mt-1 ${!isScriptManuallyEditing ? 'bg-muted/50' : 'bg-background'}`}
+                      className={cn(
+                        "text-base mt-1",
+                        !isScriptManuallyEditing ? 'bg-muted/50' : 'bg-background'
+                      )}
                     />
                   </div>
                 )}
@@ -641,7 +642,10 @@ export default function CreateStoryPage() {
                                             onChange={(e) => updateStoryData({ detailsPrompts: { ...(storyData.detailsPrompts || {}), characterPrompts: e.target.value } as StoryCharacterLocationItemPrompts })}
                                             onBlur={() => setIsCharacterPromptsEditing(false)}
                                             rows={5} 
-                                            className={`text-xs whitespace-pre-wrap w-full ${isCharacterPromptsEditing ? 'bg-background ring-2 ring-primary' : 'bg-card border-transparent'}`}
+                                            className={cn(
+                                                "text-xs whitespace-pre-wrap w-full",
+                                                isCharacterPromptsEditing ? 'bg-background ring-2 ring-primary' : 'bg-card border-transparent'
+                                            )}
                                             placeholder="Character descriptions will appear here..."
                                         />
                                         <Button variant="ghost" size="icon" className="absolute top-1 right-1 h-6 w-6" onClick={() => setIsCharacterPromptsEditing(!isCharacterPromptsEditing)}>
@@ -660,7 +664,10 @@ export default function CreateStoryPage() {
                                             onChange={(e) => updateStoryData({ detailsPrompts: { ...(storyData.detailsPrompts || {}), itemPrompts: e.target.value } as StoryCharacterLocationItemPrompts })}
                                             onBlur={() => setIsItemPromptsEditing(false)}
                                             rows={5} 
-                                            className={`text-xs whitespace-pre-wrap w-full ${isItemPromptsEditing ? 'bg-background ring-2 ring-primary' : 'bg-card border-transparent'}`}
+                                            className={cn(
+                                                "text-xs whitespace-pre-wrap w-full",
+                                                isItemPromptsEditing ? 'bg-background ring-2 ring-primary' : 'bg-card border-transparent'
+                                            )}
                                             placeholder="Item descriptions will appear here..."
                                         />
                                         <Button variant="ghost" size="icon" className="absolute top-1 right-1 h-6 w-6" onClick={() => setIsItemPromptsEditing(!isItemPromptsEditing)}>
@@ -679,7 +686,10 @@ export default function CreateStoryPage() {
                                             onChange={(e) => updateStoryData({ detailsPrompts: { ...(storyData.detailsPrompts || {}), locationPrompts: e.target.value } as StoryCharacterLocationItemPrompts })}
                                             onBlur={() => setIsLocationPromptsEditing(false)}
                                             rows={5} 
-                                            className={`text-xs whitespace-pre-wrap w-full ${isLocationPromptsEditing ? 'bg-background ring-2 ring-primary' : 'bg-card border-transparent'}`}
+                                            className={cn(
+                                                "text-xs whitespace-pre-wrap w-full",
+                                                isLocationPromptsEditing ? 'bg-background ring-2 ring-primary' : 'bg-card border-transparent'
+                                            )}
                                             placeholder="Location descriptions will appear here..."
                                         />
                                         <Button variant="ghost" size="icon" className="absolute top-1 right-1 h-6 w-6" onClick={() => setIsLocationPromptsEditing(!isLocationPromptsEditing)}>
@@ -723,7 +733,7 @@ export default function CreateStoryPage() {
                     
                     {narrationSource === 'generate' && (
                       <div className="mt-4 pl-2 border-l-2 border-primary">
-                        {elevenLabsVoices.length > 0 && !storyData.elevenLabsVoiceId && ( // Show only if voices loaded AND no voice is selected yet for *current* story
+                        {elevenLabsVoices.length > 0 && !storyData.elevenLabsVoiceId && ( 
                           <div className="mb-4">
                             <Label htmlFor="elevenLabsVoice" className="block text-md font-medium">Select AI Voice</Label>
                             <Select value={selectedVoiceId} onValueChange={setSelectedVoiceId}>
@@ -875,7 +885,7 @@ export default function CreateStoryPage() {
                     <p className="text-muted-foreground">All images are generated. You can now proceed to assemble your video.</p>
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 mt-4">
                       {storyData.generatedImages?.map((img, index) => (
-                        img && // Ensure img is not null before rendering
+                        img && 
                         <div key={index} className="border rounded-md overflow-hidden aspect-square relative group shadow-md">
                           <Image src={img.imageUrl} alt={`Scene ${index + 1}`} layout="fill" objectFit="cover" data-ai-hint={img.dataAiHint || "animation frame"}/>
                           <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
