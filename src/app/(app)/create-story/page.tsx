@@ -1,3 +1,4 @@
+
 "use client";
 
 import type { Story, GeneratedImage, StoryCharacterLocationItemPrompts, ElevenLabsVoice } from '@/types/story';
@@ -69,6 +70,9 @@ export default function CreateStoryPage() {
   const [narrationSource, setNarrationSource] = useState<'generate' | 'upload'>('generate');
   const [uploadedAudioFileName, setUploadedAudioFileName] = useState<string | null>(null);
   const [isScriptManuallyEditing, setIsScriptManuallyEditing] = useState(false);
+  const [isCharacterPromptsEditing, setIsCharacterPromptsEditing] = useState(false);
+  const [isItemPromptsEditing, setIsItemPromptsEditing] = useState(false);
+  const [isLocationPromptsEditing, setIsLocationPromptsEditing] = useState(false);
 
 
   const updateStoryData = (updates: Partial<Story>) => {
@@ -147,7 +151,10 @@ export default function CreateStoryPage() {
             
             // Ensure generatedScript is string or undefined, not null or other types.
             // If it's an empty string from DB, keep it as empty string.
-            updateStoryData({ generatedScript: loadedStory.generatedScript || undefined });
+            updateStoryData({ 
+                generatedScript: loadedStory.generatedScript || undefined,
+                detailsPrompts: loadedStory.detailsPrompts || { characterPrompts: "", itemPrompts: "", locationPrompts: "" }
+            });
 
 
             if (loadedStory.generatedImages && loadedStory.generatedImages.length > 0 && loadedStory.imagePrompts && loadedStory.generatedImages.length === loadedStory.imagePrompts.length && loadedStory.generatedImages.every(img => img !== null)) initialStep = 6;
@@ -226,6 +233,9 @@ export default function CreateStoryPage() {
   const handleGenerateDetails = async () => {
     if (!storyData.generatedScript) return;
     handleSetLoading('details', true);
+    setIsCharacterPromptsEditing(false);
+    setIsItemPromptsEditing(false);
+    setIsLocationPromptsEditing(false);
     const result = await generateCharacterPrompts({ script: storyData.generatedScript });
     if (result.success && result.data) {
       updateStoryData({ detailsPrompts: result.data as StoryCharacterLocationItemPrompts });
@@ -532,6 +542,11 @@ export default function CreateStoryPage() {
               if (isScriptManuallyEditing) {
                 setIsScriptManuallyEditing(false);
               }
+              if (value !== 'step-2' && (isCharacterPromptsEditing || isItemPromptsEditing || isLocationPromptsEditing)) {
+                setIsCharacterPromptsEditing(false);
+                setIsItemPromptsEditing(false);
+                setIsLocationPromptsEditing(false);
+              }
               setActiveAccordionItem(value); 
               if (value) {
                 setCurrentStep(parseInt(value.split('-')[1]));
@@ -609,29 +624,68 @@ export default function CreateStoryPage() {
                     </p>
                     <Button onClick={handleGenerateDetails} disabled={isLoading.details || !storyData.generatedScript} className="mt-4 bg-accent hover:bg-accent/90 text-accent-foreground">
                       {isLoading.details ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Bot className="mr-2 h-4 w-4" />}
-                      {storyData.detailsPrompts ? 'Re-generate Details' : 'Generate Details'}
+                      {storyData.detailsPrompts && (storyData.detailsPrompts.characterPrompts || storyData.detailsPrompts.itemPrompts || storyData.detailsPrompts.locationPrompts) ? 'Re-generate Details' : 'Generate Details'}
                     </Button>
 
                     {storyData.detailsPrompts && (storyData.detailsPrompts.characterPrompts || storyData.detailsPrompts.itemPrompts || storyData.detailsPrompts.locationPrompts) && (
                       <div className="mt-6">
-                        <Label className="block text-md font-medium">Character, Item &amp; Location Prompts (Review)</Label>
+                        <Label className="block text-md font-medium">Character, Item &amp; Location Prompts (Review & Edit)</Label>
                          <Accordion type="multiple" className="w-full mt-1 bg-muted/30 rounded-md">
                             <AccordionItem value="chars">
                                 <AccordionTrigger className="px-3 py-2 text-sm hover:no-underline">View Character Prompts</AccordionTrigger>
                                 <AccordionContent className="px-3 pb-2">
-                                    <Textarea value={storyData.detailsPrompts.characterPrompts || "No character prompts generated."} readOnly rows={5} className="bg-muted/50 text-xs whitespace-pre-wrap"/>
+                                    <div className="relative">
+                                        <Textarea 
+                                            value={storyData.detailsPrompts?.characterPrompts || ""} 
+                                            readOnly={!isCharacterPromptsEditing}
+                                            onChange={(e) => updateStoryData({ detailsPrompts: { ...(storyData.detailsPrompts || {}), characterPrompts: e.target.value } as StoryCharacterLocationItemPrompts })}
+                                            onBlur={() => setIsCharacterPromptsEditing(false)}
+                                            rows={5} 
+                                            className={`bg-card text-xs whitespace-pre-wrap w-full ${isCharacterPromptsEditing ? 'ring-2 ring-primary' : 'border-transparent'}`}
+                                            placeholder="Character descriptions will appear here..."
+                                        />
+                                        <Button variant="ghost" size="icon" className="absolute top-1 right-1 h-6 w-6" onClick={() => setIsCharacterPromptsEditing(!isCharacterPromptsEditing)}>
+                                            <Pencil className="h-3 w-3" />
+                                        </Button>
+                                    </div>
                                 </AccordionContent>
                             </AccordionItem>
                             <AccordionItem value="items">
                                 <AccordionTrigger className="px-3 py-2 text-sm hover:no-underline">View Item Prompts</AccordionTrigger>
                                 <AccordionContent className="px-3 pb-2">
-                                     <Textarea value={storyData.detailsPrompts.itemPrompts || "No item prompts generated."} readOnly rows={5} className="bg-muted/50 text-xs whitespace-pre-wrap"/>
+                                    <div className="relative">
+                                        <Textarea 
+                                            value={storyData.detailsPrompts?.itemPrompts || ""} 
+                                            readOnly={!isItemPromptsEditing}
+                                            onChange={(e) => updateStoryData({ detailsPrompts: { ...(storyData.detailsPrompts || {}), itemPrompts: e.target.value } as StoryCharacterLocationItemPrompts })}
+                                            onBlur={() => setIsItemPromptsEditing(false)}
+                                            rows={5} 
+                                            className={`bg-card text-xs whitespace-pre-wrap w-full ${isItemPromptsEditing ? 'ring-2 ring-primary' : 'border-transparent'}`}
+                                            placeholder="Item descriptions will appear here..."
+                                        />
+                                        <Button variant="ghost" size="icon" className="absolute top-1 right-1 h-6 w-6" onClick={() => setIsItemPromptsEditing(!isItemPromptsEditing)}>
+                                            <Pencil className="h-3 w-3" />
+                                        </Button>
+                                    </div>
                                 </AccordionContent>
                             </AccordionItem>
                             <AccordionItem value="locations">
                                 <AccordionTrigger className="px-3 py-2 text-sm hover:no-underline">View Location Prompts</AccordionTrigger>
                                 <AccordionContent className="px-3 pb-2">
-                                     <Textarea value={storyData.detailsPrompts.locationPrompts || "No location prompts generated."} readOnly rows={5} className="bg-muted/50 text-xs whitespace-pre-wrap"/>
+                                     <div className="relative">
+                                        <Textarea 
+                                            value={storyData.detailsPrompts?.locationPrompts || ""} 
+                                            readOnly={!isLocationPromptsEditing}
+                                            onChange={(e) => updateStoryData({ detailsPrompts: { ...(storyData.detailsPrompts || {}), locationPrompts: e.target.value } as StoryCharacterLocationItemPrompts })}
+                                            onBlur={() => setIsLocationPromptsEditing(false)}
+                                            rows={5} 
+                                            className={`bg-card text-xs whitespace-pre-wrap w-full ${isLocationPromptsEditing ? 'ring-2 ring-primary' : 'border-transparent'}`}
+                                            placeholder="Location descriptions will appear here..."
+                                        />
+                                        <Button variant="ghost" size="icon" className="absolute top-1 right-1 h-6 w-6" onClick={() => setIsLocationPromptsEditing(!isLocationPromptsEditing)}>
+                                            <Pencil className="h-3 w-3" />
+                                        </Button>
+                                    </div>
                                 </AccordionContent>
                             </AccordionItem>
                         </Accordion>
