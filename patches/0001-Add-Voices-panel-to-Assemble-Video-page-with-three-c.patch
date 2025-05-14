@@ -1,0 +1,555 @@
+From c8ef543eb1703966f805ac65743a46ff86faa301 Mon Sep 17 00:00:00 2001
+From: Morfu1 <ndumitrufb@gmail.com>
+Date: Wed, 14 May 2025 18:17:18 +0300
+Subject: [PATCH] Add Voices panel to Assemble Video page with three-column
+ layout
+
+---
+ src/app/(app)/assemble-video/page.tsx | 451 +++++++++++++++++++-------
+ src/types/story.ts                    |   2 +
+ 2 files changed, 329 insertions(+), 124 deletions(-)
+
+diff --git a/src/app/(app)/assemble-video/page.tsx b/src/app/(app)/assemble-video/page.tsx
+index 8f9ffec..c625b1d 100644
+--- a/src/app/(app)/assemble-video/page.tsx
++++ b/src/app/(app)/assemble-video/page.tsx
+@@ -1,62 +1,185 @@
+-
+ "use client";
+ 
+-import type { Story } from '@/types/story';
+-import { useAuth } from '@/components/auth-provider';
+-import { Button } from '@/components/ui/button';
+-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+-import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
+-import { getStory } from '@/actions/storyActions';
+-import { ArrowLeft, Clapperboard, Download, Edit3, Film, ImageIcon, Loader2, Music, Settings, Sparkles, Text, User, Video, Wand2, ZoomIn, ZoomOut, Play, Pause, Maximize, History, SidebarClose, SidebarOpen, Trash2, Copy, Scissors } from 'lucide-react';
+-import Image from 'next/image';
+-import Link from 'next/link';
+-import { useRouter, useSearchParams } from 'next/navigation';
+-import { useEffect, useState } from 'react';
+-import { useToast } from '@/hooks/use-toast';
++import type { Story } from "@/types/story";
++import { useAuth } from "@/components/auth-provider";
++import { Button } from "@/components/ui/button";
++import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
++import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
++import { getStory } from "@/actions/storyActions";
++import {
++  ArrowLeft,
++  Clapperboard,
++  Download,
++  Edit3,
++  Film,
++  ImageIcon,
++  Loader2,
++  Music,
++  Settings,
++  Sparkles,
++  Text,
++  User,
++  Video,
++  Wand2,
++  ZoomIn,
++  ZoomOut,
++  Play,
++  Pause,
++  Maximize,
++  History,
++  SidebarClose,
++  SidebarOpen,
++  Trash2,
++  Copy,
++  Scissors,
++  Volume2,
++} from "lucide-react";
++import Image from "next/image";
++import Link from "next/link";
++import { useRouter, useSearchParams } from "next/navigation";
++import React, { useEffect, useState, useMemo } from "react";
++import { useToast } from "@/hooks/use-toast";
+ 
+ const sidebarNavItems = [
+-  { name: 'AI Media', icon: Wand2 },
+-  { name: 'Edit', icon: Edit3 },
+-  { name: 'Characters', icon: User },
+-  { name: 'Text', icon: Text },
+-  { name: 'Music', icon: Music },
+-  { name: 'Settings', icon: Settings },
+-  { name: '[OLD] Chars/Locs', icon: Clapperboard, sectionBreak: true },
+-  { name: '[24 E6] Voices', icon: Video },
++  { name: "All Media", icon: Wand2 },
++  { name: "Edit", icon: Edit3 },
++  { name: "Characters", icon: User },
++  { name: "Text", icon: Text },
++  { name: "Music", icon: Music },
++  { name: "Settings", icon: Settings },
++  { name: "Chars/Locs", icon: Clapperboard, sectionBreak: true },
++  { name: "Voices", icon: Video },
+ ];
+ 
++// Voice Settings content component
++function VoicesContent({ storyData }: { storyData: Story }) {
++  const voiceInfo = useMemo(() => {
++    const voiceName = storyData.narrationVoice || "Narrator";
++    const voiceId =
++      storyData.narrationVoiceId || storyData.elevenLabsVoiceId || "Unknown";
++    const duration = storyData.narrationAudioDurationSeconds
++      ? `${Math.floor(storyData.narrationAudioDurationSeconds / 60)}:${(storyData.narrationAudioDurationSeconds % 60).toString().padStart(2, "0")}`
++      : "0:00";
++    const hasAudio = !!storyData.narrationAudioUrl;
++
++    return { voiceName, voiceId, duration, hasAudio };
++  }, [storyData]);
++
++  return (
++    <div className="h-full">
++      <div className="rounded-lg border border-border shadow-sm h-full">
++        <div className="p-3 border-b border-border bg-muted/20">
++          <h2 className="font-semibold">Voice Settings</h2>
++          <p className="text-xs text-muted-foreground mt-0.5">
++            Manage voice settings for your story narration
++          </p>
++        </div>
++
++        <div className="p-4">
++          <h3 className="text-sm font-medium mb-3">Narrator Voice</h3>
++
++          <div className="space-y-4">
++            <div className="bg-muted/20 p-4 rounded-md border border-border">
++              <div className="flex items-center justify-between">
++                <div>
++                  <h4 className="font-medium">Narrator</h4>
++                  <p className="text-xs text-muted-foreground">
++                    Voice used for story narration
++                  </p>
++                </div>
++                <div className="text-right">
++                  <p className="text-sm font-medium">Default Voice</p>
++                  <p className="text-xs text-muted-foreground">
++                    No voice selection
++                  </p>
++                </div>
++              </div>
++
++              <div className="mt-3 pt-3 border-t border-border flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
++                <div className="text-xs text-muted-foreground">
++                  Audio Duration: {voiceInfo.duration}
++                </div>
++
++                {voiceInfo.hasAudio ? (
++                  <div className="flex items-center gap-2">
++                    <audio
++                      controls
++                      src={storyData.narrationAudioUrl}
++                      className="h-7 w-full sm:w-48"
++                    >
++                      Your browser does not support the audio element.
++                    </audio>
++                  </div>
++                ) : (
++                  <div className="text-xs text-muted-foreground italic">
++                    No audio available
++                  </div>
++                )}
++              </div>
++            </div>
++
++            <div className="bg-muted/20 p-3 rounded-md border border-border border-dashed">
++              <div className="text-center py-3">
++                <p className="text-muted-foreground text-sm">
++                  Character voices coming soon
++                </p>
++                <p className="text-xs text-muted-foreground mt-1">
++                  You'll be able to assign different voices to each character
++                </p>
++                <Button variant="outline" size="sm" className="mt-3" disabled>
++                  <User className="h-4 w-4 mr-2" />
++                  Add Character Voice
++                </Button>
++              </div>
++            </div>
++          </div>
++        </div>
++      </div>
++    </div>
++  );
++}
++
+ export default function AssembleVideoPage() {
+   const { user, loading: authLoading } = useAuth();
+   const router = useRouter();
+   const searchParams = useSearchParams();
+-  const storyId = searchParams.get('storyId');
++  const storyId = searchParams.get("storyId");
+   const { toast } = useToast();
+ 
+   const [storyData, setStoryData] = useState<Story | null>(null);
+   const [pageLoading, setPageLoading] = useState(true);
+   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
++  const [selectedPanel, setSelectedPanel] = useState("Voices"); // Default to Voices panel
+ 
+   useEffect(() => {
+     if (authLoading) return;
+     if (!user) {
+-      router.replace('/login');
++      router.replace("/login");
+       return;
+     }
+ 
+     if (!storyId) {
+-      toast({ title: 'Error', description: 'No story ID provided.', variant: 'destructive' });
+-      router.replace('/dashboard');
++      toast({
++        title: "Error",
++        description: "No story ID provided.",
++        variant: "destructive",
++      });
++      router.replace("/dashboard");
+       return;
+     }
+ 
+     setPageLoading(true);
+     getStory(storyId, user.uid)
+-      .then(response => {
++      .then((response) => {
+         if (response.success && response.data) {
+           setStoryData(response.data);
+         } else {
+-          toast({ title: 'Error Loading Story', description: response.error || 'Failed to load story data.', variant: 'destructive' });
+-          router.replace('/dashboard');
++          toast({
++            title: "Error Loading Story",
++            description: response.error || "Failed to load story data.",
++            variant: "destructive",
++          });
++          router.replace("/dashboard");
+         }
+       })
+       .finally(() => setPageLoading(false));
+@@ -80,133 +203,213 @@ export default function AssembleVideoPage() {
+   }
+ 
+   return (
+-    <div className="flex h-[calc(100vh-var(--header-height,4rem))] bg-secondary text-foreground"> {/* Adjust var name if header height is different */}
+-      {/* Sidebar */}
+-      {isSidebarOpen && (
+-        <aside className="w-72 bg-background border-r border-border flex flex-col p-4 space-y-4 shadow-lg">
+-          <div className="flex justify-between items-center">
+-             <Link href={`/create-story?storyId=${storyId}`} className="flex items-center text-sm text-primary hover:underline">
+-                <ArrowLeft className="w-4 h-4 mr-1" /> Back to Story Editor
+-             </Link>
+-            <Button variant="ghost" size="icon" onClick={() => setIsSidebarOpen(false)} className="md:hidden">
+-                <SidebarClose className="h-5 w-5" />
+-            </Button>
+-          </div>
+-          
+-          <div className="flex-grow space-y-2 overflow-y-auto">
++    <div className="flex h-[calc(100vh-var(--header-height,4rem))] bg-secondary text-foreground">
++      {/* Column 1: Sidebar / Menu */}
++      <div className="w-52 bg-background border-r border-border flex flex-col">
++        {/* Top Bar with Back Button */}
++        <div className="p-3 border-b border-border flex justify-between items-center">
++          <Link
++            href={`/create-story?storyId=${storyId}`}
++            className="flex items-center text-sm text-primary hover:underline"
++          >
++            <ArrowLeft className="w-4 h-4 mr-1" /> Back to Story Editor
++          </Link>
++          <Button
++            variant="ghost"
++            size="icon"
++            onClick={() => setIsSidebarOpen(false)}
++            className="md:hidden"
++          >
++            <SidebarClose className="h-5 w-5" />
++          </Button>
++        </div>
++
++        {/* Menu Area */}
++        <div className="flex flex-col h-full">
++          {/* Menu Items */}
++          <div className="p-2">
+             {sidebarNavItems.map((item, index) => (
+-              <>
+-                {item.sectionBreak && <hr className="my-2 border-border"/>}
+-                <Button key={index} variant="ghost" className="w-full justify-start text-muted-foreground hover:text-foreground hover:bg-accent/10">
++              <React.Fragment key={index}>
++                {item.sectionBreak && <hr className="my-2 border-border" />}
++                <Button
++                  variant="ghost"
++                  className={`w-full justify-start ${selectedPanel === item.name ? "bg-accent/20 text-foreground" : "text-muted-foreground"} hover:text-foreground hover:bg-accent/10`}
++                  onClick={() => setSelectedPanel(item.name)}
++                >
+                   <item.icon className="w-5 h-5 mr-3" />
+                   {item.name}
+                 </Button>
+-              </>
++              </React.Fragment>
+             ))}
+           </div>
+ 
+-          <Card className="mt-auto">
+-            <CardHeader>
+-              <CardTitle className="text-base">History</CardTitle>
+-            </CardHeader>
+-            <CardContent className="text-xs text-muted-foreground h-24 overflow-y-auto">
+-              <p>Previous versions of images will appear here. (Placeholder)</p>
+-              {/* Placeholder history items */}
+-              {[1,2,3].map(i => (
+-                <div key={i} className="p-1 my-1 border rounded bg-muted/50">History item {i}</div>
+-              ))}
+-            </CardContent>
+-          </Card>
+-        </aside>
+-      )}
+-
+-      {/* Main Content Area */}
+-      <main className="flex-1 flex flex-col overflow-hidden">
+-        {/* Top Bar */}
++          {/* History at bottom */}
++          <div className="mt-auto p-2">
++            <Card>
++              <CardHeader className="py-2 px-3">
++                <CardTitle className="text-sm">History</CardTitle>
++              </CardHeader>
++              <CardContent className="text-xs text-muted-foreground p-3 max-h-32 overflow-y-auto space-y-2">
++                <p>
++                  Previous versions of images will appear here. (Placeholder)
++                </p>
++                {[1, 2, 3].map((i) => (
++                  <div key={i} className="p-1 my-1 border rounded bg-muted/50">
++                    History item {i}
++                  </div>
++                ))}
++              </CardContent>
++            </Card>
++          </div>
++        </div>
++      </div>
++
++      {/* Top Bar for columns 2 & 3 */}
++      <div className="flex-1 flex flex-col">
+         <div className="bg-background border-b border-border p-3 flex items-center justify-between shadow-sm">
+           <div className="flex items-center gap-2">
+             {!isSidebarOpen && (
+-                <Button variant="ghost" size="icon" onClick={() => setIsSidebarOpen(true)} className="mr-2">
+-                    <SidebarOpen className="h-5 w-5" />
+-                </Button>
++              <Button
++                variant="ghost"
++                size="icon"
++                onClick={() => setIsSidebarOpen(true)}
++                className="mr-2"
++              >
++                <SidebarOpen className="h-5 w-5" />
++              </Button>
+             )}
+             <Sparkles className="w-6 h-6 text-primary" />
+-            <h1 className="text-lg font-semibold truncate" title={storyData.title}>
++            <h1
++              className="text-lg font-semibold truncate"
++              title={storyData.title}
++            >
+               {storyData.title}
+             </h1>
+           </div>
+-          <Button variant="default" className="bg-accent hover:bg-accent/90 text-accent-foreground" disabled>
++          <Button
++            variant="default"
++            className="bg-accent hover:bg-accent/90 text-accent-foreground"
++          >
+             <Download className="w-4 h-4 mr-2" />
+             Export (Coming Soon)
+           </Button>
+         </div>
+ 
+-        {/* Video Preview & Timeline */}
+-        <div className="flex-1 flex flex-col p-4 gap-4 overflow-hidden">
+-          {/* Video Preview */}
+-          <div className="flex-1 bg-muted rounded-lg flex items-center justify-center shadow-inner">
+-            {storyData.generatedImages && storyData.generatedImages.length > 0 && storyData.generatedImages[0] ? (
+-                 <Image 
+-                    src={storyData.generatedImages[0].imageUrl} 
+-                    alt="Video Preview Placeholder" 
+-                    width={800} 
+-                    height={450} 
+-                    className="max-w-full max-h-full object-contain rounded-md"
+-                    data-ai-hint={storyData.generatedImages[0].dataAiHint || "story image"}
+-                  />
++        {/* Container for columns 2 & 3 */}
++        <div className="flex-1 flex overflow-hidden">
++          {/* Column 2: Panel Content (Voice Settings when Voices is selected) */}
++          <div className="w-2/5 p-4 overflow-auto border-r border-border">
++            {selectedPanel === "Voices" ? (
++              <VoicesContent storyData={storyData} />
+             ) : (
+-                <Video className="w-24 h-24 text-muted-foreground/50" />
++              <div className="flex h-full items-center justify-center text-muted-foreground">
++                Select an option from the sidebar to view settings
++              </div>
+             )}
+           </div>
+ 
+-          {/* Timeline Controls */}
+-          <div className="bg-background p-2 rounded-md shadow-sm border border-border flex items-center justify-between">
+-            <div className="flex items-center gap-2">
+-              <Button variant="ghost" size="icon" disabled><Play className="w-5 h-5" /></Button>
+-              <Button variant="ghost" size="icon" disabled><Pause className="w-5 h-5" /></Button>
+-              <Button variant="ghost" size="icon" disabled><Scissors className="w-5 h-5" /></Button>
+-              <Button variant="ghost" size="icon" disabled><Trash2 className="w-5 h-5" /></Button>
+-              <Button variant="ghost" size="icon" disabled><Copy className="w-5 h-5" /></Button>
++          {/* Column 3: Video Preview & Timeline (always visible) */}
++          <div className="w-3/5 flex flex-col p-4 gap-4 overflow-hidden">
++            {/* Video Preview */}
++            <div className="flex-1 bg-muted rounded-lg flex items-center justify-center shadow-inner">
++              {storyData.generatedImages &&
++              storyData.generatedImages.length > 0 &&
++              storyData.generatedImages[0] ? (
++                <Image
++                  src={storyData.generatedImages[0].imageUrl}
++                  alt="Video Preview Placeholder"
++                  width={800}
++                  height={450}
++                  className="max-w-full max-h-full object-contain rounded-md"
++                  data-ai-hint={
++                    storyData.generatedImages[0].dataAiHint || "story image"
++                  }
++                />
++              ) : (
++                <Video className="w-24 h-24 text-muted-foreground/50" />
++              )}
+             </div>
+-            <span className="text-sm text-muted-foreground">0:00 / {storyData.narrationAudioDurationSeconds ? (storyData.narrationAudioDurationSeconds / 60).toFixed(2).replace('.',':') : '0:00'}</span>
+-            <div className="flex items-center gap-2">
+-                <Button variant="ghost" size="icon" disabled><History className="w-5 h-5" /></Button>
+-                <Button variant="ghost" size="icon" disabled><ZoomOut className="w-5 h-5" /></Button>
+-                <Button variant="ghost" size="icon" disabled><ZoomIn className="w-5 h-5" /></Button>
+-                <Button variant="ghost" size="icon" disabled><Maximize className="w-5 h-5" /></Button>
++
++            {/* Timeline Controls */}
++            <div className="bg-background p-2 rounded-md shadow-sm border border-border flex items-center justify-between">
++              <div className="flex items-center gap-2">
++                <Button variant="ghost" size="icon" disabled>
++                  <Play className="w-5 h-5" />
++                </Button>
++                <Button variant="ghost" size="icon" disabled>
++                  <Pause className="w-5 h-5" />
++                </Button>
++                <Button variant="ghost" size="icon" disabled>
++                  <Scissors className="w-5 h-5" />
++                </Button>
++                <Button variant="ghost" size="icon" disabled>
++                  <Trash2 className="w-5 h-5" />
++                </Button>
++                <Button variant="ghost" size="icon" disabled>
++                  <Copy className="w-5 h-5" />
++                </Button>
++              </div>
++              <span className="text-sm text-muted-foreground">
++                0:00 /{" "}
++                {storyData.narrationAudioDurationSeconds
++                  ? (storyData.narrationAudioDurationSeconds / 60)
++                      .toFixed(2)
++                      .replace(".", ":")
++                  : "0:00"}
++              </span>
++              <div className="flex items-center gap-2">
++                <Button variant="ghost" size="icon" disabled>
++                  <History className="w-5 h-5" />
++                </Button>
++                <Button variant="ghost" size="icon" disabled>
++                  <ZoomOut className="w-5 h-5" />
++                </Button>
++                <Button variant="ghost" size="icon" disabled>
++                  <ZoomIn className="w-5 h-5" />
++                </Button>
++                <Button variant="ghost" size="icon" disabled>
++                  <Maximize className="w-5 h-5" />
++                </Button>
++              </div>
+             </div>
+-          </div>
+ 
+-          {/* Timeline */}
+-          <ScrollArea className="h-32 bg-background p-2 rounded-md shadow-sm border border-border">
+-            <div className="flex space-x-2 pb-2">
+-              {storyData.generatedImages?.map((img, index) => (
+-                <div key={index} className="flex-shrink-0 w-28 h-28 rounded-md overflow-hidden border-2 border-transparent hover:border-primary cursor-pointer shadow">
+-                   {img ? (
+-                    <Image 
+-                        src={img.imageUrl} 
+-                        alt={`Scene ${index + 1}`} 
+-                        width={112} 
+-                        height={112} 
++            {/* Timeline */}
++            <ScrollArea className="h-32 bg-background p-2 rounded-md shadow-sm border border-border">
++              <div className="flex space-x-2 pb-2">
++                {storyData.generatedImages?.map((img, index) => (
++                  <div
++                    key={index}
++                    className="flex-shrink-0 w-32 h-28 rounded-md overflow-hidden border-2 border-transparent hover:border-primary cursor-pointer shadow"
++                  >
++                    {img ? (
++                      <Image
++                        src={img.imageUrl}
++                        alt={`Scene ${index + 1}`}
++                        width={112}
++                        height={112}
+                         objectFit="cover"
+                         className="w-full h-full"
+                         data-ai-hint={img.dataAiHint || "timeline thumbnail"}
+-                    />
+-                   ) : (
+-                    <div className="w-full h-full bg-muted flex items-center justify-center">
+-                        <ImageIcon className="w-8 h-8 text-muted-foreground/50"/>
+-                    </div>
+-                   )}
+-                </div>
+-              ))}
+-              {(!storyData.generatedImages || storyData.generatedImages.length === 0) && (
+-                <div className="text-muted-foreground text-sm p-4">No images to display in timeline.</div>
+-              )}
+-            </div>
+-            <ScrollBar orientation="horizontal" />
+-          </ScrollArea>
++                      />
++                    ) : (
++                      <div className="w-full h-full bg-muted flex items-center justify-center">
++                        <ImageIcon className="w-8 h-8 text-muted-foreground/50" />
++                      </div>
++                    )}
++                  </div>
++                ))}
++                {(!storyData.generatedImages ||
++                  storyData.generatedImages.length === 0) && (
++                  <div className="text-muted-foreground text-sm p-4">
++                    No images to display in timeline.
++                  </div>
++                )}
++              </div>
++              <ScrollBar orientation="horizontal" />
++            </ScrollArea>
++          </div>
+         </div>
+-      </main>
++      </div>
+     </div>
+   );
+ }
+diff --git a/src/types/story.ts b/src/types/story.ts
+index be0b503..60dc91d 100644
+--- a/src/types/story.ts
++++ b/src/types/story.ts
+@@ -29,6 +29,8 @@ export interface Story {
+   narrationAudioUrl?: string; // Data URI or URL
+   narrationAudioDurationSeconds?: number;
+   elevenLabsVoiceId?: string; // To store the selected ElevenLabs voice ID
++  narrationVoice?: string; // Voice name (e.g., "Laura")
++  narrationVoiceId?: string; // Voice ID from ElevenLabs (alias for elevenLabsVoiceId)
+   imagePrompts?: string[];
+   generatedImages?: GeneratedImage[];
+   // videoUrl?: string; // For future video assembly
+-- 
+2.48.1
+

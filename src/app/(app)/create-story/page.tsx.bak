@@ -135,33 +135,33 @@ export default function CreateStoryPage() {
       getStory(storyId, user.uid)
         .then(response => {
           if (response.success && response.data) {
-                    const loadedStory = response.data;
-                     if (loadedStory.createdAt && !(loadedStory.createdAt instanceof Date)) {
-                        loadedStory.createdAt = (loadedStory.createdAt as any).toDate();
-                    }
-                    if (loadedStory.updatedAt && !(loadedStory.updatedAt instanceof Date)) {
-                        loadedStory.updatedAt = (loadedStory.updatedAt as any).toDate();
-                    }
-                    setStoryData(loadedStory);
-                    if (loadedStory.elevenLabsVoiceId) {
-                      setSelectedVoiceId(loadedStory.elevenLabsVoiceId);
-                      setNarrationSource('generate'); 
-                    } else if (loadedStory.narrationAudioUrl) {
-                      setNarrationSource('upload');
-                      setUploadedAudioFileName("Previously uploaded audio");
-                    }
+            const loadedStory = response.data;
+             if (loadedStory.createdAt && !(loadedStory.createdAt instanceof Date)) {
+                loadedStory.createdAt = (loadedStory.createdAt as any).toDate();
+            }
+            if (loadedStory.updatedAt && !(loadedStory.updatedAt instanceof Date)) {
+                loadedStory.updatedAt = (loadedStory.updatedAt as any).toDate();
+            }
+            setStoryData(loadedStory);
+            if (loadedStory.elevenLabsVoiceId) {
+              setSelectedVoiceId(loadedStory.elevenLabsVoiceId);
+              setNarrationSource('generate'); 
+            } else if (loadedStory.narrationAudioUrl) {
+              setNarrationSource('upload');
+              setUploadedAudioFileName("Previously uploaded audio");
+            }
             
-                    updateStoryData({ 
-                        generatedScript: loadedStory.generatedScript || undefined,
-                        detailsPrompts: loadedStory.detailsPrompts || { characterPrompts: "", itemPrompts: "", locationPrompts: "" }
-                    });
+            updateStoryData({ 
+                generatedScript: loadedStory.generatedScript || undefined,
+                detailsPrompts: loadedStory.detailsPrompts || { characterPrompts: "", itemPrompts: "", locationPrompts: "" }
+            });
 
 
-                    if (loadedStory.imagePrompts && loadedStory.imagePrompts.length > 0) initialStep = 4;
-                    else if (loadedStory.narrationAudioUrl) initialStep = 3;
-                    else if (loadedStory.detailsPrompts && (loadedStory.detailsPrompts.characterPrompts || loadedStory.detailsPrompts.itemPrompts || loadedStory.detailsPrompts.locationPrompts)) initialStep = 2;
-                    else if (loadedStory.generatedScript) initialStep = 2;
-                    else initialStep = 1;
+            if (loadedStory.imagePrompts && loadedStory.imagePrompts.length > 0) initialStep = 4;
+            else if (loadedStory.narrationAudioUrl) initialStep = 3;
+            else if (loadedStory.detailsPrompts && (loadedStory.detailsPrompts.characterPrompts || loadedStory.detailsPrompts.itemPrompts || loadedStory.detailsPrompts.locationPrompts)) initialStep = 2;
+            else if (loadedStory.generatedScript) initialStep = 1;
+            else initialStep = 1;
             
             setCurrentStep(initialStep);
             setActiveAccordionItem(`step-${initialStep}`);
@@ -172,7 +172,7 @@ export default function CreateStoryPage() {
           } else {
             toast({ title: 'Error Loading Story', description: response.error || 'Failed to load story. Creating a new one.', variant: 'destructive' });
              setStoryData({...initialStoryState, userId: user.uid, generatedScript: initialStoryState.generatedScript || undefined}); 
-             setCurrentStep(1);
+             toast({ title: 'Image Prompts Generated!', description: 'Prompts for your animation visuals are ready.', className: 'bg-primary text-primary-foreground' });
              setActiveAccordionItem('step-1');
           }
         })
@@ -879,29 +879,13 @@ export default function CreateStoryPage() {
                             </Button>
                             <div className="flex items-center p-3 text-sm text-primary bg-primary/10 border border-primary/20 rounded-md mt-4">
                               <Info className="h-5 w-5 mr-2 shrink-0" />
-                              <span>Video assembly and MP4 export will be handled on the next page. Some features might be under development.</span>
-                            </div>
-                          </>
-                        ) : (
-                          <div className="flex items-center p-3 text-sm text-yellow-700 bg-yellow-100 border border-yellow-200 rounded-md">
-                            <AlertCircle className="h-5 w-5 mr-2 shrink-0" />
-                            <span>Please save your story first to enable video assembly.</span>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                ): (
-                     <p className="text-muted-foreground">Please generate or upload narration audio in Step 3 first.</p>
-                )}
-              </AccordionContent>
-            </AccordionItem>
+                              <span>Video assembly and MP
           </Accordion>
 
           <Separator className="my-8" />
 
           <div className="flex justify-end items-center space-x-4">
-             {canAssembleVideo && storyData.id && (
+             {allImagesGenerated && storyData.id && (
                 <Button asChild size="lg" className="bg-primary hover:bg-primary/90 text-primary-foreground">
                   <Link href={`/assemble-video?storyId=${storyData.id}`}>
                     <Film className="mr-2 h-4 w-4" /> Assemble &amp; Export Video
