@@ -1,4 +1,3 @@
-
 "use client";
 
 import type { Story, GeneratedImage, StoryCharacterLocationItemPrompts, ElevenLabsVoice } from '@/types/story';
@@ -543,7 +542,7 @@ export default function CreateStoryPage() {
             <AccordionItem value="step-1">
               <AccordionTrigger className="text-xl font-semibold hover:no-underline data-[state=open]:text-primary">
                 <div className="flex items-center">
-                  <Pencil className="w-6 h-6 mr-3" /> Step 1: Craft Your Story Idea & Script
+                  <Pencil className="w-6 h-6 mr-3" /> Step 1: Craft Your Story Idea &amp; Script
                 </div>
               </AccordionTrigger>
               <AccordionContent className="pt-4 space-y-4">
@@ -574,7 +573,7 @@ export default function CreateStoryPage() {
                 <div className="flex space-x-2">
                     <Button onClick={handleGenerateScript} disabled={isLoading.script || !storyData.userPrompt.trim()} className="bg-accent hover:bg-accent/90 text-accent-foreground">
                     {isLoading.script ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
-                    {storyData.generatedScript !== undefined ? 'Re-generate Script & Title' : 'Generate Script & Title'}
+                    {storyData.generatedScript !== undefined ? 'Re-generate Script &amp; Title' : 'Generate Script &amp; Title'}
                     </Button>
                     {storyData.generatedScript !== undefined && (
                         <Button 
@@ -599,7 +598,7 @@ export default function CreateStoryPage() {
             <AccordionItem value="step-2" disabled={storyData.generatedScript === undefined}>
               <AccordionTrigger className="text-xl font-semibold hover:no-underline data-[state=open]:text-primary">
                 <div className="flex items-center">
-                  <Users className="w-6 h-6 mr-3" /> Step 2: Generate Character, Item & Location Details
+                  <Users className="w-6 h-6 mr-3" /> Step 2: Generate Character, Item &amp; Location Details
                 </div>
               </AccordionTrigger>
               <AccordionContent className="pt-4 space-y-4">
@@ -610,8 +609,34 @@ export default function CreateStoryPage() {
                     </p>
                     <Button onClick={handleGenerateDetails} disabled={isLoading.details || !storyData.generatedScript} className="mt-4 bg-accent hover:bg-accent/90 text-accent-foreground">
                       {isLoading.details ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Bot className="mr-2 h-4 w-4" />}
-                      Generate Details
+                      {storyData.detailsPrompts ? 'Re-generate Details' : 'Generate Details'}
                     </Button>
+
+                    {storyData.detailsPrompts && (storyData.detailsPrompts.characterPrompts || storyData.detailsPrompts.itemPrompts || storyData.detailsPrompts.locationPrompts) && (
+                      <div className="mt-6">
+                        <Label className="block text-md font-medium">Character, Item &amp; Location Prompts (Review)</Label>
+                         <Accordion type="multiple" className="w-full mt-1 bg-muted/30 rounded-md">
+                            <AccordionItem value="chars">
+                                <AccordionTrigger className="px-3 py-2 text-sm hover:no-underline">View Character Prompts</AccordionTrigger>
+                                <AccordionContent className="px-3 pb-2">
+                                    <Textarea value={storyData.detailsPrompts.characterPrompts || "No character prompts generated."} readOnly rows={5} className="bg-muted/50 text-xs whitespace-pre-wrap"/>
+                                </AccordionContent>
+                            </AccordionItem>
+                            <AccordionItem value="items">
+                                <AccordionTrigger className="px-3 py-2 text-sm hover:no-underline">View Item Prompts</AccordionTrigger>
+                                <AccordionContent className="px-3 pb-2">
+                                     <Textarea value={storyData.detailsPrompts.itemPrompts || "No item prompts generated."} readOnly rows={5} className="bg-muted/50 text-xs whitespace-pre-wrap"/>
+                                </AccordionContent>
+                            </AccordionItem>
+                            <AccordionItem value="locations">
+                                <AccordionTrigger className="px-3 py-2 text-sm hover:no-underline">View Location Prompts</AccordionTrigger>
+                                <AccordionContent className="px-3 pb-2">
+                                     <Textarea value={storyData.detailsPrompts.locationPrompts || "No location prompts generated."} readOnly rows={5} className="bg-muted/50 text-xs whitespace-pre-wrap"/>
+                                </AccordionContent>
+                            </AccordionItem>
+                        </Accordion>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <p className="text-muted-foreground">Please generate a script in Step 1 first.</p>
@@ -627,30 +652,7 @@ export default function CreateStoryPage() {
                 </div>
               </AccordionTrigger>
               <AccordionContent className="pt-4 space-y-4">
-                {storyData.detailsPrompts && (storyData.detailsPrompts.characterPrompts || storyData.detailsPrompts.itemPrompts || storyData.detailsPrompts.locationPrompts) ? (
                   <div>
-                    <Label className="block text-md font-medium">Character, Item & Location Prompts (Review)</Label>
-                     <Accordion type="multiple" className="w-full mt-1 bg-muted/30 rounded-md">
-                        <AccordionItem value="chars">
-                            <AccordionTrigger className="px-3 py-2 text-sm hover:no-underline">View Character Prompts</AccordionTrigger>
-                            <AccordionContent className="px-3 pb-2">
-                                <Textarea value={storyData.detailsPrompts.characterPrompts || "No character prompts generated."} readOnly rows={5} className="bg-muted/50 text-xs whitespace-pre-wrap"/>
-                            </AccordionContent>
-                        </AccordionItem>
-                        <AccordionItem value="items">
-                            <AccordionTrigger className="px-3 py-2 text-sm hover:no-underline">View Item Prompts</AccordionTrigger>
-                            <AccordionContent className="px-3 pb-2">
-                                 <Textarea value={storyData.detailsPrompts.itemPrompts || "No item prompts generated."} readOnly rows={5} className="bg-muted/50 text-xs whitespace-pre-wrap"/>
-                            </AccordionContent>
-                        </AccordionItem>
-                        <AccordionItem value="locations">
-                            <AccordionTrigger className="px-3 py-2 text-sm hover:no-underline">View Location Prompts</AccordionTrigger>
-                            <AccordionContent className="px-3 pb-2">
-                                 <Textarea value={storyData.detailsPrompts.locationPrompts || "No location prompts generated."} readOnly rows={5} className="bg-muted/50 text-xs whitespace-pre-wrap"/>
-                            </AccordionContent>
-                        </AccordionItem>
-                    </Accordion>
-
                     <div className="mt-6">
                         <Label className="block text-md font-medium mb-2">Narration Source</Label>
                         <RadioGroup value={narrationSource} onValueChange={(value) => setNarrationSource(value as 'generate' | 'upload')} className="flex space-x-4">
@@ -709,9 +711,6 @@ export default function CreateStoryPage() {
                         </div>
                     )}
                   </div>
-                ) : (
-                  <p className="text-muted-foreground">Please generate character, item, or location details first.</p>
-                )}
               </AccordionContent>
             </AccordionItem>
 
@@ -812,7 +811,7 @@ export default function CreateStoryPage() {
             <AccordionItem value="step-6" disabled={!allImagesGenerated}>
               <AccordionTrigger className="text-xl font-semibold hover:no-underline data-[state=open]:text-primary">
                 <div className="flex items-center">
-                  <Clapperboard className="w-6 h-6 mr-3" /> Step 6: Assemble & Export Video
+                  <Clapperboard className="w-6 h-6 mr-3" /> Step 6: Assemble &amp; Export Video
                 </div>
               </AccordionTrigger>
               <AccordionContent className="pt-4 space-y-4">
@@ -833,7 +832,7 @@ export default function CreateStoryPage() {
                     </div>
                     <Button asChild className="mt-4 bg-primary hover:bg-primary/90 text-primary-foreground" disabled={!allImagesGenerated || !storyData.id}>
                       <Link href={`/assemble-video?storyId=${storyData.id}`}>
-                        <Film className="mr-2 h-4 w-4" /> Assemble & Export Video
+                        <Film className="mr-2 h-4 w-4" /> Assemble &amp; Export Video
                       </Link>
                     </Button>
                     <div className="flex items-center p-3 text-sm text-primary bg-primary/10 border border-primary/20 rounded-md mt-2">
@@ -858,7 +857,7 @@ export default function CreateStoryPage() {
              {allImagesGenerated && storyData.id && (
                 <Button asChild size="lg" className="bg-primary hover:bg-primary/90 text-primary-foreground">
                   <Link href={`/assemble-video?storyId=${storyData.id}`}>
-                    <Film className="mr-2 h-4 w-4" /> Assemble & Export Video
+                    <Film className="mr-2 h-4 w-4" /> Assemble &amp; Export Video
                   </Link>
                 </Button>
               )}
