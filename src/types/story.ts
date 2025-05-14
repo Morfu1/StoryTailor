@@ -29,6 +29,8 @@ export interface Story {
   narrationAudioUrl?: string; // Data URI or URL
   narrationAudioDurationSeconds?: number;
   elevenLabsVoiceId?: string; // To store the selected ElevenLabs voice ID
+  narrationVoice?: string; // Voice name (e.g., "Laura")
+  narrationVoiceId?: string; // Voice ID from ElevenLabs (alias for elevenLabsVoiceId)
   imagePrompts?: string[];
   generatedImages?: GeneratedImage[];
   // videoUrl?: string; // For future video assembly
