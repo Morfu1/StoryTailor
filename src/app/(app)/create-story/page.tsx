@@ -32,7 +32,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { generateTitle, generateScript, generateCharacterPrompts, generateNarrationAudio, generateImagePrompts, saveStory, getStory, generateImageFromPrompt } from '@/actions/storyActions';
-import { Bot, Clapperboard, ImageIcon, Loader2, Mic, Save, Sparkles, FileText, Image as LucideImage, AlertCircle, CheckCircle, Info, Pencil, ListMusic, Upload, Film, Edit2 } from 'lucide-react';
+import { Bot, Clapperboard, ImageIcon, Loader2, Mic, Save, Sparkles, FileText, Image as LucideImage, AlertCircle, CheckCircle, Info, Pencil, ListMusic, Upload, Film, Edit2, Users } from 'lucide-react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -146,10 +146,10 @@ export default function CreateStoryPage() {
               setUploadedAudioFileName("Previously uploaded audio");
             }
             
-            if (loadedStory.generatedScript) {
-              // Ensure generatedScript is string, if undefined, keep as is.
-              updateStoryData({ generatedScript: loadedStory.generatedScript || '' });
-            }
+            // Ensure generatedScript is string or undefined, not null or other types.
+            // If it's an empty string from DB, keep it as empty string.
+            updateStoryData({ generatedScript: loadedStory.generatedScript || undefined });
+
 
             if (loadedStory.generatedImages && loadedStory.generatedImages.length > 0 && loadedStory.imagePrompts && loadedStory.generatedImages.length === loadedStory.imagePrompts.length && loadedStory.generatedImages.every(img => img !== null)) initialStep = 6;
             else if (loadedStory.imagePrompts && loadedStory.imagePrompts.length > 0) initialStep = 5;
@@ -163,7 +163,7 @@ export default function CreateStoryPage() {
 
           } else {
             toast({ title: 'Error Loading Story', description: response.error || 'Failed to load story. Creating a new one.', variant: 'destructive' });
-             setStoryData({...initialStoryState, userId: user.uid, generatedScript: initialStoryState.generatedScript || ''}); 
+             setStoryData({...initialStoryState, userId: user.uid, generatedScript: initialStoryState.generatedScript || undefined}); 
              setCurrentStep(1);
              setActiveAccordionItem('step-1');
           }
@@ -172,7 +172,7 @@ export default function CreateStoryPage() {
     } else {
        setPageLoading(false); 
        if(user?.uid) { 
-        setStoryData(prev => ({...prev, userId: user.uid, generatedScript: prev.generatedScript || ''}));
+        setStoryData(prev => ({...prev, userId: user.uid, generatedScript: prev.generatedScript || undefined}));
        }
        setCurrentStep(initialStep); // ensure currentStep is set even if no storyId
        setActiveAccordionItem(`step-${initialStep}`); // ensure accordion is also set
@@ -543,7 +543,7 @@ export default function CreateStoryPage() {
             <AccordionItem value="step-1">
               <AccordionTrigger className="text-xl font-semibold hover:no-underline data-[state=open]:text-primary">
                 <div className="flex items-center">
-                  <Pencil className="w-6 h-6 mr-3" /> Step 1: Craft Your Story Idea
+                  <Pencil className="w-6 h-6 mr-3" /> Step 1: Craft Your Story Idea & Script
                 </div>
               </AccordionTrigger>
               <AccordionContent className="pt-4 space-y-4">
@@ -589,31 +589,33 @@ export default function CreateStoryPage() {
                 </div>
                  {storyData.generatedScript !== undefined && (
                    <p className="text-sm text-muted-foreground">
-                     You can re-generate the script (which overwrites manual edits) or edit it manually. The updated script will be used in Step 2.
+                     You can re-generate the script (which overwrites manual edits) or edit it manually. The updated script will be used in subsequent steps.
                    </p>
                  )}
               </AccordionContent>
             </AccordionItem>
 
-            {/* Step 2: Generated Script & Details */}
+            {/* Step 2: Generate Character, Item & Location Details */}
             <AccordionItem value="step-2" disabled={storyData.generatedScript === undefined}>
               <AccordionTrigger className="text-xl font-semibold hover:no-underline data-[state=open]:text-primary">
                 <div className="flex items-center">
-                  <FileText className="w-6 h-6 mr-3" /> Step 2: Review Script & Generate Details
+                  <Users className="w-6 h-6 mr-3" /> Step 2: Generate Character, Item & Location Details
                 </div>
               </AccordionTrigger>
               <AccordionContent className="pt-4 space-y-4">
-                {storyData.generatedScript !== undefined && (
+                {storyData.generatedScript !== undefined ? (
                   <div>
-                    <Label className="block text-md font-medium">Generated Script (Final from Step 1)</Label>
-                    <Textarea value={storyData.generatedScript} readOnly rows={10} className="mt-1 bg-muted/50 text-base"/>
+                    <p className="text-sm text-muted-foreground mb-2">
+                      Using the script generated in Step 1, we will now create detailed descriptions for characters, items, and locations.
+                    </p>
                     <Button onClick={handleGenerateDetails} disabled={isLoading.details || !storyData.generatedScript} className="mt-4 bg-accent hover:bg-accent/90 text-accent-foreground">
                       {isLoading.details ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Bot className="mr-2 h-4 w-4" />}
-                      Generate Character, Item & Location Details
+                      Generate Details
                     </Button>
                   </div>
+                ) : (
+                  <p className="text-muted-foreground">Please generate a script in Step 1 first.</p>
                 )}
-                 {storyData.generatedScript === undefined && <p className="text-muted-foreground">Please generate a script in Step 1 first.</p>}
               </AccordionContent>
             </AccordionItem>
 
@@ -708,7 +710,7 @@ export default function CreateStoryPage() {
                     )}
                   </div>
                 ) : (
-                  <p className="text-muted-foreground">Please generate character, item, or location details in Step 2 first.</p>
+                  <p className="text-muted-foreground">Please generate character, item, or location details first.</p>
                 )}
               </AccordionContent>
             </AccordionItem>
