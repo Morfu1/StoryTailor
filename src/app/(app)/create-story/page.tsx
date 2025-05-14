@@ -641,7 +641,7 @@ export default function CreateStoryPage() {
                                             onChange={(e) => updateStoryData({ detailsPrompts: { ...(storyData.detailsPrompts || {}), characterPrompts: e.target.value } as StoryCharacterLocationItemPrompts })}
                                             onBlur={() => setIsCharacterPromptsEditing(false)}
                                             rows={5} 
-                                            className={`bg-card text-xs whitespace-pre-wrap w-full ${isCharacterPromptsEditing ? 'ring-2 ring-primary' : 'border-transparent'}`}
+                                            className={`text-xs whitespace-pre-wrap w-full ${isCharacterPromptsEditing ? 'bg-background ring-2 ring-primary' : 'bg-card border-transparent'}`}
                                             placeholder="Character descriptions will appear here..."
                                         />
                                         <Button variant="ghost" size="icon" className="absolute top-1 right-1 h-6 w-6" onClick={() => setIsCharacterPromptsEditing(!isCharacterPromptsEditing)}>
@@ -660,7 +660,7 @@ export default function CreateStoryPage() {
                                             onChange={(e) => updateStoryData({ detailsPrompts: { ...(storyData.detailsPrompts || {}), itemPrompts: e.target.value } as StoryCharacterLocationItemPrompts })}
                                             onBlur={() => setIsItemPromptsEditing(false)}
                                             rows={5} 
-                                            className={`bg-card text-xs whitespace-pre-wrap w-full ${isItemPromptsEditing ? 'ring-2 ring-primary' : 'border-transparent'}`}
+                                            className={`text-xs whitespace-pre-wrap w-full ${isItemPromptsEditing ? 'bg-background ring-2 ring-primary' : 'bg-card border-transparent'}`}
                                             placeholder="Item descriptions will appear here..."
                                         />
                                         <Button variant="ghost" size="icon" className="absolute top-1 right-1 h-6 w-6" onClick={() => setIsItemPromptsEditing(!isItemPromptsEditing)}>
@@ -679,7 +679,7 @@ export default function CreateStoryPage() {
                                             onChange={(e) => updateStoryData({ detailsPrompts: { ...(storyData.detailsPrompts || {}), locationPrompts: e.target.value } as StoryCharacterLocationItemPrompts })}
                                             onBlur={() => setIsLocationPromptsEditing(false)}
                                             rows={5} 
-                                            className={`bg-card text-xs whitespace-pre-wrap w-full ${isLocationPromptsEditing ? 'ring-2 ring-primary' : 'border-transparent'}`}
+                                            className={`text-xs whitespace-pre-wrap w-full ${isLocationPromptsEditing ? 'bg-background ring-2 ring-primary' : 'bg-card border-transparent'}`}
                                             placeholder="Location descriptions will appear here..."
                                         />
                                         <Button variant="ghost" size="icon" className="absolute top-1 right-1 h-6 w-6" onClick={() => setIsLocationPromptsEditing(!isLocationPromptsEditing)}>
