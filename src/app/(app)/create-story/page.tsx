@@ -1,4 +1,3 @@
-
 "use client";
 
 import type { Story, GeneratedImage, StoryCharacterLocationItemPrompts, ElevenLabsVoice } from '@/types/story';
@@ -145,7 +144,7 @@ export default function CreateStoryPage() {
               setUploadedAudioFileName("Previously uploaded audio");
             }
             
-            if (loadedStory.generatedImages && loadedStory.generatedImages.length > 0 && loadedStory.imagePrompts && loadedStory.generatedImages.length === loadedStory.imagePrompts.length) setCurrentStep(6);
+            if (loadedStory.generatedImages && loadedStory.generatedImages.length > 0 && loadedStory.imagePrompts && loadedStory.generatedImages.length === loadedStory.imagePrompts.length && loadedStory.generatedImages.every(img => img !== null)) setCurrentStep(6);
             else if (loadedStory.imagePrompts && loadedStory.imagePrompts.length > 0) setCurrentStep(5);
             else if (loadedStory.narrationAudioUrl) setCurrentStep(4);
             else if (loadedStory.detailsPrompts && (loadedStory.detailsPrompts.characterPrompts || loadedStory.detailsPrompts.itemPrompts || loadedStory.detailsPrompts.locationPrompts)) setCurrentStep(3);
@@ -325,13 +324,15 @@ export default function CreateStoryPage() {
       } else {
          const newImagesArray = Array(storyData.imagePrompts?.length || 0).fill(null);
          currentGeneratedImages.forEach((img) => {
-            const originalPromptIndex = storyData.imagePrompts?.indexOf(img.prompt);
-            if(originalPromptIndex !== undefined && originalPromptIndex > -1) {
-                newImagesArray[originalPromptIndex] = img;
+            if (img) { // Check if img is not null
+              const originalPromptIndex = storyData.imagePrompts?.indexOf(img.prompt);
+              if(originalPromptIndex !== undefined && originalPromptIndex > -1) {
+                  newImagesArray[originalPromptIndex] = img;
+              }
             }
          });
          newImagesArray[index] = newImage;
-         updatedImages = newImagesArray.filter(Boolean); 
+         updatedImages = newImagesArray.filter(Boolean) as GeneratedImage[]; 
       }
 
       updateStoryData({ generatedImages: updatedImages });
@@ -351,7 +352,7 @@ export default function CreateStoryPage() {
     
     const currentGeneratedImages = Array.isArray(storyData.generatedImages) ? storyData.generatedImages : [];
     const imagesToGenerate = storyData.imagePrompts.map((prompt, index) => ({ prompt, index })).filter(
-      p => !currentGeneratedImages.some(img => img.prompt === p.prompt)
+      p => !currentGeneratedImages.some(img => img && img.prompt === p.prompt) // Check if img is not null
     );
 
     const results = await Promise.all(
@@ -371,7 +372,7 @@ export default function CreateStoryPage() {
     
     if (successfulNewImages.length > 0) {
       setStoryData(prev => {
-        const existingImages = Array.isArray(prev.generatedImages) ? prev.generatedImages : [];
+        const existingImages = Array.isArray(prev.generatedImages) ? prev.generatedImages.filter(img => img !== null) as GeneratedImage[] : []; // Filter out nulls
         const combined = [...existingImages, ...successfulNewImages];
         const uniqueImagesByPrompt = Array.from(new Map(combined.map(img => [img.prompt, img])).values());
         
@@ -726,7 +727,7 @@ export default function CreateStoryPage() {
                     </div>
                     <div className="max-h-96 overflow-y-auto space-y-3 pr-2 rounded-md border p-3 bg-muted/20">
                       {storyData.imagePrompts.map((prompt, index) => {
-                        const existingImage = storyData.generatedImages?.find(img => img.prompt === prompt);
+                        const existingImage = storyData.generatedImages?.find(img => img && img.prompt === prompt);
                         return (
                           <div key={index} className="p-3 bg-card rounded-md shadow-sm border">
                             <p className="text-sm text-muted-foreground"><strong>Prompt {index + 1}:</strong> {prompt}</p>
@@ -786,7 +787,7 @@ export default function CreateStoryPage() {
                         <Film className="mr-2 h-4 w-4" /> Assemble & Export Video
                       </Link>
                     </Button>
-                    <div className="flex items-center p-3 text-sm text-primary bg-primary/10 border border-primary/20 rounded-md">
+                    <div className="flex items-center p-3 text-sm text-primary bg-primary/10 border border-primary/20 rounded-md mt-2">
                       <Info className="h-5 w-5 mr-2 shrink-0" />
                       <span>Video assembly and MP4 export will be handled on the next page. Some features might be under development.</span>
                     </div>
