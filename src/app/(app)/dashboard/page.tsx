@@ -103,10 +103,10 @@ export default function DashboardPage() {
               <CardHeader>
                  <div className="aspect-[16/9] bg-muted rounded-t-md overflow-hidden relative">
                   <Image 
-                    src={story.generatedImages?.[0]?.imageUrl || "https://placehold.co/400x225.png"} 
+                    src={story.generatedImages?.[0]?.imageUrl || "https://picsum.photos/400/225"} 
                     alt={story.title || "Story image"} 
-                    layout="fill" 
-                    objectFit="cover"
+                    fill
+                    style={{ objectFit: "cover" }}
                     data-ai-hint={story.generatedImages?.[0]?.dataAiHint || "fantasy landscape"}
                   />
                 </div>

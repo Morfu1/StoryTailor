@@ -521,7 +521,7 @@ export default function CreateStoryPage() {
           <CardDescription>
             Follow the steps below to bring your animated story to life. Click Save Story anytime to store your progress.
           </CardDescription>
-           <div className="mt-4">
+           <div>
             <Label htmlFor="storyTitle" className="text-sm font-medium flex items-center">
                 Story Title 
                 {isLoading.titleGen && <Loader2 className="ml-2 h-4 w-4 animate-spin" />}
@@ -794,11 +794,11 @@ export default function CreateStoryPage() {
               </AccordionContent>
             </AccordionItem>
 
-            {/* Step 4: Image Prompts and Assemble & Export Video */}
+            {/* Step 4: Image Prompts */}
             <AccordionItem value="step-4" disabled={!storyData.narrationAudioUrl}>
               <AccordionTrigger className="text-xl font-semibold hover:no-underline data-[state=open]:text-primary">
                 <div className="flex items-center">
-                  <LucideImage className="w-6 h-6 mr-3" /> Step 4: Generate Image Prompts &amp; Assemble Video
+                  <LucideImage className="w-6 h-6 mr-3" /> Step 4: Generate Image Prompts
                 </div>
               </AccordionTrigger>
               <AccordionContent className="pt-4 space-y-4">
@@ -856,38 +856,6 @@ export default function CreateStoryPage() {
                             </div>
                           ))}
                         </div>
-                      </div>
-                    )}
-                    
-                    {/* Assemble & Export Video Button */}
-                    {storyData.imagePrompts && storyData.imagePrompts.length > 0 && (
-                      <div className="mt-8">
-                        <Separator className="mb-6" />
-                        <Label className="block text-xl font-semibold mb-4">Assemble & Export Video</Label>
-                        
-                        {storyData.id ? (
-                          <>
-                            <p className="text-muted-foreground mb-4">Your prompts are ready! You can now proceed to assemble your video.</p>
-                            <Button 
-                              asChild 
-                              className="bg-primary hover:bg-primary/90 text-primary-foreground"
-                              size="lg"
-                            >
-                              <Link href={`/assemble-video?storyId=${storyData.id}`}>
-                                <Film className="mr-2 h-5 w-5" /> Assemble &amp; Export Video
-                              </Link>
-                            </Button>
-                            <div className="flex items-center p-3 text-sm text-primary bg-primary/10 border border-primary/20 rounded-md mt-4">
-                              <Info className="h-5 w-5 mr-2 shrink-0" />
-                              <span>Video assembly and MP4 export will be handled on the next page. Some features might be under development.</span>
-                            </div>
-                          </>
-                        ) : (
-                          <div className="flex items-center p-3 text-sm text-yellow-700 bg-yellow-100 border border-yellow-200 rounded-md">
-                            <AlertCircle className="h-5 w-5 mr-2 shrink-0" />
-                            <span>Please save your story first to enable video assembly.</span>
-                          </div>
-                        )}
                       </div>
                     )}
                   </div>
