@@ -1,10 +1,11 @@
+
 "use client";
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAuth } from '@/components/auth-provider';
 import type { Story } from '@/types/story';
-import { PlusCircle, FileText, Loader2, AlertTriangle } from 'lucide-react';
+import { PlusCircle, FileText, Loader2, AlertTriangle, Film, Edit } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useEffect, useState } from 'react';
@@ -102,11 +103,11 @@ export default function DashboardPage() {
               <CardHeader>
                  <div className="aspect-[16/9] bg-muted rounded-t-md overflow-hidden relative">
                   <Image 
-                    src={story.generatedImages?.[0]?.imageUrl || "https://picsum.photos/400/225"} 
-                    alt={story.title} 
+                    src={story.generatedImages?.[0]?.imageUrl || "https://placehold.co/400x225.png"} 
+                    alt={story.title || "Story image"} 
                     layout="fill" 
                     objectFit="cover"
-                    data-ai-hint="fantasy landscape"
+                    data-ai-hint={story.generatedImages?.[0]?.dataAiHint || "fantasy landscape"}
                   />
                 </div>
                 <CardTitle className="mt-4 text-xl font-semibold text-foreground truncate">
@@ -121,10 +122,18 @@ export default function DashboardPage() {
                   Last updated: {story.updatedAt ? formatDistanceToNow(new Date( (story.updatedAt as any).seconds * 1000), { addSuffix: true }) : 'N/A'}
                 </p>
               </CardContent>
-              <CardFooter>
+              <CardFooter className="flex flex-col sm:flex-row gap-2">
                 <Button asChild variant="outline" className="w-full">
-                  {/* Link to view/edit story page - to be implemented */}
-                  <Link href={`/create-story?storyId=${story.id}`}>View & Edit</Link>
+                  <Link href={`/create-story?storyId=${story.id}`}>
+                    <Edit className="mr-2 h-4 w-4" />
+                    Edit Story
+                  </Link>
+                </Button>
+                <Button asChild variant="default" className="w-full bg-primary hover:bg-primary/90 text-primary-foreground">
+                  <Link href={`/assemble-video?storyId=${story.id}`}>
+                    <Film className="mr-2 h-4 w-4" />
+                    Edit Video
+                  </Link>
                 </Button>
               </CardFooter>
             </Card>
@@ -134,3 +143,4 @@ export default function DashboardPage() {
     </div>
   );
 }
+
