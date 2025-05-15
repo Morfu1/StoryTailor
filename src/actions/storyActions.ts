@@ -172,7 +172,7 @@ export async function getStory(storyId: string, userId: string): Promise<{ succe
     const firebaseError = error as FirebaseErrorWithCode;
     if (firebaseError && firebaseError.code) {
       errorMessage = `Failed to fetch story (Admin SDK): ${firebaseError.message} (Code: ${firebaseError.code})`;
-       if (firebaseError.code === 'permission-denied' || firebaseError.code === 7) {
+      if (firebaseError.code === 'permission-denied' || (typeof firebaseError.code === 'number' && firebaseError.code === 7)) {
         console.error("[getStory Action] PERMISSION DENIED while fetching. Check Firestore rules and IAM for service account.");
       }
     } else if (error instanceof Error) {
@@ -182,28 +182,83 @@ export async function getStory(storyId: string, userId: string): Promise<{ succe
   }
 }
 
-export async function generateImageFromPrompt(prompt: string): Promise<{ success: boolean, imageUrl?: string, error?: string, dataAiHint?: string }> {
-  // Placeholder - simulate AI image generation
-  await new Promise(resolve => setTimeout(resolve, 1500)); 
-  
-  let keywords = "abstract"; 
-  const mentionedItems = prompt.match(/@\w+/g); 
-  if (mentionedItems && mentionedItems.length > 0) {
-      keywords = mentionedItems.map(item => item.substring(1).toLowerCase()).slice(0,2).join(" ");
-  } else {
-      const words = prompt.toLowerCase().split(" ");
-      const commonWords = ["a", "an", "the", "of", "in", "is", "and", "shot", "at", "with", "scene", "visualize", "generate"];
-      const meaningfulWords = words.filter(w => !commonWords.includes(w) && w.length > 3);
-      if (meaningfulWords.length > 0) {
-          keywords = meaningfulWords.slice(0,2).join(" ");
-      }
+export async function generateImageFromPrompt(
+  originalPrompt: string
+): Promise<{ success: boolean; imageUrl?: string; error?: string; requestPrompt?: string }> {
+  const apiKey = process.env.PICSART_API_KEY;
+
+  if (!apiKey) {
+    console.error("PicsArt API key is not configured.");
+    return { success: false, error: "PicsArt API key is not configured." };
   }
 
-  const width = 512;
-  const height = 512;
-  const imageUrl = `https://picsum.photos/${width}/${height}?random=${Math.random()}`;
+  const styles = "3D, Cartoon, High Quality";
+  // Ensure originalPrompt is not empty before adding styles
+  const requestPrompt = originalPrompt ? `${originalPrompt}, ${styles}` : styles;
+  
+  // A more concise negative prompt, focusing on common issues.
+  // The SDK example used: Yup.string().min(7).max(100).required() for negativePrompt,
+  // implying it shouldn't be empty if provided. For robust behavior, we can set a default.
+  const negativePrompt = "ugly, tiling, poorly drawn hands, poorly drawn feet, poorly drawn face, out of frame, extra limbs, disfigured, deformed, body out of frame, blurry, bad anatomy, blurred, watermark, grainy, signature, cut off, draft, low quality, worst quality, SFW, text, words, letters, nsfw, nude";
+  const width = 1024; // As requested: 16:9
+  const height = 576; // As requested: 16:9
+  const count = 1; // Generate one image per prompt
 
-  return { success: true, imageUrl, dataAiHint: keywords };
+  try {
+    console.log(`Calling PicsArt API with prompt: "${requestPrompt}"`);
+    const response = await fetch("https://genai-api.picsart.io/v1/text2image", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        // Standard Bearer token for Picsart API Key
+        "Authorization": `Bearer ${apiKey}`, 
+        // "x-picsart-api-key": apiKey, // Some docs show this, others Bearer. SDK uses Bearer for GenAI.
+      },
+      body: JSON.stringify({
+        prompt: requestPrompt,
+        negativePrompt, // Ensure this is not empty if the API strictly requires it
+        width,
+        height,
+        count,
+        // model: "Flux" // Model is not a direct parameter in the SDK, might be inferred or part of base URL/key config
+        // styles: ["3D", "Cartoon", "High Quality"] // Styles are often part of the prompt or separate parameters; here, appended to prompt.
+      }),
+    });
+
+    const responseText = await response.text(); // Read response text for better debugging
+
+    if (!response.ok) {
+      console.error("PicsArt API Error Response Text:", responseText);
+      let errorData;
+      try {
+        errorData = JSON.parse(responseText);
+      } catch (e) {
+        errorData = { message: `PicsArt API request failed with status ${response.status}. Response: ${responseText}` };
+      }
+      return { success: false, error: errorData.message || errorData.title || `PicsArt API request failed: ${response.status}`, requestPrompt };
+    }
+
+    const result = JSON.parse(responseText);
+    
+    if (result.data && Array.isArray(result.data) && result.data.length > 0 && result.data[0].url) {
+      return { success: true, imageUrl: result.data[0].url, requestPrompt };
+    } else if (result.status === 'processing' && result.jobId) {
+        // Handle async job if API returns a job ID for polling
+        // For now, we'll treat this as a scenario needing further implementation for polling.
+        // This is a placeholder, real polling logic would be needed.
+        console.log("PicsArt API job submitted, ID:", result.jobId);
+        // You would typically start polling here or return the job ID to the client for polling.
+        // For simplicity in this step, returning an error as direct image URL is expected.
+        return { success: false, error: `Image generation is processing (Job ID: ${result.jobId}). Polling not yet implemented.`, requestPrompt};
+    }else {
+      console.error("PicsArt API response did not contain expected image URL or job ID:", result);
+      return { success: false, error: "Failed to retrieve image URL or job ID from PicsArt API response.", requestPrompt };
+    }
+
+  } catch (error: any) {
+    console.error("Error calling PicsArt API:", error);
+    return { success: false, error: error.message || "An unknown error occurred while generating the image.", requestPrompt };
+  }
 }
 
 
@@ -384,9 +439,9 @@ export async function saveStory(storyData: Story, userId: string): Promise<{ suc
 
     if (firebaseError && firebaseError.code) {
       errorMessage = `Failed to save story (Firestore Error): ${firebaseError.message} (Code: ${firebaseError.code})`;
-      if (firebaseError.code === 'permission-denied' || firebaseError.code === 7) { 
+      if (firebaseError.code === 'permission-denied' || (typeof firebaseError.code === 'number' && firebaseError.code === 7)) { 
         console.error("[saveStory Action] PERMISSION DENIED. This likely means the Admin SDK service account lacks Firestore write permissions for the target path, OR a Firestore rule is somehow still blocking (though Admin SDK usually bypasses rules). Check IAM for the service account and Firestore rules for 'stories' collection.");
-      } else if (firebaseError.code === 'unauthenticated' || firebaseError.code === 16) { 
+      } else if (firebaseError.code === 'unauthenticated' || (typeof firebaseError.code === 'number' && firebaseError.code === 16)) { 
          console.error("[saveStory Action] UNAUTHENTICATED: This indicates an issue with Admin SDK authentication, possibly related to credentials or token.");
       }
     } else if (error instanceof Error) {

@@ -75,6 +75,60 @@ export default function CreateStoryPage() {
   const [isItemPromptsEditing, setIsItemPromptsEditing] = useState(false);
   const [isLocationPromptsEditing, setIsLocationPromptsEditing] = useState(false);
   const [isImagePromptEditing, setIsImagePromptEditing] = useState<boolean[]>([]);
+  const [isGeneratingDetailImage, setIsGeneratingDetailImage] = useState<Record<string, boolean>>({});
+
+interface ParsedPrompt {
+  name?: string;
+  description: string;
+  originalIndex: number; 
+}
+
+const parseNamedPrompts = (rawPrompts: string | undefined, type: 'Character' | 'Item' | 'Location'): ParsedPrompt[] => {
+  if (!rawPrompts) return [];
+
+  const cleanPrompts = rawPrompts
+    .replace(/^(Character Prompts:|Item Prompts:|Location Prompts:)\s*\n*/i, '')
+    .trim();
+
+  if (!cleanPrompts) return [];
+
+  return cleanPrompts.split(/\n\s*\n/) 
+    .map((block, index) => {
+      const lines = block.trim().split('\n').map(l => l.trim()).filter(l => l);
+      if (lines.length === 0) {
+        return null; 
+      }
+
+      let name: string | undefined = undefined;
+      let description: string;
+
+      if (lines.length > 1) {
+        // Attempt to identify if the first line is a name.
+        // This heuristic assumes a name is typically shorter and doesn't end with punctuation like a sentence.
+        // And the subsequent lines form the description.
+        const firstLineIsLikelyName = lines[0].length < 60 && !/[\.\?!]$/.test(lines[0]) && lines.slice(1).join(' ').length > 0;
+
+        if (firstLineIsLikelyName) {
+          name = lines[0];
+          description = lines.slice(1).join('\n');
+        } else {
+          description = lines.join('\n');
+        }
+      } else {
+        description = lines[0];
+      }
+      
+      if (!description && name) { // If parsing resulted in empty description but a name was found
+        description = name;       // Treat the name as the description
+        name = undefined;         // Clear the name
+      }
+
+      if (!description) return null; // If there's genuinely no description content
+
+      return { name, description, originalIndex: index };
+    })
+    .filter(p => p !== null) as ParsedPrompt[];
+};
 
 
   const updateStoryData = (updates: Partial<Story>) => {
@@ -248,6 +302,161 @@ export default function CreateStoryPage() {
     handleSetLoading('details', false);
   };
 
+  const handleGenerateIndividualDetailImage = async (promptType: 'Character' | 'Item' | 'Location', individualPrompt: string, index: number) => {
+    const loadingKey = `${promptType}-${index}`;
+    setIsGeneratingDetailImage(prev => ({ ...prev, [loadingKey]: true }));
+
+    toast({ title: `Generating ${promptType} Image...`, description: `Prompt: "${individualPrompt.substring(0, 50)}..."` });
+    const result = await generateImageFromPrompt(individualPrompt);
+
+    if (result.success && result.imageUrl && result.requestPrompt) {
+      const newImage: GeneratedImage = {
+        originalPrompt: individualPrompt,
+        requestPrompt: result.requestPrompt,
+        imageUrl: result.imageUrl,
+      };
+      // Add to generatedImages, ensuring no duplicates for the exact same originalPrompt
+      setStoryData(prev => ({
+        ...prev,
+        generatedImages: [
+          ...(prev.generatedImages || []).filter(img => img.originalPrompt !== individualPrompt),
+          newImage,
+        ]
+      }));
+      toast({ title: `${promptType} Image Generated!`, description: `Image for "${individualPrompt.substring(0, 50)}..." is ready.`, className: 'bg-green-500 text-white' });
+    } else {
+      toast({ title: 'Image Generation Error', description: result.error || `Failed to generate image for "${individualPrompt.substring(0,50)}...".`, variant: 'destructive' });
+    }
+    setIsGeneratingDetailImage(prev => ({ ...prev, [loadingKey]: false }));
+  };
+
+  const handleGenerateAllDetailImages = async () => {
+    if (!storyData.detailsPrompts) return;
+    handleSetLoading('allDetailImages', true);
+    toast({ title: 'Generating All Detail Images...', description: 'This may take a few moments.' });
+
+    const { characterPrompts, itemPrompts, locationPrompts } = storyData.detailsPrompts;
+    const allParsedPrompts: { name?: string, description: string, type: 'Character' | 'Item' | 'Location', key: string }[] = [];
+
+    if (characterPrompts) {
+      parseNamedPrompts(characterPrompts, 'Character').forEach(p => allParsedPrompts.push({ ...p, type: 'Character', key: `Character-${p.originalIndex}` }));
+    }
+    if (itemPrompts) {
+      parseNamedPrompts(itemPrompts, 'Item').forEach(p => allParsedPrompts.push({ ...p, type: 'Item', key: `Item-${p.originalIndex}` }));
+    }
+    if (locationPrompts) {
+      parseNamedPrompts(locationPrompts, 'Location').forEach(p => allParsedPrompts.push({ ...p, type: 'Location', key: `Location-${p.originalIndex}` }));
+    }
+
+    let newImages: GeneratedImage[] = [...(storyData.generatedImages || [])];
+    let successCount = 0;
+    let errorCount = 0;
+
+    for (let i = 0; i < allParsedPrompts.length; i++) {
+      const { description, type, key, name } = allParsedPrompts[i];
+      // Skip if already generated for this description during this batch or previously
+      if (newImages.find(img => img.originalPrompt === description)) {
+        console.log(`Skipping already processed prompt: ${description}`);
+        continue;
+      }
+      
+      setIsGeneratingDetailImage(prev => ({ ...prev, [key]: true })); // Show individual loading
+      toast({ title: `Generating ${type} Image for ${name || `Prompt ${i+1}`}...`, description: `"${description.substring(0, 50)}..."`});
+      const result = await generateImageFromPrompt(description); // Use description as the prompt
+      if (result.success && result.imageUrl && result.requestPrompt) {
+        newImages = newImages.filter(img => img.originalPrompt !== description); // Remove old if any
+        newImages.push({ originalPrompt: description, requestPrompt: result.requestPrompt, imageUrl: result.imageUrl });
+        successCount++;
+      } else {
+        errorCount++;
+        toast({ title: `Error Generating ${type} Image for ${name || `Prompt ${i+1}`}`, description: result.error || `Failed for "${description.substring(0,50)}..."`, variant: 'destructive' });
+      }
+      setIsGeneratingDetailImage(prev => ({ ...prev, [key]: false }));
+    }
+    
+    updateStoryData({ generatedImages: newImages });
+
+    if (successCount > 0) {
+      toast({ title: 'Finished Generating Images!', description: `${successCount} images generated. ${errorCount > 0 ? `${errorCount} errors.` : ''}`, className: errorCount === 0 ? 'bg-green-500 text-white' : 'bg-yellow-500 text-black' });
+    } else if (errorCount > 0 && allParsedPrompts.length > 0) { // only show "all failed" if there were prompts to begin with
+      toast({ title: 'Image Generation Failed', description: `All ${errorCount} image generations failed. Please check prompts and try again.`, variant: 'destructive' });
+    } else if (allParsedPrompts.length > 0) { // If there were prompts but none were new/generated
+       toast({ title: 'No New Images Generated', description: 'All detail prompts may have already been processed or there were no new prompts to process.', variant: 'default' });
+    }
+
+
+    handleSetLoading('allDetailImages', false);
+  };
+
+  const renderDetailPromptsWithImages = (promptsString: string | undefined, promptType: 'Character' | 'Item' | 'Location') => {
+    if (!promptsString) {
+      return <p className="text-xs text-muted-foreground">No {promptType.toLowerCase()} prompts available yet. Generate details first.</p>;
+    }
+
+    const parsedPrompts = parseNamedPrompts(promptsString, promptType);
+
+    if (parsedPrompts.length === 0) {
+      return <p className="text-xs text-muted-foreground">No {promptType.toLowerCase()} prompts found. Add some in the text area above, separating entries with a blank line.</p>;
+    }
+
+    return (
+      <div className="space-y-3 mt-3">
+        {parsedPrompts.map((promptDetail) => {
+          const loadingKey = `${promptType}-${promptDetail.originalIndex}`;
+          // individualPrompt for image generation is promptDetail.description
+          const existingImage = storyData.generatedImages?.find(img => img.originalPrompt === promptDetail.description);
+          const isCurrentlyGenerating = isGeneratingDetailImage[loadingKey] || false;
+
+          return (
+            <div key={loadingKey} className="p-3 border rounded-md bg-card/50">
+              {promptDetail.name && <p className="text-sm font-semibold mb-1">{promptType}: {promptDetail.name}</p>}
+              <p className={`text-xs text-muted-foreground mb-1 ${promptDetail.name ? 'ml-2' : ''}`}>
+                {!promptDetail.name && <strong>{promptType} Prompt {promptDetail.originalIndex + 1}: </strong>}
+                {promptDetail.description}
+              </p>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => handleGenerateIndividualDetailImage(promptType, promptDetail.description, promptDetail.originalIndex)}
+                disabled={isLoading.allDetailImages || isCurrentlyGenerating}
+                className="text-xs py-1 h-auto"
+              >
+                {isCurrentlyGenerating ? (
+                  <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                ) : (
+                  <ImageIcon className="mr-1 h-3 w-3" />
+                )}
+                {existingImage ? 'Re-generate Image' : 'Generate Image'}
+              </Button>
+              {isCurrentlyGenerating && !existingImage && (
+                <div className="mt-2 flex items-center text-xs text-muted-foreground">
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  <span>Generating image for {promptDetail.name || `${promptType} Prompt ${promptDetail.originalIndex + 1}`}...</span>
+                </div>
+              )}
+              {existingImage?.imageUrl && (
+                <div className="mt-2">
+                  <Label className="text-xs font-medium">Generated Image{promptDetail.name ? ` for ${promptDetail.name}` : ''}:</Label>
+                  <div className="relative aspect-video w-full max-w-sm overflow-hidden rounded-md border mt-1">
+                    <Image
+                      src={existingImage.imageUrl}
+                      alt={`Generated image for ${promptType}: ${promptDetail.description.substring(0, 30)}...`}
+                      layout="fill"
+                      objectFit="contain" // or "cover" depending on desired display
+                      className="bg-muted"
+                      unoptimized // If using external URLs like picsum or if optimization causes issues
+                    />
+                  </div>
+                   <p className="text-xs text-muted-foreground mt-1">Full prompt: "{existingImage.requestPrompt}"</p>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
   const handleGenerateNarration = async () => {
     if (!storyData.generatedScript || narrationSource !== 'generate') return;
     handleSetLoading('narration', true);
@@ -360,11 +569,11 @@ export default function CreateStoryPage() {
     handleSetLoading(`image-${index}`, true);
     const result = await generateImageFromPrompt(prompt);
     if (result.success && result.imageUrl) {
-      const newImage: GeneratedImage = { prompt, imageUrl: result.imageUrl, dataAiHint: result.dataAiHint };
+      const newImage: GeneratedImage = { originalPrompt: prompt, requestPrompt: result.requestPrompt || prompt, imageUrl: result.imageUrl };
       const currentGeneratedImages = Array.isArray(storyData.generatedImages) ? storyData.generatedImages : [];
       
       let updatedImages = [...currentGeneratedImages];
-      const existingImageIndexForPrompt = updatedImages.findIndex(img => img.prompt === prompt);
+      const existingImageIndexForPrompt = updatedImages.findIndex(img => img.originalPrompt === prompt);
       
       if (existingImageIndexForPrompt > -1) {
         updatedImages[existingImageIndexForPrompt] = newImage;
@@ -372,7 +581,7 @@ export default function CreateStoryPage() {
          const newImagesArray = Array(storyData.imagePrompts?.length || 0).fill(null);
          currentGeneratedImages.forEach((img) => {
             if (img) { 
-              const originalPromptIndex = storyData.imagePrompts?.indexOf(img.prompt);
+              const originalPromptIndex = storyData.imagePrompts?.indexOf(img.originalPrompt);
               if(originalPromptIndex !== undefined && originalPromptIndex > -1) {
                   newImagesArray[originalPromptIndex] = img;
               }
@@ -396,7 +605,7 @@ export default function CreateStoryPage() {
     
     const currentGeneratedImages = Array.isArray(storyData.generatedImages) ? storyData.generatedImages : [];
     const imagesToGenerate = storyData.imagePrompts.map((prompt, index) => ({ prompt, index })).filter(
-      p => !currentGeneratedImages.some(img => img && img.prompt === p.prompt) 
+      p => !currentGeneratedImages.some(img => img && img.originalPrompt === p.prompt)
     );
 
     const results = await Promise.all(
@@ -405,22 +614,26 @@ export default function CreateStoryPage() {
         const result = await generateImageFromPrompt(prompt);
         handleSetLoading(`image-${index}`, false);
         if (result.success && result.imageUrl) {
-          return { prompt, imageUrl: result.imageUrl, dataAiHint: result.dataAiHint, success: true, index };
+          return { prompt, imageUrl: result.imageUrl, requestPrompt: result.requestPrompt, success: true, index };
         }
-        toast({ title: 'Image Generation Error', description: result.error || `Failed for prompt: "${prompt.substring(0,30)}..."`, variant: 'destructive' });
-        return { prompt, success: false, index, error: result.error };
+        toast({ title: 'Image Generation Error', description: result.error || `Failed for prompt: \"${prompt.substring(0,30)}...\"`, variant: 'destructive' });
+        return { prompt, success: false, index, error: result.error, requestPrompt: result.requestPrompt };
       })
     );
 
-    const successfulNewImages = results.filter(r => r.success).map(r => ({prompt: r.prompt, imageUrl: r.imageUrl!, dataAiHint: r.dataAiHint}));
+    const successfulNewImages = results.filter(r => r.success).map(r => ({
+      originalPrompt: r.prompt,
+      requestPrompt: r.requestPrompt || r.prompt,
+      imageUrl: r.imageUrl!,
+    }));
     
     if (successfulNewImages.length > 0) {
       setStoryData(prev => {
         const existingImages = Array.isArray(prev.generatedImages) ? prev.generatedImages.filter(img => img !== null) as GeneratedImage[] : []; 
         const combined = [...existingImages, ...successfulNewImages];
-        const uniqueImagesByPrompt = Array.from(new Map(combined.map(img => [img.prompt, img])).values());
+        const uniqueImagesByPrompt = Array.from(new Map(combined.map(img => [img.originalPrompt, img])).values());
         
-        const orderedImages = prev.imagePrompts?.map(p => uniqueImagesByPrompt.find(img => img.prompt === p)).filter(Boolean) as GeneratedImage[] || uniqueImagesByPrompt;
+        const orderedImages = prev.imagePrompts?.map(p => uniqueImagesByPrompt.find(img => img.originalPrompt === p)).filter(Boolean) as GeneratedImage[] || uniqueImagesByPrompt;
         return { ...prev, generatedImages: orderedImages };
       });
     }
@@ -637,87 +850,99 @@ export default function CreateStoryPage() {
                 {storyData.generatedScript !== undefined ? (
                   <div>
                     <p className="text-sm text-muted-foreground mb-2">
-                      Using the script generated in Step 1, we will now create detailed descriptions for characters, items, and locations.
-                    </p>
-                    <Button onClick={handleGenerateDetails} disabled={isLoading.details || !storyData.generatedScript} className="mt-4 bg-accent hover:bg-accent/90 text-accent-foreground">
+                      Using the script generated in Step 1, we will now create detailed descriptions for characters, items, and locations. You can then generate images for each detail.
+                    Using the script generated in Step 1, we will now create detailed descriptions for characters, items, and locations. You can then generate images for each detail.
+                  </p>
+                  <div className="flex space-x-2 mt-4">
+                    <Button onClick={handleGenerateDetails} disabled={isLoading.details || !storyData.generatedScript} className="bg-accent hover:bg-accent/90 text-accent-foreground">
                       {isLoading.details ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Bot className="mr-2 h-4 w-4" />}
                       {storyData.detailsPrompts && (storyData.detailsPrompts.characterPrompts || storyData.detailsPrompts.itemPrompts || storyData.detailsPrompts.locationPrompts) ? 'Re-generate Details' : 'Generate Details'}
                     </Button>
-
                     {storyData.detailsPrompts && (storyData.detailsPrompts.characterPrompts || storyData.detailsPrompts.itemPrompts || storyData.detailsPrompts.locationPrompts) && (
-                      <div className="mt-6">
-                        <Label className="block text-md font-medium">Character, Item &amp; Location Prompts (Review & Edit)</Label>
-                         <Accordion type="multiple" className="w-full mt-1 bg-muted/30 rounded-md">
-                            <AccordionItem value="chars">
-                                <AccordionTrigger className="px-3 py-2 text-sm hover:no-underline">View Character Prompts</AccordionTrigger>
-                                <AccordionContent className="px-3 pb-2">
-                                    <div className="relative">
-                                        <Textarea 
-                                            value={storyData.detailsPrompts?.characterPrompts || ""} 
-                                            readOnly={!isCharacterPromptsEditing}
-                                            onChange={(e) => updateStoryData({ detailsPrompts: { ...(storyData.detailsPrompts || {}), characterPrompts: e.target.value } as StoryCharacterLocationItemPrompts })}
-                                            onBlur={() => setIsCharacterPromptsEditing(false)}
-                                            rows={5} 
-                                            className={cn(
-                                                "text-xs whitespace-pre-wrap w-full",
-                                                isCharacterPromptsEditing ? 'bg-background ring-2 ring-primary' : 'bg-card border-transparent'
-                                            )}
-                                            placeholder="Character descriptions will appear here..."
-                                        />
-                                        <Button variant="ghost" size="icon" className="absolute top-1 right-1 h-6 w-6" onClick={() => setIsCharacterPromptsEditing(!isCharacterPromptsEditing)}>
-                                            <Pencil className="h-3 w-3" />
-                                        </Button>
-                                    </div>
-                                </AccordionContent>
-                            </AccordionItem>
-                            <AccordionItem value="items">
-                                <AccordionTrigger className="px-3 py-2 text-sm hover:no-underline">View Item Prompts</AccordionTrigger>
-                                <AccordionContent className="px-3 pb-2">
-                                    <div className="relative">
-                                        <Textarea 
-                                            value={storyData.detailsPrompts?.itemPrompts || ""} 
-                                            readOnly={!isItemPromptsEditing}
-                                            onChange={(e) => updateStoryData({ detailsPrompts: { ...(storyData.detailsPrompts || {}), itemPrompts: e.target.value } as StoryCharacterLocationItemPrompts })}
-                                            onBlur={() => setIsItemPromptsEditing(false)}
-                                            rows={5} 
-                                            className={cn(
-                                                "text-xs whitespace-pre-wrap w-full",
-                                                isItemPromptsEditing ? 'bg-background ring-2 ring-primary' : 'bg-card border-transparent'
-                                            )}
-                                            placeholder="Item descriptions will appear here..."
-                                        />
-                                        <Button variant="ghost" size="icon" className="absolute top-1 right-1 h-6 w-6" onClick={() => setIsItemPromptsEditing(!isItemPromptsEditing)}>
-                                            <Pencil className="h-3 w-3" />
-                                        </Button>
-                                    </div>
-                                </AccordionContent>
-                            </AccordionItem>
-                            <AccordionItem value="locations">
-                                <AccordionTrigger className="px-3 py-2 text-sm hover:no-underline">View Location Prompts</AccordionTrigger>
-                                <AccordionContent className="px-3 pb-2">
-                                     <div className="relative">
-                                        <Textarea 
-                                            value={storyData.detailsPrompts?.locationPrompts || ""} 
-                                            readOnly={!isLocationPromptsEditing}
-                                            onChange={(e) => updateStoryData({ detailsPrompts: { ...(storyData.detailsPrompts || {}), locationPrompts: e.target.value } as StoryCharacterLocationItemPrompts })}
-                                            onBlur={() => setIsLocationPromptsEditing(false)}
-                                            rows={5} 
-                                            className={cn(
-                                                "text-xs whitespace-pre-wrap w-full",
-                                                isLocationPromptsEditing ? 'bg-background ring-2 ring-primary' : 'bg-card border-transparent'
-                                            )}
-                                            placeholder="Location descriptions will appear here..."
-                                        />
-                                        <Button variant="ghost" size="icon" className="absolute top-1 right-1 h-6 w-6" onClick={() => setIsLocationPromptsEditing(!isLocationPromptsEditing)}>
-                                            <Pencil className="h-3 w-3" />
-                                        </Button>
-                                    </div>
-                                </AccordionContent>
-                            </AccordionItem>
-                        </Accordion>
-                      </div>
+                      <Button onClick={handleGenerateAllDetailImages} disabled={isLoading.allDetailImages || isLoading.details} variant="outline">
+                        {isLoading.allDetailImages ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ImageIcon className="mr-2 h-4 w-4" />}
+                        Generate All Detail Images
+                      </Button>
                     )}
                   </div>
+
+                  {storyData.detailsPrompts && (storyData.detailsPrompts.characterPrompts || storyData.detailsPrompts.itemPrompts || storyData.detailsPrompts.locationPrompts) && (
+                    <div className="mt-6">
+                      <Label className="block text-md font-medium">Character, Item &amp; Location Prompts & Images (Review, Edit & Generate)</Label>
+                       <Accordion type="multiple" className="w-full mt-1 bg-muted/30 rounded-md" defaultValue={['chars']}>
+                          <AccordionItem value="chars">
+                              <AccordionTrigger className="px-3 py-2 text-sm hover:no-underline">View Character Prompts & Images</AccordionTrigger>
+                              <AccordionContent className="px-3 pb-2">
+                                  <div className="relative mb-2">
+                                      <Textarea 
+                                          value={storyData.detailsPrompts?.characterPrompts || ""} 
+                                          readOnly={!isCharacterPromptsEditing}
+                                          onChange={(e) => updateStoryData({ detailsPrompts: { ...(storyData.detailsPrompts || {}), characterPrompts: e.target.value } as StoryCharacterLocationItemPrompts })}
+                                          onBlur={() => setIsCharacterPromptsEditing(false)}
+                                          rows={5} 
+                                          className={cn(
+                                              "text-xs whitespace-pre-wrap w-full",
+                                              isCharacterPromptsEditing ? 'bg-background ring-2 ring-primary' : 'bg-card border-transparent'
+                                          )}
+                                          placeholder="Character descriptions will appear here. Each description on a new line will be treated as a separate prompt for image generation."
+                                      />
+                                      <Button variant="ghost" size="icon" className="absolute top-1 right-1 h-6 w-6" onClick={() => setIsCharacterPromptsEditing(!isCharacterPromptsEditing)}>
+                                          <Pencil className="h-3 w-3" />
+                                      </Button>
+                                  </div>
+                                  {renderDetailPromptsWithImages(storyData.detailsPrompts?.characterPrompts, "Character")}
+                              </AccordionContent>
+                          </AccordionItem>
+                          <AccordionItem value="items">
+                              <AccordionTrigger className="px-3 py-2 text-sm hover:no-underline">View Item Prompts & Images</AccordionTrigger>
+                              <AccordionContent className="px-3 pb-2">
+                                  <div className="relative mb-2">
+                                      <Textarea 
+                                          value={storyData.detailsPrompts?.itemPrompts || ""} 
+                                          readOnly={!isItemPromptsEditing}
+                                          onChange={(e) => updateStoryData({ detailsPrompts: { ...(storyData.detailsPrompts || {}), itemPrompts: e.target.value } as StoryCharacterLocationItemPrompts })}
+                                          onBlur={() => setIsItemPromptsEditing(false)}
+                                          rows={5} 
+                                          className={cn(
+                                              "text-xs whitespace-pre-wrap w-full",
+                                              isItemPromptsEditing ? 'bg-background ring-2 ring-primary' : 'bg-card border-transparent'
+                                          )}
+                                          placeholder="Item descriptions will appear here. Each description on a new line..."
+                                      />
+                                      <Button variant="ghost" size="icon" className="absolute top-1 right-1 h-6 w-6" onClick={() => setIsItemPromptsEditing(!isItemPromptsEditing)}>
+                                          <Pencil className="h-3 w-3" />
+                                      </Button>
+                                  </div>
+                                  {renderDetailPromptsWithImages(storyData.detailsPrompts?.itemPrompts, "Item")}
+                              </AccordionContent>
+                          </AccordionItem>
+                          <AccordionItem value="locations">
+                              <AccordionTrigger className="px-3 py-2 text-sm hover:no-underline">View Location Prompts & Images</AccordionTrigger>
+                              <AccordionContent className="px-3 pb-2">
+                                   <div className="relative mb-2">
+                                      <Textarea 
+                                          value={storyData.detailsPrompts?.locationPrompts || ""} 
+                                          readOnly={!isLocationPromptsEditing}
+                                          onChange={(e) => updateStoryData({ detailsPrompts: { ...(storyData.detailsPrompts || {}), locationPrompts: e.target.value } as StoryCharacterLocationItemPrompts })}
+                                          onBlur={() => setIsLocationPromptsEditing(false)}
+                                          rows={5} 
+                                          className={cn(
+                                              "text-xs whitespace-pre-wrap w-full",
+                                              isLocationPromptsEditing ? 'bg-background ring-2 ring-primary' : 'bg-card border-transparent'
+                                          )}
+                                          placeholder="Location descriptions will appear here. Each description on a new line..."
+                                      />
+                                      <Button variant="ghost" size="icon" className="absolute top-1 right-1 h-6 w-6" onClick={() => setIsLocationPromptsEditing(!isLocationPromptsEditing)}>
+                                          <Pencil className="h-3 w-3" />
+                                      </Button>
+                                  </div>
+                                  {renderDetailPromptsWithImages(storyData.detailsPrompts?.locationPrompts, "Location")}
+                              </AccordionContent>
+                          </AccordionItem>
+                      </Accordion>
+                    </div>
+                  )}
+                </div>
                 ) : (
                   <p className="text-muted-foreground">Please generate a script in Step 1 first.</p>
                 )}

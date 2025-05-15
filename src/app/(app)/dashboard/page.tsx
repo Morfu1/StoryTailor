@@ -107,7 +107,6 @@ export default function DashboardPage() {
                     alt={story.title || "Story image"} 
                     fill
                     style={{ objectFit: "cover" }}
-                    data-ai-hint={story.generatedImages?.[0]?.dataAiHint || "fantasy landscape"}
                   />
                 </div>
                 <CardTitle className="mt-4 text-xl font-semibold text-foreground truncate">

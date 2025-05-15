@@ -7,9 +7,9 @@ export interface StoryCharacterLocationItemPrompts {
 }
 
 export interface GeneratedImage {
-  prompt: string;
+  requestPrompt: string; // The full prompt sent to the API, including styles
+  originalPrompt: string; // The character/item/location description
   imageUrl: string;
-  dataAiHint?: string; // For placeholder image keyword search
 }
 
 export interface ElevenLabsVoice {

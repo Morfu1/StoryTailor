@@ -321,9 +321,6 @@ export default function AssembleVideoPage() {
                   width={800}
                   height={450}
                   className="max-w-full max-h-full object-contain rounded-md"
-                  data-ai-hint={
-                    storyData.generatedImages[0].dataAiHint || "story image"
-                  }
                 />
               ) : (
                 <Video className="w-24 h-24 text-muted-foreground/50" />
@@ -389,7 +386,6 @@ export default function AssembleVideoPage() {
                         height={112}
                         objectFit="cover"
                         className="w-full h-full"
-                        data-ai-hint={img.dataAiHint || "timeline thumbnail"}
                       />
                     ) : (
                       <div className="w-full h-full bg-muted flex items-center justify-center">
