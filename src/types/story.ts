@@ -13,6 +13,11 @@ export interface GeneratedImage {
   isChapterGenerated?: boolean; // Flag to identify images generated through chapter generation
   chapterNumber?: number; // The chapter number this image belongs to
   expandedPrompt?: string; // The full prompt with all @Entity references expanded
+  history?: {
+    imageUrl: string;
+    originalPrompt: string;
+    timestamp: Date;
+  }[]; // To store previous versions of this image
 }
 
 export interface ElevenLabsVoice {
