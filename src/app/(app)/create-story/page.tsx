@@ -1101,29 +1101,57 @@ const parseNamedPrompts = (rawPrompts: string | undefined, type: 'Character' | '
                   </Link>
                 </Button>
               )}
-             <AlertDialog open={isSaveConfirmOpen} onOpenChange={setIsSaveConfirmOpen}>
-                <AlertDialogTrigger asChild>
-                  <Button size="lg" disabled={isSaveButtonDisabled} className="bg-green-600 hover:bg-green-700 text-white">
+             {/* Conditional rendering for Save/Update button */}
+             {storyData.id ? (
+                // If storyData.id exists (Update Story case - no confirmation)
+                <Button
+                  size="lg"
+                  disabled={isSaveButtonDisabled || isLoading.save}
+                  className="bg-green-600 hover:bg-green-700 text-white"
+                  onClick={handleConfirmSaveStory} // Call save function directly
+                >
+                  {isLoading.save ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
                     <Save className="mr-2 h-4 w-4" />
-                    {isLoading.save ? 'Saving...' : (storyData.id ? 'Update Story' : 'Save New Story')}
-                  </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>Confirm Save</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      Are you sure you want to save the current state of your story "{storyData.title || 'Untitled Story'}"?
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel disabled={isLoading.save}>Cancel</AlertDialogCancel>
-                    <AlertDialogAction onClick={handleConfirmSaveStory} disabled={isSaveButtonDisabled} className="bg-green-600 hover:bg-green-700">
-                       {isLoading.save ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                       Yes, Save Story
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
+                  )}
+                  {isLoading.save ? 'Updating...' : 'Update Story'}
+                </Button>
+              ) : (
+                // If storyData.id does not exist (Save New Story case - keep AlertDialog)
+                <AlertDialog open={isSaveConfirmOpen} onOpenChange={setIsSaveConfirmOpen}>
+                  <AlertDialogTrigger asChild>
+                    <Button size="lg" disabled={isSaveButtonDisabled} className="bg-green-600 hover:bg-green-700 text-white">
+                      <Save className="mr-2 h-4 w-4" />
+                      {/* Text for new story save will always be 'Save New Story' here as storyData.id is false */}
+                      {isLoading.save ? 'Saving...' : 'Save New Story'}
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Confirm Save</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        Are you sure you want to save the current state of your story "{storyData.title || 'Untitled Story'}"?
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel disabled={isLoading.save}>Cancel</AlertDialogCancel>
+                      <AlertDialogAction 
+                        onClick={handleConfirmSaveStory} 
+                        disabled={isSaveButtonDisabled} // Preserves original disabled logic for this button
+                        className="bg-green-600 hover:bg-green-700"
+                      >
+                        {isLoading.save ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                          <Save className="mr-2 h-4 w-4" />
+                        )}
+                        Yes, Save Story
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              )}
           </div>
         </CardContent>
       </Card>

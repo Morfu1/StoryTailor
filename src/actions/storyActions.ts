@@ -210,9 +210,7 @@ export async function generateImageFromPrompt(
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        // Standard Bearer token for Picsart API Key
-        "Authorization": `Bearer ${apiKey}`, 
-        // "x-picsart-api-key": apiKey, // Some docs show this, others Bearer. SDK uses Bearer for GenAI.
+        "x-picsart-api-key": apiKey,
       },
       body: JSON.stringify({
         prompt: requestPrompt,
@@ -239,20 +237,23 @@ export async function generateImageFromPrompt(
     }
 
     const result = JSON.parse(responseText);
-    
-    if (result.data && Array.isArray(result.data) && result.data.length > 0 && result.data[0].url) {
+    console.log("PicsArt API POST Response Body:", result);
+
+    // PicsArt text2image POST call returns 202 Accepted with an inference_id for async processing.
+    if (response.status === 202 && result.status === 'ACCEPTED' && result.inference_id) {
+      console.log(`PicsArt API job accepted with inference ID: ${result.inference_id}. Starting polling.`);
+      return await pollForPicsArtImage(result.inference_id, apiKey!, requestPrompt); // apiKey is checked for null/undefined at the start
+    } else if (response.ok && result.data && Array.isArray(result.data) && result.data.length > 0 && result.data[0].url) {
+      // This handles a less likely case where the API might return image data directly on a successful POST (e.g. status 200).
+      // The primary documentation for text2image suggests a 202 response.
+      console.log("PicsArt API returned image data directly on POST:", result.data[0].url);
       return { success: true, imageUrl: result.data[0].url, requestPrompt };
-    } else if (result.status === 'processing' && result.jobId) {
-        // Handle async job if API returns a job ID for polling
-        // For now, we'll treat this as a scenario needing further implementation for polling.
-        // This is a placeholder, real polling logic would be needed.
-        console.log("PicsArt API job submitted, ID:", result.jobId);
-        // You would typically start polling here or return the job ID to the client for polling.
-        // For simplicity in this step, returning an error as direct image URL is expected.
-        return { success: false, error: `Image generation is processing (Job ID: ${result.jobId}). Polling not yet implemented.`, requestPrompt};
-    }else {
-      console.error("PicsArt API response did not contain expected image URL or job ID:", result);
-      return { success: false, error: "Failed to retrieve image URL or job ID from PicsArt API response.", requestPrompt };
+    } else {
+      // If POST was 'ok' (2xx) but not the expected 202 with 'ACCEPTED' status & inference_id,
+      // and not a direct data response, then it's an unexpected format.
+      const errorDetail = `Status: ${response.status}, Body: ${JSON.stringify(result)}`;
+      console.error(`PicsArt API POST response was 'ok' but in an unexpected format: ${errorDetail}`);
+      return { success: false, error: `Unexpected response format from PicsArt API after POST. Details: ${errorDetail}`, requestPrompt };
     }
 
   } catch (error: any) {
@@ -260,6 +261,93 @@ export async function generateImageFromPrompt(
     return { success: false, error: error.message || "An unknown error occurred while generating the image.", requestPrompt };
   }
 }
+
+async function pollForPicsArtImage(
+  inferenceId: string,
+  apiKey: string,
+  requestPrompt: string,
+  maxAttempts = 20, // Approx 2 minutes if delay is 6 seconds
+  delayMs = 6000 // 6 seconds delay between polls
+): Promise<{ success: boolean; imageUrl?: string; error?: string; requestPrompt?: string }> {
+  const pollingUrl = `https://genai-api.picsart.io/v1/text2image/inferences/${inferenceId}`;
+  console.log(`Starting polling for inference ID: ${inferenceId} at URL: ${pollingUrl}`);
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    console.log(`Polling attempt ${attempt}/${maxAttempts} for inference ID: ${inferenceId}`);
+    try {
+      const response = await fetch(pollingUrl, {
+        method: "GET",
+        headers: {
+          "x-picsart-api-key": apiKey,
+        },
+      });
+
+      const responseText = await response.text();
+      let result;
+      try {
+        result = JSON.parse(responseText);
+      } catch (e) {
+        console.error(`PicsArt Polling: Failed to parse JSON response (Attempt ${attempt}). Status: ${response.status}, Response: ${responseText}`);
+        // If parsing fails on a 202, we might want to continue polling
+        if (response.status === 202 && attempt < maxAttempts) {
+           await new Promise(resolve => setTimeout(resolve, delayMs));
+           continue;
+        }
+        return { success: false, error: `PicsArt Polling: Failed to parse JSON response. Status: ${response.status}, Body: ${responseText}`, requestPrompt };
+      }
+      
+      console.log(`PicsArt Polling (Attempt ${attempt}) - Status: ${response.status}, Body:`, result);
+
+      if (response.status === 200) { // Success
+        // Assuming the successful response structure contains the image URL.
+        // Based on typical API patterns and trying to be flexible:
+        let imageUrl: string | undefined;
+        if (result.data && result.data.url) { // e.g., { data: { url: "..." } }
+            imageUrl = result.data.url;
+        } else if (result.data && Array.isArray(result.data) && result.data.length > 0 && result.data[0].url) { // e.g., { data: [{ url: "..." }] }
+            imageUrl = result.data[0].url;
+        } else if (result.url) { // e.g., { url: "..." }
+            imageUrl = result.url;
+        }
+
+
+        if (imageUrl) {
+          console.log(`PicsArt Polling: Image ready for inference ID ${inferenceId}. URL: ${imageUrl}`);
+          return { success: true, imageUrl, requestPrompt };
+        } else {
+          console.error(`PicsArt Polling: Image success response (200 OK) did not contain expected image URL structure. Inference ID: ${inferenceId}. Response:`, result);
+          return { success: false, error: "PicsArt Polling: Image success response (200 OK) but no URL found.", requestPrompt };
+        }
+      } else if (response.status === 202) { // Accepted, still processing
+        console.log(`PicsArt Polling: Image for inference ID ${inferenceId} is still processing (status 202). Waiting...`);
+        // Optional: Check result.status if the body of 202 contains more detailed status e.g. result.status === "PROCESSING"
+        if (result && result.status && result.status !== 'PROCESSING' && result.status !== 'PENDING' && result.status !== 'ACCEPTED') {
+            // If status is something else like FAILED even with HTTP 202, it might be an issue.
+            console.warn(`PicsArt Polling: Inference ID ${inferenceId} returned 202 but with body status: ${result.status}. Treating as still processing for now.`);
+        }
+        // Wait before next attempt, unless it's the last one
+        if (attempt < maxAttempts) {
+          await new Promise(resolve => setTimeout(resolve, delayMs));
+        }
+      } else { // Other error statuses (4xx, 5xx)
+        console.error(`PicsArt Polling: Request failed for inference ID ${inferenceId}. Status: ${response.status}. Response:`, result);
+        return { success: false, error: `PicsArt Polling: Request failed with status ${response.status}. Details: ${JSON.stringify(result)}`, requestPrompt };
+      }
+    } catch (error: any) {
+      console.error(`PicsArt Polling: Error during fetch for inference ID ${inferenceId} (Attempt ${attempt}):`, error);
+      // If it's the last attempt or a critical error, return failure
+      if (attempt >= maxAttempts) {
+        return { success: false, error: `PicsArt Polling: An error occurred after multiple attempts: ${error.message}`, requestPrompt };
+      }
+      // Wait before retrying on general error
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+    }
+  }
+
+  console.log(`PicsArt Polling: Max attempts reached for inference ID ${inferenceId}. Image generation timed out.`);
+  return { success: false, error: "Image generation timed out after polling.", requestPrompt };
+}
+
 
 
 async function uploadAudioToFirebaseStorage(audioDataUri: string, userId: string, storyId: string): Promise<string> {

@@ -44,11 +44,10 @@ const sidebarNavItems = [
   { name: "All Media", icon: Wand2 },
   { name: "Edit", icon: Edit3 },
   { name: "Characters", icon: User },
-  { name: "Text", icon: Text },
+  { name: "Story", icon: Text },
   { name: "Music", icon: Music },
   { name: "Settings", icon: Settings },
-  { name: "Chars/Locs", icon: Clapperboard, sectionBreak: true },
-  { name: "Voices", icon: Video },
+  { name: "Voices", icon: Video, sectionBreak: true },
 ];
 
 // Voice Settings content component
@@ -133,6 +132,158 @@ function VoicesContent({ storyData }: { storyData: Story }) {
               </div>
             </div>
           </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Interface and Function copied from StoryTailor/src/app/(app)/create-story/page.tsx
+interface ParsedPrompt {
+  name?: string;
+  description: string;
+  originalIndex: number; 
+}
+
+const parseNamedPrompts = (rawPrompts: string | undefined, type: 'Character' | 'Item' | 'Location'): ParsedPrompt[] => {
+  if (!rawPrompts) return [];
+
+  const cleanPrompts = rawPrompts
+    .replace(/^(Character Prompts:|Item Prompts:|Location Prompts:)\s*\n*/i, '')
+    .trim();
+
+  if (!cleanPrompts) return [];
+
+  return cleanPrompts.split(/\n\s*\n/) 
+    .map((block, index) => {
+      const lines = block.trim().split('\n').map(l => l.trim()).filter(l => l);
+      if (lines.length === 0) {
+        return null; 
+      }
+
+      let name: string | undefined = undefined;
+      let description: string;
+
+      if (lines.length > 1) {
+        // Attempt to identify if the first line is a name.
+        // This heuristic assumes a name is typically shorter and doesn't end with punctuation like a sentence.
+        // And the subsequent lines form the description.
+        const firstLineIsLikelyName = lines[0].length < 60 && !/[\\.\\?!]$/.test(lines[0]) && lines.slice(1).join(' ').length > 0;
+
+        if (firstLineIsLikelyName) {
+          name = lines[0];
+          description = lines.slice(1).join('\n');
+        } else {
+          description = lines.join('\n');
+        }
+      } else {
+        description = lines[0];
+      }
+      
+      if (!description && name) { // If parsing resulted in empty description but a name was found
+        description = name;       // Treat the name as the description
+        name = undefined;         // Clear the name
+      }
+
+      if (!description) return null; // If there's genuinely no description content
+
+      return { name, description, originalIndex: index };
+    })
+    .filter(p => p !== null) as ParsedPrompt[];
+};
+// End of copied code
+
+function CharactersPanelContent({ storyData }: { storyData: Story }) {
+  const displayableCharacters = useMemo(() => {
+    if (!storyData.generatedImages?.length) {
+      return [];
+    }
+
+    // Use the robust parser
+    const parsedCharacterDetails = parseNamedPrompts((storyData as any).detailsPrompts?.characterPrompts, 'Character');
+
+    return storyData.generatedImages.map((img, index) => {
+      let characterName = `Character ${index + 1}`; // Default name
+      let characterFullDescription = img.originalPrompt || "No description available."; // Default to image's own prompt
+
+      // Find the parsed character detail that corresponds to this image.
+      // The image's `originalPrompt` should be contained within the character's full `description` from parsedCharacterDetails.
+      const matchedCharacter = parsedCharacterDetails.find(charDetail =>
+        img.originalPrompt && charDetail.description.trim().includes(img.originalPrompt.trim())
+      );
+
+      if (matchedCharacter) {
+        characterName = matchedCharacter.name || `Character ${index + 1}`; // Use parsed name
+        // If you want to display the full description from parsedCharacterDetails instead of img.originalPrompt:
+        // characterFullDescription = matchedCharacter.description; 
+      }
+
+      return {
+        id: (img as any).id || (img as any).imageId || `gen_img_${index}`,
+        name: characterName,
+        prompt: img.originalPrompt || "No prompt available.", // This is the prompt associated directly with the image generation
+        imageUrl: img.imageUrl,
+      };
+    });
+  }, [(storyData as any).detailsPrompts?.characterPrompts, storyData.generatedImages]);
+
+  return (
+    <div className="h-full">
+      <div className="rounded-lg border border-border shadow-sm h-full flex flex-col">
+        <div className="p-3 border-b border-border bg-muted/20">
+          <h2 className="font-semibold">Characters</h2>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            View generated character images and their prompts
+          </p>
+        </div>
+
+        <div className="flex-1 overflow-y-auto">
+          {displayableCharacters.length > 0 ? (
+            <ScrollArea className="h-full">
+              <div className="p-4 space-y-4">
+                {displayableCharacters.map((character) => (
+                  <div
+                    key={character.id} 
+                    className="flex items-start gap-3 p-3 border border-border rounded-md bg-background hover:shadow-sm transition-shadow"
+                  >
+                    <div className="w-32 h-24 bg-muted/50 rounded overflow-hidden flex-shrink-0 flex items-center justify-center">
+                      {character.imageUrl ? (
+                        <Image
+                          src={character.imageUrl}
+                          alt={character.name}
+                          layout="intrinsic"
+                          width={128}
+                          height={96}
+                          objectFit="contain"
+                          className="rounded"
+                        />
+                      ) : (
+                        <div className="w-full h-full bg-muted flex items-center justify-center text-center text-xs text-muted-foreground p-1">
+                           <ImageIcon className="w-8 h-8 mr-1 text-muted-foreground/50" />
+                           Image not available
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex-grow">
+                      <h4 className="font-semibold text-sm">
+                        {character.name}
+                      </h4>
+                      <p className="text-xs text-muted-foreground mt-1 whitespace-pre-wrap break-words">
+                        {character.prompt}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <ScrollBar orientation="vertical" />
+            </ScrollArea>
+          ) : (
+            <div className="flex h-full items-center justify-center p-4">
+              <p className="text-muted-foreground">
+                No generated images found in story data.
+              </p>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -301,6 +452,8 @@ export default function AssembleVideoPage() {
           <div className="w-2/5 p-4 overflow-auto border-r border-border">
             {selectedPanel === "Voices" ? (
               <VoicesContent storyData={storyData} />
+            ) : selectedPanel === "Characters" ? (
+              <CharactersPanelContent storyData={storyData} />
             ) : (
               <div className="flex h-full items-center justify-center text-muted-foreground">
                 Select an option from the sidebar to view settings
