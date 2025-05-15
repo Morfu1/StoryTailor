@@ -10,6 +10,9 @@ export interface GeneratedImage {
   requestPrompt: string; // The full prompt sent to the API, including styles
   originalPrompt: string; // The character/item/location description
   imageUrl: string;
+  isChapterGenerated?: boolean; // Flag to identify images generated through chapter generation
+  chapterNumber?: number; // The chapter number this image belongs to
+  expandedPrompt?: string; // The full prompt with all @Entity references expanded
 }
 
 export interface ElevenLabsVoice {

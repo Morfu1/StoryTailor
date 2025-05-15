@@ -5,6 +5,7 @@ import { useAuth } from "@/components/auth-provider";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   getStory,
   generateImageFromPrompt,
@@ -38,20 +39,23 @@ import {
   Play,
   Pause,
   Maximize,
+  Check,
+  Trash2,
+  Edit2,
   History,
   Plus,
   SidebarClose,
   SidebarOpen,
-  Trash2,
   Copy,
   Scissors,
+  Info,
   Volume2,
   Upload,
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import React, { useEffect, useState, useMemo } from "react";
+import React, { Fragment, useEffect, useState, useMemo } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -61,12 +65,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import { Textarea } from "@/components/ui/textarea";
 
 const sidebarNavItems = [
@@ -80,7 +78,25 @@ const sidebarNavItems = [
 ];
 
 // Story Content component
-function StoryContent({ storyData }: { storyData: Story }) {
+function StoryContent({ 
+  storyData, 
+  isGeneratingImages, 
+  handleGenerateChapterImages, 
+  currentChapter, 
+  chaptersGenerated,
+  currentImageProgress,
+  generationProgress,
+  totalImagesToGenerate
+}: { 
+  storyData: Story, 
+  isGeneratingImages: boolean, 
+  handleGenerateChapterImages: () => Promise<void>, 
+  currentChapter: number, 
+  chaptersGenerated: number[],
+  currentImageProgress: number,
+  generationProgress: number,
+  totalImagesToGenerate: number
+}) {
   const [fontSize, setFontSize] = useState<'sm'|'base'|'lg'|'xl'>('base');
   const [viewMode, setViewMode] = useState<'read'|'edit'>('read');
   const [editedScript, setEditedScript] = useState<string>('');
@@ -163,7 +179,7 @@ function StoryContent({ storyData }: { storyData: Story }) {
   }, [storyData.generatedScript]);
   
   const handleSaveScript = async () => {
-    if (!editedScript.trim()) {
+    if (!editedScript?.trim()) {
       toast({
         title: "Cannot Save Empty Script",
         description: "Please add some content to your story.",
@@ -173,7 +189,7 @@ function StoryContent({ storyData }: { storyData: Story }) {
     }
     
     // Format the script before saving
-    const formattedScript = formatStoryText(editedScript);
+  const formattedScript = formatStoryText(editedScript || "");
     
     // Create a copy of storyData with the updated script
     const updatedStory = {
@@ -353,9 +369,9 @@ function StoryContent({ storyData }: { storyData: Story }) {
               
               {viewMode === 'read' ? (
                 <div className={`whitespace-pre-line rounded-md border border-border bg-card p-4 ${getFontSizeClass()} ${paragraphStyle === 'justified' ? 'text-justify' : ''}`}>
-                  {storyData.generatedScript ? (
+                  {storyData?.generatedScript ? (
                     <div className="prose prose-stone dark:prose-invert max-w-none">
-                      {formatStoryText(storyData.generatedScript)
+                      {formatStoryText(storyData.generatedScript || "")
                         .split('\n\n')
                         .map((paragraph, paraIndex) => (
                           <div key={paraIndex} className="mb-6">
@@ -382,6 +398,117 @@ function StoryContent({ storyData }: { storyData: Story }) {
                     className={`min-h-[400px] ${getFontSizeClass()} whitespace-pre-line p-2`}
                     placeholder="Start writing your story script here..."
                   />
+                </div>
+              )}
+              
+              {/* Chapter Image Generation Controls */}
+              {viewMode === 'read' && storyData?.generatedScript && (
+                <div className="mt-8 border-t pt-4">
+                  <h3 className="text-lg font-semibold mb-4 flex items-center">
+                    <ImageIcon className="mr-2 h-5 w-5 text-primary" />
+                    Chapter Images
+                  </h3>
+                  
+                  {/* Image Prompts Preview */}
+                  <div className="bg-muted/30 rounded-md p-3 mb-4 text-sm">
+                    <p className="font-medium mb-2">Available Image Prompts for Chapter {currentChapter}:</p>
+                    <div className="bg-background rounded p-2 border border-border max-h-48 overflow-y-auto">
+                      {storyData?.imagePrompts ? (
+                        <>
+                          {storyData.imagePrompts
+                            .slice((currentChapter - 1) * 7, currentChapter * 7)
+                            .map((prompt, idx) => (
+                              <div key={`prompt-${idx}`} className="mb-2 border-b border-border pb-1 last:border-0">
+                                <p className="text-xs font-semibold text-primary">Image {idx + 1}:</p>
+                                <p className="text-xs">
+                                  {prompt.split('@').map((part, i) => {
+                                    if (i === 0) return part;
+                                    // Extract entity name (until next space or punctuation)
+                                    const entityEnd = part.search(/[^A-Za-z0-9]/);
+                                    const entityName = part.substring(0, entityEnd > 0 ? entityEnd : part.length);
+                                    const rest = part.substring(entityName.length);
+                                    return (
+                                      <React.Fragment key={i}>
+                                        <span className="text-green-500 font-semibold">@{entityName}</span>
+                                        {rest}
+                                      </React.Fragment>
+                                    );
+                                  })}
+                                </p>
+                              </div>
+                            ))}
+                          {storyData.imagePrompts.slice((currentChapter - 1) * 7, currentChapter * 7).length === 0 && (
+                            <p className="text-xs text-muted-foreground">No prompts available for this chapter.</p>
+                          )}
+                        </>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">No image prompts found.</p>
+                      )}
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-2">
+                      <span className="text-green-500 font-semibold">@EntityName</span> references will be automatically expanded with their full descriptions
+                    </p>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 gap-4 mb-4">
+                    {Array.isArray(storyData?.generatedImages) && storyData.generatedImages.filter(img => !!img && img.isChapterGenerated).length > 0 ? (
+                      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                        {storyData.generatedImages
+                          .filter(img => !!img && img.isChapterGenerated)
+                          .map((image, index) => (
+                            <div key={index} className="relative rounded-md overflow-hidden border border-border group">
+                              <Image
+                                src={image.imageUrl}
+                                alt={image.originalPrompt || `Chapter image ${index + 1}`}
+                                width={300}
+                                height={200}
+                                className="w-full h-auto object-cover aspect-video"
+                              />
+                              <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-end">
+                                <div className="p-2 text-xs text-white w-full">
+                                  <p className="line-clamp-2">{image.originalPrompt}</p>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                      </div>
+                    ) : (
+                      <div className="text-center p-6 border border-dashed rounded-md bg-muted/10">
+                        <ImageIcon className="mx-auto h-12 w-12 text-muted-foreground mb-2" />
+                        <p className="text-muted-foreground mb-4">No chapter images generated yet</p>
+                        <p className="text-xs text-muted-foreground">Click the button below to generate images for Chapter {currentChapter}</p>
+                      </div>
+                    )}
+                  </div>
+                  
+                  <div className="flex justify-center">
+                    <Button
+                      variant="default"
+                      size="lg"
+                      className="gap-2"
+                      onClick={handleGenerateChapterImages}
+                      disabled={isGeneratingImages}
+                    >
+                      {isGeneratingImages ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          {currentImageProgress > 0 && totalImagesToGenerate > 0
+                            ? `Generating Image ${currentImageProgress}/${totalImagesToGenerate} (${generationProgress}%)` 
+                            : `Preparing to generate Chapter ${currentChapter} Images...`}
+                        </>
+                      ) : chaptersGenerated.length === 0 ? (
+                        <>
+                          <ImageIcon className="h-4 w-4" />
+                          Generate Chapter 1 Images ({storyData?.imagePrompts?.slice(0, 7).length || 0} prompts)
+                        </>
+                      ) : (
+                        <>
+                          <ImageIcon className="h-4 w-4" />
+                          Generate Chapter {currentChapter} Images ({storyData?.imagePrompts?.slice((currentChapter-1)*7, currentChapter*7).length || 0} prompts)
+                        </>
+                      )}
+                    </Button>
+                  </div>
                 </div>
               )}
               
@@ -848,7 +975,9 @@ function CharactersPanelContent({
       description: "Please wait.",
     });
     try {
-      const imageResult = await generateImageFromPrompt(formDescription);
+      // Standard prompt with good styles
+    const enhancedPrompt = `${formDescription}, high quality, detailed illustration, children's book style, vibrant colors, storybook style`;
+    const imageResult = await generateImageFromPrompt(enhancedPrompt);
 
       if (!imageResult.success || !imageResult.imageUrl) {
         toast({
@@ -1219,7 +1348,346 @@ export default function AssembleVideoPage() {
   const [storyData, setStoryData] = useState<Story | null>(null);
   const [pageLoading, setPageLoading] = useState(true);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-  const [selectedPanel, setSelectedPanel] = useState("All Media"); // Default to All Media panel
+  const [selectedPanel, setSelectedPanel] = useState("Story"); // Default to Story panel to show script
+  const [isGeneratingImages, setIsGeneratingImages] = useState(false);
+  const [currentChapter, setCurrentChapter] = useState(1);
+  const [chaptersGenerated, setChaptersGenerated] = useState<number[]>([]);
+  const [totalImagesToGenerate, setTotalImagesToGenerate] = useState<number>(7); // Default to 7 images
+  const [currentImageProgress, setCurrentImageProgress] = useState(0);
+  const [generationProgress, setGenerationProgress] = useState(0);
+  const [selectedTimelineImage, setSelectedTimelineImage] = useState<number | null>(null);
+
+  // Handle generating images for a chapter in batches of 7 per minute
+  const handleGenerateChapterImages = async () => {
+    if (!storyData || isGeneratingImages) return;
+    
+    setIsGeneratingImages(true);
+    setSelectedPanel("Story"); // Switch to Story panel to show progress
+    
+    try {
+      // Calculate the audio duration in minutes
+const audioDuration = storyData?.narrationAudioDurationSeconds || 240; // Default to 4 minutes if not set
+      
+      // Calculate how many images to generate (7 images per minute)
+      const imagesPerMinute = 7;
+      // We'll use 7 images per chapter, regardless of audio duration
+      const imagesToGenerate = 7; 
+      setTotalImagesToGenerate(imagesToGenerate);
+  
+      toast({
+        title: `Generating Chapter ${currentChapter}`,
+        description: `Creating images for Chapter ${currentChapter}.`,
+      });
+      
+      // Generate prompts based on story content and characters
+      const script = storyData?.generatedScript || "";
+      const title = storyData?.title || "Story";
+      
+      // Update UI state with total images to generate
+      setTotalImagesToGenerate(imagesToGenerate);
+      
+      // Helper function to extract entity descriptions from prompts
+      const parseEntityReferences = (prompt: string): string => {
+              // Extract all @Entity references (including spaces and special characters)
+              const entityReferences = prompt.match(/@[A-Za-z0-9]+(?:\s+[A-Za-z0-9]+)*/g) || [];
+              let parsedPrompt = prompt;
+        
+              console.log("Entity references found:", entityReferences);
+        
+        // Process each entity reference
+        entityReferences.forEach(ref => {
+          const entityName = ref.substring(1).trim(); // Remove @ symbol and trim
+          console.log(`Processing entity: ${entityName}`);
+          
+          // Look for entity in character prompts
+          const characterPrompts = storyData?.detailsPrompts?.characterPrompts || "";
+          const locationPrompts = storyData?.detailsPrompts?.locationPrompts || "";
+          const itemPrompts = storyData?.detailsPrompts?.itemPrompts || "";
+          
+          // Find all entities and their descriptions
+          let description = "";
+          
+          // Extract character descriptions based on the screenshot format
+          // Format: "Character Prompts: NAME A description..."
+          if (characterPrompts.includes(entityName)) {
+            // Try to find the character description following "Character Prompts:"
+            // Pattern: look for the exact name followed by a description
+            const characterPattern = new RegExp(entityName + "\\s+(.*?)(?=\\n\\n|$)", "s");
+            const characterMatch = characterPrompts.match(characterPattern);
+            
+            if (characterMatch && characterMatch[1]) {
+              description = characterMatch[1].trim();
+              console.log(`Found character description for ${entityName}`);
+            }
+          }
+          
+          // If not found in characters, check location prompts
+          if (!description && locationPrompts.includes(entityName)) {
+            // Try to find the location description
+            // Pattern: look for the exact name followed by a description
+            const locationPattern = new RegExp(entityName + "\\s+(.*?)(?=\\n\\n|$)", "s");
+            const locationMatch = locationPrompts.match(locationPattern);
+            
+            if (locationMatch && locationMatch[1]) {
+              description = locationMatch[1].trim();
+              console.log(`Found location description for ${entityName}`);
+            }
+          }
+          
+          // If still not found, check item prompts
+          if (!description && itemPrompts.includes(entityName)) {
+            // Try to find the item description
+            // Pattern: look for the exact name followed by a description
+            const itemPattern = new RegExp(entityName + "\\s+(.*?)(?=\\n\\n|$)", "s");
+            const itemMatch = itemPrompts.match(itemPattern);
+            
+            if (itemMatch && itemMatch[1]) {
+              description = itemMatch[1].trim();
+              console.log(`Found item description for ${entityName}`);
+            }
+          }
+          
+          // Replace with the actual description if found
+          if (description) {
+            parsedPrompt = parsedPrompt.replace(ref, description);
+            console.log(`Replaced ${ref} with description`);
+          } else {
+            console.log(`No description found for ${entityName}, keeping original reference`);
+          }
+        });
+        
+        console.log("Final parsed prompt:", parsedPrompt);
+        return parsedPrompt;
+      };
+      
+      // Define a type for the prompt objects
+      type EnhancedPrompt = {
+        originalPromptWithReferences: string;
+        expandedPrompt: string;
+      };
+      
+      // Log character, location, and item prompts for debugging
+      console.log("Character prompts:", storyData?.detailsPrompts?.characterPrompts);
+      console.log("Location prompts:", storyData?.detailsPrompts?.locationPrompts);
+      console.log("Item prompts:", storyData?.detailsPrompts?.itemPrompts);
+      
+      // Get existing image prompts from the story data if available
+      const existingImagePrompts = storyData?.imagePrompts || [];
+      console.log("Existing image prompts:", existingImagePrompts);
+      
+      // Debug the character/location data for reference extraction
+      if (storyData?.detailsPrompts?.characterPrompts) {
+        console.log("Character data available:", 
+          storyData.detailsPrompts.characterPrompts.split('\n\n').map(block => block.trim().split('\n')[0]).filter(Boolean));
+      }
+      if (storyData?.detailsPrompts?.locationPrompts) {
+        console.log("Location data available:", 
+          storyData.detailsPrompts.locationPrompts.split('\n\n').map(block => block.trim().split('\n')[0]).filter(Boolean));
+      }
+      
+      // Check if we have predefined image prompts in the database
+      if (!existingImagePrompts || existingImagePrompts.length === 0) {
+        toast({
+          title: "Warning: No Image Prompts Found",
+          description: "No predefined image prompts found in the database. Please make sure the story has image prompts.",
+          variant: "destructive",
+        });
+      }
+      
+      // Use actual number of prompts or limit to imagesToGenerate (whichever is smaller)
+      const actualImagesToGenerate = Math.min(imagesToGenerate, existingImagePrompts.length || 0);
+      setTotalImagesToGenerate(actualImagesToGenerate);
+      
+      // Select prompts for this chapter (7 per chapter)
+      const startIndex = (currentChapter - 1) * 7;
+      const selectedPrompts = existingImagePrompts.slice(startIndex, startIndex + actualImagesToGenerate);
+      
+      if (selectedPrompts.length === 0) {
+        throw new Error("No image prompts available for this chapter. Please check the database.");
+      }
+      
+      // Create enhanced prompts by parsing entity references in the existing prompts
+      const imagePrompts: EnhancedPrompt[] = selectedPrompts.map((prompt, index) => {
+        // Use the existing prompt with entity references
+        const originalPromptWithReferences = prompt;
+        
+        console.log(`Processing image prompt ${index + 1}: ${originalPromptWithReferences}`);
+        
+        // Parse and replace entity references with full descriptions
+        const expandedPrompt = parseEntityReferences(originalPromptWithReferences);
+        
+        console.log(`Expanded prompt ${index + 1}: ${expandedPrompt.substring(0, 100)}...`);
+        
+        return {
+          originalPromptWithReferences,
+          expandedPrompt
+        };
+      });
+      
+      // Process images sequentially rather than in parallel
+      const newImages: GeneratedImage[] = [];
+      
+      for (let index = 0; index < imagePrompts.length; index++) {
+        // Get the enhanced prompt for this index
+        const prompt = imagePrompts[index];
+        const originalPromptWithReferences = prompt.originalPromptWithReferences;
+        const expandedPrompt = prompt.expandedPrompt;
+          
+        // Update progress indicators
+        setCurrentImageProgress(index + 1);
+        setGenerationProgress(Math.round(((index) / (imagePrompts.length || 1)) * 100));
+          
+        // Log which prompt is being processed for debugging
+        console.log(`Processing prompt ${index + 1}/${imagePrompts.length}:`, originalPromptWithReferences);
+        
+        // Show individual progress
+        toast({
+          title: `Generating Image ${index + 1}/${imagesToGenerate}`,
+          description: originalPromptWithReferences.substring(0, 100) + "...",
+          duration: 3000, // Show for 3 seconds
+        });
+        
+        // Log the original and enhanced prompts for debugging
+        console.log(`Original prompt with references: ${originalPromptWithReferences}`);
+        console.log(`Expanded prompt for generation: ${expandedPrompt}`);
+        
+        // Call the actual image generation API
+        const result = await generateImageFromPrompt(expandedPrompt);
+        
+        if (!result.success || !result.imageUrl) {
+          throw new Error(`Failed to generate image ${index + 1}: ${result.error || "Unknown error"}`);
+        }
+  
+        // Add to our array
+      newImages.push({
+        originalPrompt: originalPromptWithReferences,
+        requestPrompt: result.requestPrompt || expandedPrompt,
+        imageUrl: result.imageUrl,
+        isChapterGenerated: true,
+        chapterNumber: currentChapter,
+        expandedPrompt: expandedPrompt // Store for reference
+      });
+  
+        // Update progress
+        setGenerationProgress(Math.round(((index + 1) / (imagePrompts.length || 1)) * 100));
+  
+        // Show success toast for each image
+        toast({
+          title: `Image ${index + 1}/${imagesToGenerate} Generated`,
+          description: `Created from: ${originalPromptWithReferences.substring(0, 50)}...`,
+          duration: 2000,
+          className: "bg-green-500 text-white",
+        });
+        
+        // Add a second toast with more detail about entity replacements
+        toast({
+          title: "Entity References Replaced",
+          description: "All @Entity references were replaced with their full descriptions",
+          duration: 3000,
+        });
+        
+        // Log the final prompt with replacements for debugging
+        console.log("Final prompt with replacements:", expandedPrompt);
+        console.log("Entity references in original prompt:", originalPromptWithReferences.match(/@[A-Za-z0-9]+(?:\s*[A-Za-z0-9]+)*/g) || []);
+        
+        // For completeness, also log both prompts side by side
+        console.log("BEFORE:", originalPromptWithReferences);
+        console.log("AFTER:", expandedPrompt);
+        
+        // For debugging, show what @references were replaced
+        const beforeRefs = originalPromptWithReferences.match(/@[A-Za-z0-9]+(?:\s+[A-Za-z0-9]+)*/g) || [];
+        beforeRefs.forEach(ref => {
+          const entityName = ref.substring(1).trim();
+          console.log(`@${entityName} was replaced with its description`);
+        });
+      }
+      
+      // Reset progress when complete
+      // Set final progress values
+      setCurrentImageProgress(imagesToGenerate);
+      setGenerationProgress(100);
+      
+      // Add the new images to the story data
+      setStoryData(prevData => {
+        if (!prevData) return null;
+        
+        // Get existing images that weren't chapter-generated or were from different chapters
+        const existingImages = Array.isArray(prevData.generatedImages) 
+          ? prevData.generatedImages.filter(img => 
+              !img.isChapterGenerated || 
+              (img.isChapterGenerated && img.chapterNumber !== currentChapter)
+            )
+          : [];
+        
+        // Save the updated story with new images
+        if (prevData) {
+          saveStory({
+            ...prevData,
+            generatedImages: [...existingImages, ...newImages],
+          }, prevData.userId);
+        }
+        
+        return {
+          ...prevData,
+          // Append new images to the story data
+          generatedImages: [...existingImages, ...newImages],
+        };
+      });
+      
+      // Mark this chapter as generated
+      setChaptersGenerated(prev => [...prev, currentChapter]);
+      
+      // Check if we have more chapters to generate
+      const totalPossibleChapters = Math.ceil((storyData?.imagePrompts?.length || 0) / 7);
+      
+      if (currentChapter < totalPossibleChapters) {
+        // Update to next chapter if more are available
+        setCurrentChapter(prev => prev + 1);
+        
+        toast({
+          title: "Chapter Images Complete",
+          description: `Generated ${actualImagesToGenerate} images for Chapter ${currentChapter}. ${totalPossibleChapters - currentChapter} more chapters available.`,
+          className: "bg-green-500 text-white",
+          duration: 5000,
+        });
+      } else {
+        toast({
+          title: "All Chapter Images Complete",
+          description: `Generated all available chapter images (${currentChapter} chapters total).`,
+          className: "bg-green-500 text-white",
+          duration: 5000,
+        });
+      }
+      
+      // Switch to the Timeline panel to show the results
+      setSelectedPanel("All Media");
+    } catch (error) {
+      console.error("Error generating images:", error);
+      toast({
+        title: "Image Generation Failed",
+        description: "There was an error generating the images. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsGeneratingImages(false);
+      setCurrentImageProgress(0);
+      setGenerationProgress(0);
+    }
+  };
+
+  // Update story data in the database
+  const saveStoryData = async (updatedStory: Story) => {
+    try {
+      await saveStory(updatedStory, updatedStory.userId);
+    } catch (error) {
+      console.error("Error saving story data:", error);
+      toast({
+        title: "Error Saving Data",
+        description: "There was a problem saving your story data.",
+        variant: "destructive",
+      });
+    }
+  };
 
   // Define how to handle a newly created character
   const handleNewCharacterCreated = async (characterData: {
@@ -1503,7 +1971,22 @@ export default function AssembleVideoPage() {
                 onCharacterCreated={handleNewCharacterCreated}
               />
             ) : selectedPanel === "Story" ? (
-              <StoryContent storyData={storyData} />
+              storyData ? (
+                <StoryContent 
+                  storyData={storyData}
+                  isGeneratingImages={isGeneratingImages}
+                  handleGenerateChapterImages={handleGenerateChapterImages}
+                  currentChapter={currentChapter}
+                  chaptersGenerated={chaptersGenerated}
+                  currentImageProgress={currentImageProgress}
+                  generationProgress={generationProgress}
+                  totalImagesToGenerate={totalImagesToGenerate}
+                />
+              ) : (
+                <div className="flex items-center justify-center h-full">
+                  <Loader2 className="w-8 h-8 animate-spin" />
+                </div>
+              )
             ) : (
               <div className="flex h-full items-center justify-center text-muted-foreground">
                 Select an option from the sidebar to view settings.
@@ -1515,7 +1998,7 @@ export default function AssembleVideoPage() {
             <div className="flex-1 bg-muted rounded-lg flex items-center justify-center shadow-inner">
               {storyData.generatedImages &&
               storyData.generatedImages.length > 0 &&
-              storyData.generatedImages[0] ? (
+              storyData.generatedImages[0]?.isChapterGenerated ? (
                 <Image
                   src={storyData.generatedImages[0].imageUrl}
                   alt="Video Preview Placeholder"
@@ -1524,7 +2007,15 @@ export default function AssembleVideoPage() {
                   className="max-w-full max-h-full object-contain rounded-md"
                 />
               ) : (
-                <Video className="w-24 h-24 text-muted-foreground/50" />
+                <div className="flex flex-col items-center justify-center">
+                  <Video className="w-24 h-24 text-muted-foreground/50 mb-4" />
+                  <p className="text-muted-foreground text-sm max-w-md text-center">
+                    This is the timeline view. Generate images to start creating your animation.
+                    <span className="font-mono text-xs block mt-2 p-2 bg-background/80 rounded-md">
+                      "Wide shot of @SunnyMeadow, with @Barnaby, a small, fuzzy bee, buzzing happily among the wildflowers."
+                    </span>
+                  </p>
+                </div>
               )}
             </div>
 
@@ -1552,7 +2043,7 @@ export default function AssembleVideoPage() {
                   ? ((storyData as any).narrationAudioDurationSeconds / 60)
                       .toFixed(2)
                       .replace(".", ":")
-                  : "0:00"}
+                  : "3:59"} {/* Default to 3:59 for demo purposes */}
               </span>
               <div className="flex items-center gap-2">
                 <Button variant="ghost" size="icon" disabled>
@@ -1570,38 +2061,141 @@ export default function AssembleVideoPage() {
               </div>
             </div>
 
-            <ScrollArea className="h-32 bg-background p-2 rounded-md shadow-sm border border-border">
-              <div className="flex space-x-2 pb-2">
-                {storyData.generatedImages?.map((img, index) => (
-                  <div
-                    key={index}
-                    className="flex-shrink-0 w-32 h-28 rounded-md overflow-hidden border-2 border-transparent hover:border-primary cursor-pointer shadow"
-                  >
-                    {img ? (
-                      <Image
-                        src={img.imageUrl}
-                        alt={`Scene ${index + 1}`}
-                        width={112}
-                        height={112}
-                        objectFit="cover"
-                        className="w-full h-full"
-                      />
-                    ) : (
-                      <div className="w-full h-full bg-muted flex items-center justify-center">
-                        <ImageIcon className="w-8 h-8 text-muted-foreground/50" />
+            <div className="flex flex-col">
+              <div className="flex justify-between items-center mb-2">
+                <h3 className="text-sm font-medium text-primary">Timeline</h3>
+              </div>
+              <ScrollArea className="h-32 bg-background p-2 rounded-md shadow-sm border border-border">
+                <div className="flex space-x-2 pb-2">
+                {storyData?.generatedImages && 
+                 Array.isArray(storyData.generatedImages) &&
+                 storyData.generatedImages.length > 0 && 
+                 storyData.generatedImages.some(img => img.isChapterGenerated) ? (
+                  // Only show images when they've been generated through our chapter generation
+                  storyData.generatedImages
+                    .filter(img => !!img && img.isChapterGenerated)
+                    .map((img, index) => (
+                      <div
+                        key={index}
+                        className={`flex-shrink-0 w-32 h-28 rounded-md overflow-hidden border-2 ${selectedTimelineImage === index ? 'border-primary' : 'border-transparent hover:border-primary/50'} cursor-pointer shadow relative group`}
+                        onClick={() => setSelectedTimelineImage(index)}
+                      >
+                        <Image
+                          src={img.imageUrl}
+                          alt={`Scene ${index + 1}`}
+                          width={128}
+                          height={112}
+                          className="w-full h-full object-cover"
+                        />
+                        <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-end">
+                          <div className="p-2 text-[10px] text-white">
+                            <p className="truncate font-medium">Chapter {img.chapterNumber || 1}, Scene {index + 1}</p>
+                            <p className="truncate text-gray-300 mt-0.5">
+                              {img.originalPrompt?.substring(0, 60)}...
+                            </p>
+                          </div>
+                        </div>
+                        {selectedTimelineImage === index && (
+                          <div className="absolute top-1 right-1 bg-primary rounded-full w-4 h-4 flex items-center justify-center">
+                            <Check className="w-3 h-3 text-white" />
+                          </div>
+                        )}
                       </div>
-                    )}
-                  </div>
-                ))}
-                {(!storyData.generatedImages ||
-                  storyData.generatedImages.length === 0) && (
-                  <div className="text-muted-foreground text-sm p-4">
-                    No images to display in timeline.
+                    ))
+                ) : (
+                  // Empty state showing "Generate Chapter" button
+                  <div className="flex flex-col items-center justify-center w-full h-full text-center">
+                    <div className="text-muted-foreground mb-3">
+                      <p className="text-sm">Empty timeline - click below to generate images for Chapter {currentChapter}</p>
+                    </div>
+                    <Button 
+                      variant="outline" 
+                      className="border-dashed border-2 hover:border-primary"
+                      disabled={isGeneratingImages}
+                      onClick={handleGenerateChapterImages}
+                    >
+                      {isGeneratingImages ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          {currentImageProgress > 0 && totalImagesToGenerate > 0
+                            ? `Generating ${currentImageProgress}/${totalImagesToGenerate} (${generationProgress}%)` 
+                            : `Preparing images...`}
+                        </>
+                      ) : chaptersGenerated.length === 0 ? (
+                        <>
+                          <ImageIcon className="w-4 h-4 mr-2" />
+                          Generate Chapter 1 Images
+                        </>
+                      ) : (
+                        <>
+                          <ImageIcon className="w-4 h-4 mr-2" />
+                          Generate Chapter {currentChapter} Images
+                        </>
+                      )}
+                    </Button>
                   </div>
                 )}
+                </div>
+                <ScrollBar orientation="horizontal" />
+              </ScrollArea>
+            </div>
+            
+            {/* Preview of selected image */}
+            {selectedTimelineImage !== null && 
+             storyData?.generatedImages && 
+             Array.isArray(storyData.generatedImages) &&
+             storyData.generatedImages[selectedTimelineImage] && (
+              <div className="mt-4 border rounded-md p-3 bg-card">
+                <div className="flex justify-between items-center mb-2">
+                  <h3 className="text-sm font-medium text-primary">Selected Image</h3>
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    onClick={() => setSelectedTimelineImage(null)}
+                  >
+                    <X className="w-4 h-4" />
+                  </Button>
+                </div>
+                <div className="flex gap-4">
+                  <div className="w-48 h-32 rounded-md overflow-hidden shadow-md">
+                    <Image
+                      src={storyData?.generatedImages?.[selectedTimelineImage]?.imageUrl || ''}
+                      alt={`Selected Scene`}
+                      width={192}
+                      height={128}
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-xs font-medium mb-1">Prompt:</p>
+                    <p className="text-xs text-muted-foreground mb-2">{storyData?.generatedImages?.[selectedTimelineImage]?.originalPrompt || 'No prompt available'}</p>
+                    
+                    <div className="flex gap-2 mt-2">
+                      <Button size="sm" variant="outline" className="text-xs h-7">
+                        <Edit2 className="w-3 h-3 mr-1" /> Edit
+                      </Button>
+                      <Button size="sm" variant="outline" className="text-xs h-7">
+                        <Trash2 className="w-3 h-3 mr-1" /> Remove
+                      </Button>
+                      <Button 
+                        size="sm" 
+                        variant="outline" 
+                        className="text-xs h-7"
+                        onClick={() => {
+                          toast({
+                            title: "Image Prompt",
+                            description: storyData?.generatedImages?.[selectedTimelineImage]?.originalPrompt,
+                            duration: 5000,
+                          });
+                        }}
+                      >
+                        <Info className="w-3 h-3 mr-1" /> Prompt
+                      </Button>
+                    </div>
+                  </div>
+                </div>
               </div>
-              <ScrollBar orientation="horizontal" />
-            </ScrollArea>
+            )}
           </div>
         </div>
       </div>
