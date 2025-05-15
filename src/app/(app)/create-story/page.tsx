@@ -85,8 +85,11 @@ interface ParsedPrompt {
 
 const parseNamedPrompts = (rawPrompts: string | undefined, type: 'Character' | 'Item' | 'Location'): ParsedPrompt[] => {
   if (!rawPrompts) return [];
+  
+  // Normalize escaped newlines to actual newlines
+  let normalizedPrompts = rawPrompts.replace(/\\n/g, "\n");
 
-  const cleanPrompts = rawPrompts
+  const cleanPrompts = normalizedPrompts
     .replace(/^(Character Prompts:|Item Prompts:|Location Prompts:)\s*\n*/i, '')
     .trim();
 
@@ -106,7 +109,7 @@ const parseNamedPrompts = (rawPrompts: string | undefined, type: 'Character' | '
         // Attempt to identify if the first line is a name.
         // This heuristic assumes a name is typically shorter and doesn't end with punctuation like a sentence.
         // And the subsequent lines form the description.
-        const firstLineIsLikelyName = lines[0].length < 60 && !/[\.\?!]$/.test(lines[0]) && lines.slice(1).join(' ').length > 0;
+        const firstLineIsLikelyName = lines[0].length < 60 && !/[\.?!]$/.test(lines[0]) && lines.slice(1).join(' ').length > 0;
 
         if (firstLineIsLikelyName) {
           name = lines[0];
