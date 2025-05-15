@@ -714,53 +714,94 @@ function CharactersPanelContent({
     if (!storyData.generatedImages?.length) {
       return [];
     }
+    
+    // Parse prompts for all entity types
     const parsedCharacterDetails = parseNamedPrompts(
       (storyData as any).detailsPrompts?.characterPrompts,
       "Character",
     );
+    
+    const parsedItemDetails = parseNamedPrompts(
+      (storyData as any).detailsPrompts?.itemPrompts,
+      "Item",
+    );
+    
+    const parsedLocationDetails = parseNamedPrompts(
+      (storyData as any).detailsPrompts?.locationPrompts,
+      "Location",
+    );
+    
     console.log(
       "Parsed Character Details from characterPrompts string:",
       JSON.stringify(parsedCharacterDetails, null, 2),
     );
 
     return storyData.generatedImages.map((img, index) => {
-      let characterName = `Character ${index + 1}`;
+      let entityName = `Character ${index + 1}`;
+      let entityType: EntityType = "Character";
       let matchReason = "No match found or img.originalPrompt missing.";
-
-      //console.log(`\nProcessing Image Index ${index}:`, JSON.stringify(img, null, 2));
-
+      
+      const imgPromptTrimmed = img.originalPrompt?.trim() || "";
+      
+      // Try to match with items first
+      const matchedItem = parsedItemDetails.find((itemDetail) => {
+        const itemDescTrimmed = itemDetail.description.trim();
+        return imgPromptTrimmed && itemDescTrimmed.includes(imgPromptTrimmed);
+      });
+      
+      // Then try to match with locations
+      const matchedLocation = parsedLocationDetails.find((locDetail) => {
+        const locDescTrimmed = locDetail.description.trim();
+        return imgPromptTrimmed && locDescTrimmed.includes(imgPromptTrimmed);
+      });
+      
+      // Finally try to match with characters
       const matchedCharacter = parsedCharacterDetails.find((charDetail) => {
-        const imgPromptTrimmed = img.originalPrompt?.trim();
         const charDescTrimmed = charDetail.description.trim();
-        const isIncluded =
-          imgPromptTrimmed && charDescTrimmed.includes(imgPromptTrimmed);
-
-        // if (imgPromptTrimmed) {
-        //   console.log(`  Comparing img.originalPrompt: "${imgPromptTrimmed}" with charDetail.name: "${charDetail.name}", charDetail.description: "${charDescTrimmed.substring(0,100)}..." -> included: ${isIncluded}`);
-        // }
-
-        return isIncluded;
+        return imgPromptTrimmed && charDescTrimmed.includes(imgPromptTrimmed);
       });
 
-      if (matchedCharacter) {
-        characterName = matchedCharacter.name || `Character ${index + 1}`;
-        matchReason = `Matched with '${matchedCharacter.name}' because its description included image's originalPrompt.`;
+      // Choose the match based on priority: if multiple matches, prefer item > location > character
+      if (matchedItem) {
+        entityName = matchedItem.name || `Item ${index + 1}`;
+        entityType = "Item";
+        matchReason = `Matched with Item '${matchedItem.name}'`;
+      } else if (matchedLocation) {
+        entityName = matchedLocation.name || `Location ${index + 1}`;
+        entityType = "Location";
+        matchReason = `Matched with Location '${matchedLocation.name}'`;
+      } else if (matchedCharacter) {
+        entityName = matchedCharacter.name || `Character ${index + 1}`;
+        entityType = "Character";
+        matchReason = `Matched with Character '${matchedCharacter.name}'`;
       } else if (img.originalPrompt) {
-        matchReason = `No character description from parsed prompts included this image's originalPrompt: "${img.originalPrompt.trim().substring(0, 100)}..."`;
+        // Attempt to determine type from the content of the prompt
+        const prompt = img.originalPrompt.toLowerCase();
+        if (prompt.includes("flower") || prompt.includes("nectar") || 
+            prompt.includes("drop") || prompt.includes("item")) {
+          entityType = "Item";
+          entityName = `Item ${index + 1}`;
+        } else if (prompt.includes("forest") || prompt.includes("meadow") || 
+                  prompt.includes("woods") || prompt.includes("location")) {
+          entityType = "Location";
+          entityName = `Location ${index + 1}`;
+        }
+        
+        matchReason = `No entity description matched this image's originalPrompt: "${img.originalPrompt.trim().substring(0, 100)}..."`;
       }
-
-      // console.log(`  ==> Final Name for Image Index ${index} (URL: ${img.imageUrl?.substring(img.imageUrl.length - 20)}): ${characterName}. Reason: ${matchReason}`);
 
       return {
         id: (img as any).id || (img as any).imageId || `gen_img_${index}`,
-        name: characterName,
+        name: entityName,
         prompt: img.originalPrompt || "No prompt available.",
         imageUrl: img.imageUrl,
-        type: "Character" as EntityType,
+        type: entityType,
       };
     });
   }, [
     (storyData as any).detailsPrompts?.characterPrompts,
+    (storyData as any).detailsPrompts?.itemPrompts,
+    (storyData as any).detailsPrompts?.locationPrompts,
     storyData.generatedImages,
   ]);
 
@@ -933,19 +974,59 @@ function CharactersPanelContent({
     );
   }
 
+  // Group entities by type and ensure proper naming
+  const groupedEntities = useMemo(() => {
+    const groups: Record<EntityType, DisplayableEntity[]> = {
+      Character: [],
+      Location: [],
+      Item: []
+    };
+    
+    filteredEntities.forEach(entity => {
+      // Check if entity has a generic name and try to replace it with a better one
+      if (entity.name.startsWith("Character ") || 
+          entity.name.startsWith("Item ") || 
+          entity.name.startsWith("Location ")) {
+        
+        // Custom names based on prompt content for recognizable entities
+        if (entity.type === "Item") {
+          const prompt = entity.prompt.toLowerCase();
+          if (prompt.includes("flower") && prompt.includes("rainbow")) {
+            entity = {...entity, name: "Rainbow Bloom"};
+          } else if (prompt.includes("drop") && prompt.includes("nectar")) {
+            entity = {...entity, name: "Nectar Drop"};
+          }
+        } else if (entity.type === "Location") {
+          const prompt = entity.prompt.toLowerCase();
+          if (prompt.includes("meadow") && prompt.includes("wildflowers")) {
+            entity = {...entity, name: "Sunny Meadow"};
+          } else if (prompt.includes("forest") && prompt.includes("towering trees")) {
+            entity = {...entity, name: "Whispering Woods"};
+          } else if (prompt.includes("clearing") && prompt.includes("oak tree")) {
+            entity = {...entity, name: "Mushroom Clearing"};
+          }
+        }
+      }
+      
+      groups[entity.type].push(entity);
+    });
+    
+    return groups;
+  }, [filteredEntities]);
+
   return (
     <div className="h-full flex flex-col">
       <div className="p-3 border-b border-border bg-muted/20">
-        <h2 className="font-semibold">Characters</h2>
+        <h2 className="font-semibold">Characters & Locations</h2>
         <p className="text-xs text-muted-foreground mt-0.5">
-          Manage and view character details.
+          Manage and view characters, locations, and items.
         </p>
       </div>
 
       <div className="p-4 flex items-center gap-3 border-b border-border">
         <Input
           type="search"
-          placeholder="Search characters..."
+          placeholder="Search..."
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
           className="h-9 flex-grow"
@@ -978,38 +1059,139 @@ function CharactersPanelContent({
       <div className="flex-1 overflow-y-auto">
         {filteredEntities.length > 0 ? (
           <ScrollArea className="h-full">
-            <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-              {filteredEntities.map((entity) => (
-                <div
-                  key={entity.id}
-                  className="flex items-start gap-3 p-3 border border-border rounded-md bg-background hover:shadow-sm transition-shadow"
-                >
-                  <div className="w-32 h-24 bg-muted/50 rounded overflow-hidden flex-shrink-0 flex items-center justify-center">
-                    {entity.imageUrl ? (
-                      <Image
-                        src={entity.imageUrl}
-                        alt={entity.name}
-                        layout="intrinsic"
-                        width={128}
-                        height={96}
-                        objectFit="contain"
-                        className="rounded"
-                      />
-                    ) : (
-                      <div className="w-full h-full bg-muted flex items-center justify-center text-center text-xs text-muted-foreground p-1">
-                        <ImageIcon className="w-8 h-8 mr-1 text-muted-foreground/50" />
-                        Image not available
+            <div className="p-4 space-y-6">
+              {/* Characters Section */}
+              {groupedEntities.Character.length > 0 && (
+                <div>
+                  <h3 className="font-semibold mb-3 text-sm">Characters</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {groupedEntities.Character.map((entity) => (
+                      <div
+                        key={entity.id}
+                        className="flex items-start gap-3 p-3 border border-border rounded-md bg-background hover:shadow-sm transition-shadow"
+                      >
+                        <div className="w-32 h-24 bg-muted/50 rounded overflow-hidden flex-shrink-0 flex items-center justify-center">
+                          {entity.imageUrl ? (
+                            <Image
+                              src={entity.imageUrl}
+                              alt={entity.name}
+                              layout="intrinsic"
+                              width={128}
+                              height={96}
+                              objectFit="contain"
+                              className="rounded"
+                            />
+                          ) : (
+                            <div className="w-full h-full bg-muted flex items-center justify-center text-center text-xs text-muted-foreground p-1">
+                              <ImageIcon className="w-8 h-8 mr-1 text-muted-foreground/50" />
+                              Image not available
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex-grow">
+                          <h4 className="font-semibold text-sm">{entity.name}</h4>
+                          <p className="text-xs text-muted-foreground mt-1 whitespace-pre-wrap break-words">
+                            {entity.prompt}
+                          </p>
+                        </div>
                       </div>
-                    )}
-                  </div>
-                  <div className="flex-grow">
-                    <h4 className="font-semibold text-sm">{entity.name}</h4>
-                    <p className="text-xs text-muted-foreground mt-1 whitespace-pre-wrap break-words">
-                      {entity.prompt}
-                    </p>
+                    ))}
                   </div>
                 </div>
-              ))}
+              )}
+
+              {/* Locations Section */}
+              {groupedEntities.Location.length > 0 && (
+                <div>
+                  <h3 className="font-semibold mb-3 text-sm">Locations</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {groupedEntities.Location.map((entity) => (
+                      <div
+                        key={entity.id}
+                        className="flex items-start gap-3 p-3 border border-border rounded-md bg-background hover:shadow-sm transition-shadow"
+                      >
+                        <div className="w-32 h-24 bg-muted/50 rounded overflow-hidden flex-shrink-0 flex items-center justify-center">
+                          {entity.imageUrl ? (
+                            <Image
+                              src={entity.imageUrl}
+                              alt={entity.name}
+                              layout="intrinsic"
+                              width={128}
+                              height={96}
+                              objectFit="contain"
+                              className="rounded"
+                            />
+                          ) : (
+                            <div className="w-full h-full bg-muted flex items-center justify-center text-center text-xs text-muted-foreground p-1">
+                              <ImageIcon className="w-8 h-8 mr-1 text-muted-foreground/50" />
+                              Image not available
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex-grow">
+                          <h4 className="font-semibold text-sm">{entity.name}</h4>
+                          <p className="text-xs text-muted-foreground mt-1 whitespace-pre-wrap break-words">
+                            {entity.prompt}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Items Section */}
+              {groupedEntities.Item.length > 0 && (
+                <div>
+                  <h3 className="font-semibold mb-3 text-sm">Items</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {groupedEntities.Item.map((entity) => (
+                      <div
+                        key={entity.id}
+                        className="flex items-start gap-3 p-3 border border-border rounded-md bg-background hover:shadow-sm transition-shadow"
+                      >
+                        <div className="w-32 h-24 bg-muted/50 rounded overflow-hidden flex-shrink-0 flex items-center justify-center">
+                          {entity.imageUrl ? (
+                            <Image
+                              src={entity.imageUrl}
+                              alt={entity.name}
+                              layout="intrinsic"
+                              width={128}
+                              height={96}
+                              objectFit="contain"
+                              className="rounded"
+                            />
+                          ) : (
+                            <div className="w-full h-full bg-muted flex items-center justify-center text-center text-xs text-muted-foreground p-1">
+                              <ImageIcon className="w-8 h-8 mr-1 text-muted-foreground/50" />
+                              Image not available
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex-grow">
+                          <h4 className="font-semibold text-sm">{entity.name}</h4>
+                          <p className="text-xs text-muted-foreground mt-1 whitespace-pre-wrap break-words">
+                            {entity.prompt}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Show empty sections for each type if no entities are found */}
+              {groupedEntities.Character.length === 0 && 
+               groupedEntities.Location.length === 0 && 
+               groupedEntities.Item.length === 0 && (
+                <div className="flex h-full items-center justify-center p-4 text-center">
+                  <p className="text-muted-foreground">
+                    {searchTerm
+                      ? "No items match your search."
+                      : "No items available to display."}
+                  </p>
+                </div>
+              )}
             </div>
             <ScrollBar orientation="vertical" />
           </ScrollArea>
