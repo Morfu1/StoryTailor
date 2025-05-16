@@ -64,23 +64,6 @@ export default function VideoPageSidebar({
           ))}
         </div>
 
-        <div className="mt-auto p-2">
-          <Card>
-            <CardHeader className="py-2 px-3">
-              <CardTitle className="text-sm">History</CardTitle>
-            </CardHeader>
-            <CardContent className="text-xs text-muted-foreground p-3 max-h-32 overflow-y-auto space-y-2">
-              <p>
-                Previous versions of images will appear here. (Placeholder)
-              </p>
-              {[1, 2, 3].map((i) => (
-                <div key={i} className="p-1 my-1 border rounded bg-muted/50">
-                  History item {i}
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-        </div>
       </div>
     </div>
   );
