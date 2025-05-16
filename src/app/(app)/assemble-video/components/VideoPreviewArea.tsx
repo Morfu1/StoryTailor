@@ -8,14 +8,16 @@ import { Video } from "lucide-react";
 interface VideoPreviewAreaProps {
   storyData: Story | null;
   selectedTimelineImage: number | null;
+  className?: string;
 }
 
 export default function VideoPreviewArea({
   storyData,
   selectedTimelineImage,
+  className,
 }: VideoPreviewAreaProps) {
   return (
-    <div className="flex-1 bg-muted rounded-lg flex items-center justify-center shadow-inner relative overflow-hidden">
+    <div className={`flex-1 bg-muted rounded-lg flex items-center justify-center shadow-inner relative overflow-hidden ${className || ''}`}>
       {selectedTimelineImage !== null &&
       storyData?.generatedImages?.[selectedTimelineImage]?.imageUrl ? (
         <Image

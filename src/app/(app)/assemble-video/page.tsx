@@ -585,8 +585,8 @@ export default function AssembleVideoPage() {
             )}
           </div>
 
-          <div className="w-3/5 flex flex-col p-4 gap-4 overflow-hidden">
-            <VideoPreviewArea storyData={storyData} selectedTimelineImage={selectedTimelineImage} />
+          <div className="w-3/5 flex flex-col p-4 overflow-hidden">
+            <VideoPreviewArea storyData={storyData} selectedTimelineImage={selectedTimelineImage} className="flex-[3] min-h-0" />
             <TimelineStrip
               storyData={storyData}
               selectedTimelineImage={selectedTimelineImage}
@@ -599,6 +599,7 @@ export default function AssembleVideoPage() {
               currentImageProgress={currentImageProgress}
               totalImagesToGenerate={totalImagesToGenerate}
               generationProgress={generationProgress}
+              className="flex-[2] min-h-0"
             />
           </div>
         </div>

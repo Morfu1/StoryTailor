@@ -5,7 +5,7 @@ import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import type { Story, GeneratedImage } from "@/types/story";
-import { Check, ImageIcon, Loader2, Film, MessageSquareText, Play, Pause } from "lucide-react"; // Added Play, Pause
+import { Check, ImageIcon, Loader2, Film, MessageSquareText, Play, Pause, Scissors, Trash2, MousePointer2, Undo2, Redo2, ZoomIn, ZoomOut, Maximize2 } from "lucide-react"; // Added Play, Pause & new icons
 
 interface TimelineStripProps {
   storyData: Story | null;
@@ -19,6 +19,7 @@ interface TimelineStripProps {
   currentImageProgress: number;
   totalImagesToGenerate: number;
   generationProgress: number;
+  className?: string;
 }
 
 export default function TimelineStrip({
@@ -33,11 +34,13 @@ export default function TimelineStrip({
   currentImageProgress,
   totalImagesToGenerate,
   generationProgress,
+  className,
 }: TimelineStripProps) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
+  const tracksContainerRef = useRef<HTMLDivElement>(null);
 
   const imageTrackHeight = "h-[90px]";
   const textTrackHeight = "h-[60px]";
@@ -160,9 +163,30 @@ export default function TimelineStrip({
     return script.substring(start, end) + (end < scriptLength ? "..." : "");
   };
 
+  const handleTimelineClick = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (!tracksContainerRef.current || !audioRef.current || duration <= 0) {
+      return;
+    }
+
+    const rect = tracksContainerRef.current.getBoundingClientRect();
+    const clickX = event.clientX - rect.left;
+    let clickPercentage = clickX / rect.width;
+
+    // Clamp percentage between 0 and 1
+    clickPercentage = Math.max(0, Math.min(1, clickPercentage));
+
+    const newTime = clickPercentage * duration;
+
+    audioRef.current.currentTime = newTime;
+    setCurrentTime(newTime);
+
+    // If it was playing, we want it to continue playing from the new position.
+    // If it was paused, it should remain paused at the new position.
+    // The `play()` or `pause()` state is managed by the `handlePlayPause` button.
+  };
 
   return (
-    <div className="flex flex-col">
+    <div className={`flex flex-col ${className || ''}`}>
       {storyData?.narrationAudioUrl && (
         <audio ref={audioRef} src={storyData.narrationAudioUrl} preload="metadata" />
       )}
@@ -174,7 +198,7 @@ export default function TimelineStrip({
       <ScrollArea
         className={`bg-background p-2 rounded-md shadow-sm border border-border ${totalTimelineHeight} w-full`}
       >
-        <div className="flex flex-col space-y-1 pb-1 h-full">
+        <div className="flex flex-col space-y-1 pb-1 h-full"> {/* Main flex container for controls + tracks area */}
           {/* Playback Controls */}
           {storyData?.narrationAudioUrl && (
             <div className={`flex items-center space-x-3 p-1 border-b border-border mb-1 ${controlsHeight}`}>
@@ -184,14 +208,61 @@ export default function TimelineStrip({
               <div className="text-xs text-muted-foreground">
                 <span>{formatTime(currentTime)}</span> / <span>{formatTime(duration)}</span>
               </div>
-              {/* Optional: Add a simple progress bar later if needed */}
+              {/* Spacer to push subsequent icons to the right */}
+              <div className="flex-grow" />
+
+              {/* New Icons */}
+              <Button variant="ghost" size="icon" className="h-7 w-7" title="Select Tool (Placeholder)">
+                <MousePointer2 className="h-4 w-4" />
+              </Button>
+              <Button variant="ghost" size="icon" className="h-7 w-7" title="Split Clip (Placeholder)">
+                <Scissors className="h-4 w-4" />
+              </Button>
+              <Button variant="ghost" size="icon" className="h-7 w-7" title="Delete Clip (Placeholder)">
+                <Trash2 className="h-4 w-4" />
+              </Button>
+              
+              <div className="h-5 w-px bg-border mx-1" /> {/* Separator */}
+
+              <Button variant="ghost" size="icon" className="h-7 w-7" title="Undo (Placeholder)">
+                <Undo2 className="h-4 w-4" />
+              </Button>
+              <Button variant="ghost" size="icon" className="h-7 w-7" title="Redo (Placeholder)">
+                <Redo2 className="h-4 w-4" />
+              </Button>
+
+              <div className="h-5 w-px bg-border mx-1" /> {/* Separator */}
+              
+              <Button variant="ghost" size="icon" className="h-7 w-7" title="Zoom Out (Placeholder)">
+                <ZoomOut className="h-4 w-4" />
+              </Button>
+              <Button variant="ghost" size="icon" className="h-7 w-7" title="Zoom In (Placeholder)">
+                <ZoomIn className="h-4 w-4" />
+              </Button>
+              <Button variant="ghost" size="icon" className="h-7 w-7" title="Fit to Screen (Placeholder)">
+                <Maximize2 className="h-4 w-4" />
+              </Button>
+
+              <div className="h-5 w-px bg-border mx-1" /> {/* Separator */}
+
+              {/* Playback Speed Placeholder */}
+              <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" title="Playback Speed (Placeholder)">
+                1x
+              </Button>
+
             </div>
           )}
 
-          {/* Image Track */}
-          <div className={`flex space-x-1 ${imageTrackHeight} items-center`}>
-            {imagesToShow && imagesToShow.length > 0 ? (
-              imagesToShow.map((img, filteredIndex) => {
+          {/* Wrapper for Tracks and Playhead */}
+          <div
+            ref={tracksContainerRef}
+            className="relative flex-1 flex flex-col space-y-1 cursor-pointer" // Added cursor-pointer
+            onClick={handleTimelineClick}
+          > {/* This new div is relative for playhead and flex-1 for height */}
+            {/* Image Track */}
+            <div className={`flex space-x-1 ${imageTrackHeight} items-center pointer-events-none`}> {/* Added pointer-events-none to allow click on parent */}
+              {imagesToShow && imagesToShow.length > 0 ? (
+                imagesToShow.map((img, filteredIndex) => {
                 // Find the original index of this image in storyData.generatedImages
                 const originalImageIndex = storyData?.generatedImages?.findIndex(
                   (originalImg) => originalImg.imageUrl === img.imageUrl && originalImg.originalPrompt === img.originalPrompt
@@ -210,15 +281,23 @@ export default function TimelineStrip({
                   <div
                     key={originalImageIndex} // Use original index for key if possible, or a unique ID from img
                     className={`flex-shrink-0 ${imageWidth} ${imageTrackHeight} rounded-md overflow-hidden border-2 ${isSelected ? "border-primary shadow-lg" : "border-transparent hover:border-primary/50"} cursor-pointer relative transition-all duration-200 ease-in-out`}
-                    onClick={() => {
-                      if (originalImageIndex !== undefined && originalImageIndex !== -1) {
+                    onClick={(e) => {
+                      e.stopPropagation(); // Prevent click from bubbling to the tracksContainerRef
+                      if (originalImageIndex !== undefined && originalImageIndex !== -1 && imagesToShow && audioRef.current) {
                         setSelectedTimelineImage(originalImageIndex);
                         setSelectedPanel("Edit Image");
-                        // Pause audio on manual selection to prevent immediate override by playback sync
-                        if (audioRef.current && isPlaying) {
-                          audioRef.current.pause();
-                          setIsPlaying(false);
+
+                        // Calculate the new time based on the clicked image's position in the filtered list
+                        if (duration > 0 && imagesToShow.length > 0) {
+                          const sceneDuration = duration / imagesToShow.length;
+                          const newTime = filteredIndex * sceneDuration;
+                          audioRef.current.currentTime = newTime;
+                          setCurrentTime(newTime); // Update local state for immediate UI feedback
                         }
+
+                        // If it was playing, we want it to continue playing from the new position.
+                        // If it was paused, it should remain paused at the new position.
+                        // The `play()` or `pause()` state is managed by the `handlePlayPause` button.
                       }
                     }}
                   >
@@ -279,12 +358,12 @@ export default function TimelineStrip({
                 </Button>
               </div>
             )}
-          </div>
+            </div>
 
-          {/* Text Track (Script Snippets) */}
-          <div className={`flex space-x-1 ${textTrackHeight} items-stretch overflow-hidden`}>
-            {imagesToShow && imagesToShow.length > 0 ? (
-              imagesToShow.map((img, filteredIndex) => { // Renamed index to filteredIndex for clarity
+            {/* Text Track (Script Snippets) */}
+            <div className={`flex space-x-1 ${textTrackHeight} items-stretch overflow-hidden pointer-events-none`}> {/* Added pointer-events-none */}
+              {imagesToShow && imagesToShow.length > 0 ? (
+                imagesToShow.map((img, filteredIndex) => { // Renamed index to filteredIndex for clarity
                 const originalImageIndex = storyData?.generatedImages?.findIndex(
                   (originalImg) => originalImg.imageUrl === img.imageUrl && originalImg.originalPrompt === img.originalPrompt
                 );
@@ -310,8 +389,20 @@ export default function TimelineStrip({
                 <p className="text-xs">Script snippets will appear here once images are generated.</p>
               </div>
             )}
-          </div>
-        </div>
+            </div>
+
+            {/* Playhead */}
+            {duration > 0 && imagesToShow && imagesToShow.length > 0 && (
+              <div
+                className="absolute top-0 w-0.5 bg-purple-600 z-20 pointer-events-none" // z-20 to be above tracks
+                style={{
+                  left: `${(currentTime / duration) * 100}%`,
+                  height: '100%', // Spans the height of the "relative flex-1" parent
+                }}
+              />
+            )}
+          </div> {/* End of Wrapper for Tracks and Playhead */}
+        </div> {/* End of Main flex container */}
         <ScrollBar orientation="horizontal" />
       </ScrollArea>
     </div>
