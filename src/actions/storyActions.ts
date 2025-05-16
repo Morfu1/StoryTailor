@@ -543,3 +543,81 @@ export async function saveStory(storyData: Story, userId: string): Promise<{ suc
      console.log('---------------------------------------------------------------------');
   }
 }
+export async function updateStoryTimeline(
+  storyId: string,
+  userId: string,
+  timelineTracks: Story['timelineTracks']
+): Promise<{ success: boolean; error?: string }> {
+  console.log('---------------------------------------------------------------------');
+  console.log("[updateStoryTimeline Action] Initiated. User ID:", userId, "Story ID:", storyId);
+
+  if (!dbAdmin) {
+    const errorMessage = "Server configuration error: Database connection (dbAdmin) is not available. Firebase Admin SDK might not be initialized. Check server logs for firebaseAdmin.ts output.";
+    console.error("[updateStoryTimeline Action] CRITICAL ERROR:", errorMessage);
+    return { success: false, error: errorMessage };
+  }
+  console.log("[updateStoryTimeline Action] INFO: dbAdmin is DEFINED.");
+
+  if (!userId || typeof userId !== 'string' || userId.trim() === '') {
+    console.error("[updateStoryTimeline Action] Error: Authenticated User ID is invalid or missing:", userId);
+    return { success: false, error: "User not authenticated or user ID is invalid." };
+  }
+
+  if (!storyId) {
+    console.error("[updateStoryTimeline Action] Error: Story ID is missing.");
+    return { success: false, error: "Story ID is required to update the timeline." };
+  }
+
+  try {
+    const storyRef = dbAdmin.collection("stories").doc(storyId);
+    const docSnap = await storyRef.get();
+
+    if (!docSnap.exists) {
+      console.error(`[updateStoryTimeline Action] ERROR: Story with ID ${storyId} not found for update.`);
+      return { success: false, error: "Story not found. Cannot update timeline." };
+    }
+
+    const existingStoryData = docSnap.data();
+    if (existingStoryData?.userId !== userId) {
+      console.error(`[updateStoryTimeline Action] ERROR: User ${userId} attempting to update timeline for story ${storyId} owned by ${existingStoryData?.userId}.`);
+      return { success: false, error: "Unauthorized: You can only update the timeline of your own stories." };
+    }
+
+    const dataToUpdate = {
+      timelineTracks: timelineTracks,
+      updatedAt: firebaseAdmin.firestore.FieldValue.serverTimestamp(),
+    };
+
+    console.log(`[updateStoryTimeline Action] INFO: Attempting to UPDATE timeline for document 'stories/${storyId}'`);
+    await storyRef.update(dataToUpdate);
+    console.log(`[updateStoryTimeline Action] SUCCESS: Timeline for document 'stories/${storyId}' updated.`);
+
+    // Revalidate the page where the timeline is displayed
+    revalidatePath(`/assemble-video?storyId=${storyId}`);
+    // Potentially revalidate other paths if the timeline affects them, e.g., a dashboard view
+    revalidatePath('/dashboard');
+
+
+    return { success: true };
+
+  } catch (error) {
+    console.error("[updateStoryTimeline Action] ERROR: Error during Firestore operation:", error);
+    let errorMessage = "Failed to update story timeline.";
+    const firebaseError = error as FirebaseErrorWithCode;
+
+    if (firebaseError && firebaseError.code) {
+      errorMessage = `Failed to update story timeline (Firestore Error): ${firebaseError.message} (Code: ${firebaseError.code})`;
+      if (firebaseError.code === 'permission-denied' || (typeof firebaseError.code === 'number' && firebaseError.code === 7)) {
+        console.error("[updateStoryTimeline Action] PERMISSION DENIED. Check IAM for the service account and Firestore rules.");
+      }
+    } else if (error instanceof Error) {
+      errorMessage = `Failed to update story timeline: ${error.message}`;
+    }
+    console.error("[updateStoryTimeline Action] Full error object during Firestore operation:", JSON.stringify(error, null, 2));
+    return { success: false, error: errorMessage };
+  } finally {
+    console.log('---------------------------------------------------------------------');
+    console.log("[updateStoryTimeline Action] Completed.");
+    console.log('---------------------------------------------------------------------');
+  }
+}

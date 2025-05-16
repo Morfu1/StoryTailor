@@ -16,7 +16,8 @@ import {
   getStory,
   generateImageFromPrompt,
   saveStory,
-} from "@/actions/storyActions"; 
+  updateStoryTimeline,
+} from "@/actions/storyActions";
 import type { GeneratedImage } from "@/types/story"; 
 import {
   // AlignCenter,
@@ -61,7 +62,7 @@ import {
 // import Image from "next/image";
 // import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import React, { useEffect, useState } from "react"; // Removed Fragment, useMemo as they aren't used here now
+import React, { useEffect, useState, useRef } from "react"; // Removed Fragment, useMemo as they aren't used here now
 import { DndContext, DragEndEvent, closestCenter } from "@dnd-kit/core"; // Added DndContext and DragEndEvent
 import { useToast } from "@/hooks/use-toast";
 // import { Input } from "@/components/ui/input";
@@ -99,6 +100,7 @@ export interface PageTimelineMediaItem { // Renamed to avoid conflict if types a
   originalIndex?: number; // For images/texts from storyData.generatedImages
   sourceId?: string; // ID of the source media item from AllMediaContent (e.g., `media-image-${originalIndex}`)
   imageUrl?: string;
+  audioUrl?: string; // For audio items
   scriptSegment?: string;
   title?: string; // e.g., from image prompt
   // Timeline specific properties
@@ -133,11 +135,11 @@ export default function AssembleVideoPage() {
   const [storyData, setStoryData] = useState<Story | null>(null);
   const [pageLoading, setPageLoading] = useState(true);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-  const [selectedPanel, setSelectedPanel] = useState("Story"); 
+  const [selectedPanel, setSelectedPanel] = useState("Story");
   const [isGeneratingImages, setIsGeneratingImages] = useState(false);
   const [currentChapter, setCurrentChapter] = useState(1);
   const [chaptersGenerated, setChaptersGenerated] = useState<number[]>([]);
-  const [totalImagesToGenerate, setTotalImagesToGenerate] = useState<number>(7); 
+  const [totalImagesToGenerate, setTotalImagesToGenerate] = useState<number>(7);
   const [currentImageProgress, setCurrentImageProgress] = useState(0);
   const [generationProgress, setGenerationProgress] = useState(0);
   const [selectedTimelineImage, setSelectedTimelineImage] = useState<
@@ -147,6 +149,10 @@ export default function AssembleVideoPage() {
   const [isEditingImage, setIsEditingImage] = useState(false);
   const [dynamicTimelineTracks, setDynamicTimelineTracks] = useState<PageTimelineTrack[]>([]);
   const [selectedTimelineItemKey, setSelectedTimelineItemKey] = useState<string | null>(null); // For unique ID based selection
+  const [timelineModified, setTimelineModified] = useState(false); // Track if timeline was modified by user
+
+  const isInitialMount = useRef(true);
+  const isStoryDataDrivenUpdate = useRef(false);
 
   // Function to get script segment (similar to the one in TimelineStrip)
   // This might be better placed in utils.ts if used in multiple places
@@ -167,78 +173,203 @@ export default function AssembleVideoPage() {
 
   // Initialize/Update dynamicTimelineTracks based on storyData
   useEffect(() => {
+    isStoryDataDrivenUpdate.current = true; // Set flag before any update
+
     if (storyData) {
-      const imagesToShow = storyData.generatedImages?.filter(
-        (img): img is GeneratedImage => !!img && img.isChapterGenerated === true
-      ) || [];
+      // Helper to map icon names back to components
+      const getIconComponentFromName = (iconName?: string): React.ElementType => {
+        if (iconName === "Video") return Video;
+        if (iconName === "Music2") return Music2;
+        if (iconName === "Text") return Text;
+        // Add more mappings if other icons are used
+        return ImageIcon; // Default icon
+      };
 
-      const initialTrackConfigs: Omit<PageTimelineTrack, 'items' | 'emptyStateMessage' | 'showGenerateButton'>[] = [
-        { id: "video-track-1", type: "video", name: "Video 1", icon: Video, height: "h-[90px]", accepts: ['image'] },
-        { id: "narration-track-1", type: "narration", name: "Narration", icon: Music2, height: "h-[40px]", accepts: ['audio'] },
-        { id: "text-track-1", type: "text", name: "Script", icon: Text, height: "h-[60px]", accepts: ['text'] },
-      ];
+      if (storyData.timelineTracks && storyData.timelineTracks.length > 0) {
+        // Rehydrate from saved timelineTracks
+        const rehydratedTracks: PageTimelineTrack[] = storyData.timelineTracks.map(storedTrack => ({
+          id: storedTrack.id,
+          type: storedTrack.type,
+          name: storedTrack.name,
+          icon: getIconComponentFromName(storedTrack.iconName),
+          items: storedTrack.items.map(item => ({ // Ensure items are correctly mapped
+            id: item.id,
+            type: item.type,
+            originalIndex: item.originalIndex,
+            sourceId: item.sourceId,
+            imageUrl: item.imageUrl,
+            audioUrl: item.audioUrl, // Make sure this is in PageTimelineMediaItem if used
+            scriptSegment: item.scriptSegment,
+            title: item.title,
+            startTime: item.startTime,
+            duration: item.duration,
+            ui: item.ui,
+          })),
+          height: storedTrack.height,
+          accepts: storedTrack.accepts,
+          emptyStateMessage: storedTrack.emptyStateMessage,
+          showGenerateButton: storedTrack.showGenerateButton,
+        }));
+        setDynamicTimelineTracks(rehydratedTracks);
+      } else {
+        // Fallback to generating initial tracks if no saved timelineTracks
+        const imagesToShow = storyData.generatedImages?.filter(
+          (img): img is GeneratedImage => !!img && img.isChapterGenerated === true
+        ) || [];
 
-      const newTracks = initialTrackConfigs.map(config => {
-        let items: PageTimelineMediaItem[] = [];
-        let emptyStateMessage = `${config.name} track.`;
-        let showGenerateButton = false;
+        const initialTrackConfigs: Omit<PageTimelineTrack, 'items' | 'emptyStateMessage' | 'showGenerateButton'>[] = [
+          { id: "video-track-1", type: "video", name: "Video 1", icon: Video, height: "h-[90px]", accepts: ['image'] },
+          { id: "narration-track-1", type: "narration", name: "Narration", icon: Music2, height: "h-[40px]", accepts: ['audio'] },
+          { id: "text-track-1", type: "text", name: "Script", icon: Text, height: "h-[60px]", accepts: ['text'] },
+        ];
 
-        if (config.type === 'video' && imagesToShow.length > 0) {
-          items = imagesToShow.map((img, filteredIndex) => {
-            const originalImageIndex = storyData.generatedImages?.findIndex(
-              (originalImg) => originalImg.imageUrl === img.imageUrl && originalImg.originalPrompt === img.originalPrompt
-            );
-            return {
-              id: `img-${originalImageIndex}-${Date.now()}`, // Ensure unique ID on timeline
-              type: 'image',
-              originalIndex: originalImageIndex,
-              imageUrl: img.imageUrl,
-              title: img.originalPrompt?.substring(0,30) + "...",
-              // Default duration/startTime can be set here or when dropped
-            };
-          });
-        } else if (config.type === 'video' && imagesToShow.length === 0) {
-            emptyStateMessage = `Image track empty. Generate images for Chapter ${currentChapter}.`;
-            showGenerateButton = true;
-        }
-        
-        if (config.type === 'text' && imagesToShow.length > 0 && storyData.generatedScript) {
-          items = imagesToShow.map((img, filteredIndex) => {
-            const originalImageIndex = storyData.generatedImages?.findIndex(
-              (originalImg) => originalImg.imageUrl === img.imageUrl && originalImg.originalPrompt === img.originalPrompt
-            );
-            return {
-              id: `text-${originalImageIndex}-${Date.now()}`,
-              type: 'text',
-              originalIndex: originalImageIndex,
-              scriptSegment: getScriptSegmentForImage(filteredIndex, imagesToShow.length, storyData.generatedScript),
-              title: `Script for scene ${originalImageIndex !== undefined ? originalImageIndex + 1 : filteredIndex + 1}`
-            };
-          });
-        } else if (config.type === 'text' && (imagesToShow.length === 0 || !storyData.generatedScript)) {
-            emptyStateMessage = "Script snippets will appear here once images are generated.";
-        }
+        const newTracks = initialTrackConfigs.map(config => {
+          let items: PageTimelineMediaItem[] = [];
+          let emptyStateMessage = `${config.name} track.`;
+          let showGenerateButton = false;
 
-        if (config.type === 'narration') {
-          if (storyData.narrationAudioUrl) {
-            items = [{
-              id: 'narration-audio-main',
-              type: 'audio',
-              title: 'Main Narration',
-              // duration: storyData.narrationAudioDurationSeconds
-            }];
-            emptyStateMessage = "Narration audio loaded.";
-          } else {
-            emptyStateMessage = "No narration audio available for this story.";
+          if (config.type === 'video' && imagesToShow.length > 0) {
+            items = imagesToShow.map((img, filteredIndex) => {
+              const originalImageIndex = storyData.generatedImages?.findIndex(
+                (originalImg) => originalImg.imageUrl === img.imageUrl && originalImg.originalPrompt === img.originalPrompt
+              );
+              return {
+                id: `img-${originalImageIndex}-${Date.now()}-${Math.random().toString(36).substring(2,7)}`, // More unique ID
+                type: 'image',
+                originalIndex: originalImageIndex,
+                imageUrl: img.imageUrl,
+                title: img.originalPrompt?.substring(0,30) + "...",
+              };
+            });
+          } else if (config.type === 'video' && imagesToShow.length === 0) {
+              emptyStateMessage = `Image track empty. Generate images for Chapter ${currentChapter}.`;
+              showGenerateButton = true;
           }
-        }
-        return { ...config, items, emptyStateMessage, showGenerateButton };
-      });
-      setDynamicTimelineTracks(newTracks);
+          
+          if (config.type === 'text' && imagesToShow.length > 0 && storyData.generatedScript) {
+            items = imagesToShow.map((img, filteredIndex) => {
+              const originalImageIndex = storyData.generatedImages?.findIndex(
+                (originalImg) => originalImg.imageUrl === img.imageUrl && originalImg.originalPrompt === img.originalPrompt
+              );
+              return {
+                id: `text-${originalImageIndex}-${Date.now()}-${Math.random().toString(36).substring(2,7)}`, // More unique ID
+                type: 'text',
+                originalIndex: originalImageIndex,
+                scriptSegment: getScriptSegmentForImage(filteredIndex, imagesToShow.length, storyData.generatedScript),
+                title: `Script for scene ${originalImageIndex !== undefined ? originalImageIndex + 1 : filteredIndex + 1}`
+              };
+            });
+          } else if (config.type === 'text' && (imagesToShow.length === 0 || !storyData.generatedScript)) {
+              emptyStateMessage = "Script snippets will appear here once images are generated.";
+          }
+
+          if (config.type === 'narration') {
+            if (storyData.narrationAudioUrl) {
+              items = [{
+                id: 'narration-audio-main',
+                type: 'audio',
+                title: 'Main Narration',
+                audioUrl: storyData.narrationAudioUrl, // Add audioUrl here
+                duration: storyData.narrationAudioDurationSeconds, // Add duration
+              }];
+              emptyStateMessage = "Narration audio loaded.";
+            } else {
+              emptyStateMessage = "No narration audio available for this story.";
+            }
+          }
+          return { ...config, items, emptyStateMessage, showGenerateButton };
+        });
+        setDynamicTimelineTracks(newTracks);
+      }
     } else {
       setDynamicTimelineTracks([]); // Clear tracks if no storyData
     }
-  }, [storyData, currentChapter]);
+  }, [storyData, currentChapter]); // Removed getScriptSegmentForImage from deps as it's stable if defined outside or memoized
+
+
+  // Effect to save timeline changes
+  useEffect(() => {
+    if (isInitialMount.current) {
+      isInitialMount.current = false;
+      return;
+    }
+
+    if (isStoryDataDrivenUpdate.current) {
+      isStoryDataDrivenUpdate.current = false; // Reset flag
+      return; // Don't save if tracks were just updated based on storyData load/change
+    }
+
+    if (pageLoading || !storyData || !user?.uid || !storyId || !timelineModified) {
+      console.log("Timeline save skipped: conditions not met", {
+        pageLoading,
+        storyDataExists: !!storyData,
+        userUidExists: !!user?.uid,
+        storyIdExists: !!storyId,
+        timelineModified
+      });
+      return;
+    }
+
+    const saveCurrentTimeline = async () => {
+      const getIconNameString = (iconComponent: React.ElementType): string => {
+        // Direct mapping for known icons used in tracks
+        if (iconComponent === Video) return "Video";
+        if (iconComponent === Music2) return "Music2";
+        if (iconComponent === Text) return "Text";
+        
+        // Fallback for other components (less likely for current track setup)
+        // Check for displayName first, then function name
+        if ((iconComponent as any).displayName && typeof (iconComponent as any).displayName === 'string') {
+          return (iconComponent as any).displayName;
+        }
+        if (typeof iconComponent === 'function' && iconComponent.name && typeof iconComponent.name === 'string') {
+          return iconComponent.name;
+        }
+        return "UnknownIcon"; // Default if no name can be reliably extracted
+      };
+
+      const tracksToSave: Story['timelineTracks'] = dynamicTimelineTracks.map(track => {
+        const { icon, ...restOfTrack } = track;
+        return {
+          ...restOfTrack,
+          iconName: getIconNameString(icon),
+          items: track.items.map(item => ({
+            ...item,
+            // Ensure any transformations for item properties are done here if needed
+            // For example, if PageTimelineMediaItem in types/story.ts has properties
+            // not present or differently named in the local PageTimelineMediaItem.
+            // Currently, they seem compatible enough for a direct spread.
+          })),
+        };
+      });
+
+      if (tracksToSave && storyId && user?.uid) {
+        console.log("Attempting to save timeline state:", tracksToSave);
+        try {
+          const result = await updateStoryTimeline(storyId, user.uid, tracksToSave);
+          if (result.success) {
+            toast({ title: "Timeline Saved!", description: "Your timeline changes have been saved.", duration: 2000 });
+            setTimelineModified(false); // Reset the modified flag after successful save
+          } else {
+            toast({ title: "Error Saving Timeline", description: result.error || "An unknown error occurred.", variant: "destructive" });
+          }
+        } catch (e) {
+            console.error("Exception during updateStoryTimeline:", e);
+            toast({ title: "Error Saving Timeline", description: "A client-side error occurred.", variant: "destructive" });
+        }
+      } else {
+        console.log("Timeline save skipped: missing data for save operation", { tracksToSave, storyId, userUid: user?.uid });
+      }
+    };
+
+    // Debounce save if necessary, for now direct call
+    const debounceTimeout = setTimeout(() => {
+        saveCurrentTimeline();
+    }, 1000); // Debounce save by 1 second
+
+    return () => clearTimeout(debounceTimeout);
+
+  }, [dynamicTimelineTracks, storyId, user, pageLoading, storyData, toast, timelineModified]); // Added timelineModified to dependencies
 
 
   useEffect(() => {
@@ -275,12 +406,14 @@ export default function AssembleVideoPage() {
       return;
     }
 
-    setDynamicTimelineTracks(prevTracks =>
-      prevTracks.map(track => ({
+    setDynamicTimelineTracks(prevTracks => {
+      const updatedTracks = prevTracks.map(track => ({
         ...track,
         items: track.items.filter(item => item.id !== keyToDelete),
-      }))
-    );
+      }));
+      setTimelineModified(true); // Mark timeline as modified
+      return updatedTracks;
+    });
     
     toast({ title: "Item Deleted", description: `Item removed from the timeline.`, duration: 2000 });
     setSelectedTimelineItemKey(null);
@@ -723,6 +856,7 @@ export default function AssembleVideoPage() {
       };
 
       setDynamicTimelineTracks(prevTracks => {
+        setTimelineModified(true); // Mark timeline as modified when items are added
         return prevTracks.map(track => {
           if (track.id === targetTrackId) {
             // Add to the end for now. Later, we'll need to insert at a specific position.
