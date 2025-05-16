@@ -37,6 +37,7 @@ import {
   Text,
   // Type,
   Video,
+  Music2, // For Narration track icon in page.tsx
   // Wand2,
   // X,
   // ZoomIn,
@@ -61,6 +62,7 @@ import {
 // import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import React, { useEffect, useState } from "react"; // Removed Fragment, useMemo as they aren't used here now
+import { DndContext, DragEndEvent, closestCenter } from "@dnd-kit/core"; // Added DndContext and DragEndEvent
 import { useToast } from "@/hooks/use-toast";
 // import { Input } from "@/components/ui/input";
 import { parseEntityReferences } from "./utils";
@@ -89,6 +91,38 @@ const sidebarNavItems = [
   { name: "Settings", icon: Settings },
 ];
 
+// Define types for tracks and media items for page-level state
+// These should ideally be in a shared types file, but for now, define here.
+export interface PageTimelineMediaItem { // Renamed to avoid conflict if types are merged later
+  id: string; // Unique ID for this item on the timeline
+  type: 'image' | 'audio' | 'text';
+  originalIndex?: number; // For images/texts from storyData.generatedImages
+  sourceId?: string; // ID of the source media item from AllMediaContent (e.g., `media-image-${originalIndex}`)
+  imageUrl?: string;
+  scriptSegment?: string;
+  title?: string; // e.g., from image prompt
+  // Timeline specific properties
+  startTime?: number; // In seconds from the beginning of the track/timeline
+  duration?: number;  // In seconds
+  ui?: {
+    width?: string | number; // Visual width on the timeline
+    // Potentially other UI related states like color, etc.
+  };
+}
+
+export interface PageTimelineTrack { // Renamed
+  id: string; // e.g., "video-track-1", "narration-track-1"
+  type: 'video' | 'narration' | 'audio' | 'text';
+  name: string;
+  icon: React.ElementType;
+  items: PageTimelineMediaItem[];
+  height: string;
+  accepts: Array<'image' | 'audio' | 'text'>; // Types of media this track can accept
+  emptyStateMessage: string;
+  showGenerateButton?: boolean;
+}
+
+
 export default function AssembleVideoPage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
@@ -111,6 +145,100 @@ export default function AssembleVideoPage() {
   >(null);
   const [editedPrompt, setEditedPrompt] = useState<string>("");
   const [isEditingImage, setIsEditingImage] = useState(false);
+  const [dynamicTimelineTracks, setDynamicTimelineTracks] = useState<PageTimelineTrack[]>([]);
+
+  // Function to get script segment (similar to the one in TimelineStrip)
+  // This might be better placed in utils.ts if used in multiple places
+  const getScriptSegmentForImage = (
+    imageIndexInFilteredArray: number,
+    totalFilteredImages: number,
+    script?: string
+  ): string => {
+    if (!script || totalFilteredImages === 0) return "";
+    const scriptLength = script.length;
+    const segmentLength = Math.floor(scriptLength / totalFilteredImages);
+    const start = imageIndexInFilteredArray * segmentLength;
+    const end = (imageIndexInFilteredArray + 1) * segmentLength;
+    if (imageIndexInFilteredArray === totalFilteredImages - 1) return script.substring(start);
+    return script.substring(start, end) + (end < scriptLength ? "..." : "");
+  };
+
+
+  // Initialize/Update dynamicTimelineTracks based on storyData
+  useEffect(() => {
+    if (storyData) {
+      const imagesToShow = storyData.generatedImages?.filter(
+        (img): img is GeneratedImage => !!img && img.isChapterGenerated === true
+      ) || [];
+
+      const initialTrackConfigs: Omit<PageTimelineTrack, 'items' | 'emptyStateMessage' | 'showGenerateButton'>[] = [
+        { id: "video-track-1", type: "video", name: "Video 1", icon: Video, height: "h-[90px]", accepts: ['image'] },
+        { id: "narration-track-1", type: "narration", name: "Narration", icon: Music2, height: "h-[40px]", accepts: ['audio'] },
+        { id: "text-track-1", type: "text", name: "Script", icon: Text, height: "h-[60px]", accepts: ['text'] },
+      ];
+
+      const newTracks = initialTrackConfigs.map(config => {
+        let items: PageTimelineMediaItem[] = [];
+        let emptyStateMessage = `${config.name} track.`;
+        let showGenerateButton = false;
+
+        if (config.type === 'video' && imagesToShow.length > 0) {
+          items = imagesToShow.map((img, filteredIndex) => {
+            const originalImageIndex = storyData.generatedImages?.findIndex(
+              (originalImg) => originalImg.imageUrl === img.imageUrl && originalImg.originalPrompt === img.originalPrompt
+            );
+            return {
+              id: `img-${originalImageIndex}-${Date.now()}`, // Ensure unique ID on timeline
+              type: 'image',
+              originalIndex: originalImageIndex,
+              imageUrl: img.imageUrl,
+              title: img.originalPrompt?.substring(0,30) + "...",
+              // Default duration/startTime can be set here or when dropped
+            };
+          });
+        } else if (config.type === 'video' && imagesToShow.length === 0) {
+            emptyStateMessage = `Image track empty. Generate images for Chapter ${currentChapter}.`;
+            showGenerateButton = true;
+        }
+        
+        if (config.type === 'text' && imagesToShow.length > 0 && storyData.generatedScript) {
+          items = imagesToShow.map((img, filteredIndex) => {
+            const originalImageIndex = storyData.generatedImages?.findIndex(
+              (originalImg) => originalImg.imageUrl === img.imageUrl && originalImg.originalPrompt === img.originalPrompt
+            );
+            return {
+              id: `text-${originalImageIndex}-${Date.now()}`,
+              type: 'text',
+              originalIndex: originalImageIndex,
+              scriptSegment: getScriptSegmentForImage(filteredIndex, imagesToShow.length, storyData.generatedScript),
+              title: `Script for scene ${originalImageIndex !== undefined ? originalImageIndex + 1 : filteredIndex + 1}`
+            };
+          });
+        } else if (config.type === 'text' && (imagesToShow.length === 0 || !storyData.generatedScript)) {
+            emptyStateMessage = "Script snippets will appear here once images are generated.";
+        }
+
+        if (config.type === 'narration') {
+          if (storyData.narrationAudioUrl) {
+            items = [{
+              id: 'narration-audio-main',
+              type: 'audio',
+              title: 'Main Narration',
+              // duration: storyData.narrationAudioDurationSeconds
+            }];
+            emptyStateMessage = "Narration audio loaded.";
+          } else {
+            emptyStateMessage = "No narration audio available for this story.";
+          }
+        }
+        return { ...config, items, emptyStateMessage, showGenerateButton };
+      });
+      setDynamicTimelineTracks(newTracks);
+    } else {
+      setDynamicTimelineTracks([]); // Clear tracks if no storyData
+    }
+  }, [storyData, currentChapter]);
+
 
   useEffect(() => {
     if (
@@ -499,112 +627,171 @@ export default function AssembleVideoPage() {
     );
   }
 
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+
+    if (over && active.id !== over.id) {
+      const draggedItemSourceData = active.data.current as { type: 'image' | 'audio'; url: string; originalIndex?: number; prompt?: string; } | undefined;
+      const targetTrackId = over.id.toString(); // Ensure it's a string
+      const targetTrack = dynamicTimelineTracks.find(t => t.id === targetTrackId);
+
+      if (!draggedItemSourceData || !targetTrack) {
+        console.warn("DragEnd: Missing dragged item data or target track not found.", { draggedItemSourceData, targetTrackId, dynamicTimelineTracks });
+        return;
+      }
+      
+      const itemType = draggedItemSourceData.type;
+
+      if (!targetTrack.accepts.includes(itemType)) {
+        toast({
+          title: "Cannot Drop Here",
+          description: `The '${targetTrack.name}' track does not accept '${itemType}' items.`,
+          variant: "destructive",
+          duration: 3000,
+        });
+        return;
+      }
+
+      const newTimelineItem: PageTimelineMediaItem = {
+        id: `${itemType}-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`, // More robust unique ID
+        type: itemType,
+        sourceId: active.id.toString(),
+        imageUrl: itemType === 'image' ? draggedItemSourceData.url : undefined,
+        // audioUrl: itemType === 'audio' ? draggedItemSourceData.url : undefined, // If we add audio items
+        title: draggedItemSourceData.prompt ? (draggedItemSourceData.prompt.substring(0, 30) + "...") : `New ${itemType}`,
+        originalIndex: draggedItemSourceData.originalIndex,
+        // Default duration/startTime can be set here, e.g., based on item type or a default value
+        duration: itemType === 'image' ? 5 : 10, // Example: 5s for images, 10s for audio
+        startTime: 0, // Placeholder, actual positioning logic will be more complex
+      };
+
+      setDynamicTimelineTracks(prevTracks => {
+        return prevTracks.map(track => {
+          if (track.id === targetTrackId) {
+            // Add to the end for now. Later, we'll need to insert at a specific position.
+            return { ...track, items: [...track.items, newTimelineItem] };
+          }
+          return track;
+        });
+      });
+
+      toast({
+        title: "Item Added to Timeline!",
+        description: `${newTimelineItem.title} added to ${targetTrack.name}.`,
+        duration: 3000,
+      });
+      console.log("Added to timeline:", newTimelineItem, "Target track:", targetTrackId);
+    }
+  };
+
   return (
-    <div className="flex h-[calc(100vh-var(--header-height,4rem))] bg-secondary text-foreground">
-      {isSidebarOpen && (
-        <VideoPageSidebar
-          selectedPanel={selectedPanel}
-          setSelectedPanel={setSelectedPanel}
-          isSidebarOpen={isSidebarOpen}
-          setIsSidebarOpen={setIsSidebarOpen}
-          storyId={storyId}
-          sidebarNavItems={sidebarNavItems}
-        />
-      )}
-      <div className="flex-1 flex flex-col">
-        <div className="bg-background border-b border-border p-3 flex items-center justify-between shadow-sm">
-          <div className="flex items-center gap-2">
-            {!isSidebarOpen && (
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => setIsSidebarOpen(true)}
-                className="mr-2"
+    <DndContext onDragEnd={handleDragEnd} collisionDetection={closestCenter}>
+      <div className="flex h-[calc(100vh-var(--header-height,4rem))] bg-secondary text-foreground">
+        {isSidebarOpen && (
+          <VideoPageSidebar
+            selectedPanel={selectedPanel}
+            setSelectedPanel={setSelectedPanel}
+            isSidebarOpen={isSidebarOpen}
+            setIsSidebarOpen={setIsSidebarOpen}
+            storyId={storyId}
+            sidebarNavItems={sidebarNavItems}
+          />
+        )}
+        <div className="flex-1 flex flex-col">
+          <div className="bg-background border-b border-border p-3 flex items-center justify-between shadow-sm">
+            <div className="flex items-center gap-2">
+              {!isSidebarOpen && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setIsSidebarOpen(true)}
+                  className="mr-2"
+                >
+                  <SidebarOpen className="h-5 w-5" />
+                </Button>
+              )}
+              <Sparkles className="w-6 h-6 text-primary" />
+              <h1
+                className="text-lg font-semibold truncate"
+                title={storyData.title}
               >
-                <SidebarOpen className="h-5 w-5" />
-              </Button>
-            )}
-            <Sparkles className="w-6 h-6 text-primary" />
-            <h1
-              className="text-lg font-semibold truncate"
-              title={storyData.title}
+                {storyData.title}
+              </h1>
+            </div>
+            <Button
+              variant="default"
+              className="bg-accent hover:bg-accent/90 text-accent-foreground"
+              disabled // Temporarily disable export
             >
-              {storyData.title}
-            </h1>
+              <Download className="w-4 h-4 mr-2" />
+              Export (Coming Soon)
+            </Button>
           </div>
-          <Button
-            variant="default"
-            className="bg-accent hover:bg-accent/90 text-accent-foreground"
-            disabled // Temporarily disable export
-          >
-            <Download className="w-4 h-4 mr-2" />
-            Export (Coming Soon)
-          </Button>
-        </div>
 
-        <div className="flex-1 flex overflow-hidden">
-          <div className="w-2/5 p-4 overflow-auto border-r border-border bg-background/30"> {/* Changed background */}
-            {selectedPanel === "All Media" ? (
-              <AllMediaContent storyData={storyData} />
-            ) : selectedPanel === "Edit Image" ? (
-              <EditTimelineItemPanelContent
-                storyData={storyData}
-                selectedTimelineImage={selectedTimelineImage}
-                editedPrompt={editedPrompt}
-                setEditedPrompt={setEditedPrompt}
-                handleEditGenerate={handleEditGenerate}
-                isEditingImage={isEditingImage}
-                handleRevertToHistory={handleRevertToHistory}
-              />
-            ) : selectedPanel === "Voices" ? (
-              <VoicesContent storyData={storyData} />
-            ) : selectedPanel === "Story" ? (
-              storyData ? (
-                <StoryContent
+          <div className="flex-1 flex overflow-hidden">
+            <div className="w-2/5 p-4 overflow-auto border-r border-border bg-background/30"> {/* Changed background */}
+              {selectedPanel === "All Media" ? (
+                <AllMediaContent storyData={storyData} />
+              ) : selectedPanel === "Edit Image" ? (
+                <EditTimelineItemPanelContent
                   storyData={storyData}
-                  isGeneratingImages={isGeneratingImages}
-                  handleGenerateChapterImages={handleGenerateChapterImages}
-                  currentChapter={currentChapter}
-                  chaptersGenerated={chaptersGenerated}
-                  currentImageProgress={currentImageProgress}
-                  generationProgress={generationProgress}
-                  totalImagesToGenerate={totalImagesToGenerate}
+                  selectedTimelineImage={selectedTimelineImage}
+                  editedPrompt={editedPrompt}
+                  setEditedPrompt={setEditedPrompt}
+                  handleEditGenerate={handleEditGenerate}
+                  isEditingImage={isEditingImage}
+                  handleRevertToHistory={handleRevertToHistory}
                 />
-              ) : (
-                <div className="flex items-center justify-center h-full">
-                  <Loader2 className="w-8 h-8 animate-spin" />
+              ) : selectedPanel === "Voices" ? (
+                <VoicesContent storyData={storyData} />
+              ) : selectedPanel === "Story" ? (
+                storyData ? (
+                  <StoryContent
+                    storyData={storyData}
+                    isGeneratingImages={isGeneratingImages}
+                    handleGenerateChapterImages={handleGenerateChapterImages}
+                    currentChapter={currentChapter}
+                    chaptersGenerated={chaptersGenerated}
+                    currentImageProgress={currentImageProgress}
+                    generationProgress={generationProgress}
+                    totalImagesToGenerate={totalImagesToGenerate}
+                  />
+                ) : (
+                  <div className="flex items-center justify-center h-full">
+                    <Loader2 className="w-8 h-8 animate-spin" />
+                  </div>
+                )
+              ) : ( // Fallback for settings or any other panel
+                <div className="flex h-full items-center justify-center p-6 text-center rounded-lg border border-border shadow-sm bg-card">
+                  <Settings className="w-12 h-12 text-muted-foreground mb-3" />
+                  <p className="text-muted-foreground text-sm">
+                    {selectedPanel} settings will be available here. <br/> This section is under construction.
+                  </p>
                 </div>
-              )
-            ) : ( // Fallback for settings or any other panel
-              <div className="flex h-full items-center justify-center p-6 text-center rounded-lg border border-border shadow-sm bg-card">
-                <Settings className="w-12 h-12 text-muted-foreground mb-3" />
-                <p className="text-muted-foreground text-sm">
-                  {selectedPanel} settings will be available here. <br/> This section is under construction.
-                </p>
-              </div>
-            )}
-          </div>
+              )}
+            </div>
 
-          <div className="w-3/5 flex flex-col p-4 overflow-hidden">
-            <VideoPreviewArea storyData={storyData} selectedTimelineImage={selectedTimelineImage} className="flex-[3] min-h-0" />
-            <TimelineStrip
-              storyData={storyData}
-              selectedTimelineImage={selectedTimelineImage}
-              setSelectedTimelineImage={setSelectedTimelineImage}
-              setSelectedPanel={setSelectedPanel}
-              isGeneratingImages={isGeneratingImages}
-              handleGenerateChapterImages={handleGenerateChapterImages}
-              currentChapter={currentChapter}
-              chaptersGenerated={chaptersGenerated}
-              currentImageProgress={currentImageProgress}
-              totalImagesToGenerate={totalImagesToGenerate}
-              generationProgress={generationProgress}
-              className="flex-[2] min-h-0"
-            />
+            <div className="w-3/5 flex flex-col p-4 overflow-hidden">
+              <VideoPreviewArea storyData={storyData} selectedTimelineImage={selectedTimelineImage} className="flex-[3] min-h-0" />
+              <TimelineStrip
+                // storyData is still needed for some parts like narration URL, script, etc.
+                // but the tracks themselves will come from dynamicTimelineTracks
+                storyData={storyData}
+                timelineTracks={dynamicTimelineTracks} // Pass the new state here
+                selectedTimelineImage={selectedTimelineImage}
+                setSelectedTimelineImage={setSelectedTimelineImage}
+                setSelectedPanel={setSelectedPanel}
+                isGeneratingImages={isGeneratingImages} // Still needed for generate button on empty video track
+                handleGenerateChapterImages={handleGenerateChapterImages} // Still needed
+                currentChapter={currentChapter} // Still needed
+                // chaptersGenerated, currentImageProgress, totalImagesToGenerate, generationProgress might not be directly needed by TimelineStrip if tracks are managed here
+                className="flex-[2] min-h-0"
+              />
+            </div>
           </div>
         </div>
       </div>
-    </div>
+    </DndContext>
   );
 }
 
