@@ -587,7 +587,6 @@ export default function AssembleVideoPage() {
 
           <div className="w-3/5 flex flex-col p-4 gap-4 overflow-hidden">
             <VideoPreviewArea storyData={storyData} selectedTimelineImage={selectedTimelineImage} />
-            <VideoControls storyData={storyData} />
             <TimelineStrip
               storyData={storyData}
               selectedTimelineImage={selectedTimelineImage}
