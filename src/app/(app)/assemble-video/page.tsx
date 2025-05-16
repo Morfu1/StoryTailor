@@ -146,6 +146,7 @@ export default function AssembleVideoPage() {
   const [editedPrompt, setEditedPrompt] = useState<string>("");
   const [isEditingImage, setIsEditingImage] = useState(false);
   const [dynamicTimelineTracks, setDynamicTimelineTracks] = useState<PageTimelineTrack[]>([]);
+  const [selectedTimelineItemKey, setSelectedTimelineItemKey] = useState<string | null>(null); // For unique ID based selection
 
   // Function to get script segment (similar to the one in TimelineStrip)
   // This might be better placed in utils.ts if used in multiple places
@@ -248,8 +249,64 @@ export default function AssembleVideoPage() {
       setEditedPrompt(
         storyData.generatedImages[selectedTimelineImage].originalPrompt || "",
       );
+      // If an originalIndex is selected, try to find its corresponding unique key in dynamicTimelineTracks
+      if (selectedTimelineImage !== null) {
+        let foundKey: string | null = null;
+        for (const track of dynamicTimelineTracks) {
+          const item = track.items.find(i => i.originalIndex === selectedTimelineImage);
+          if (item) {
+            foundKey = item.id;
+            break;
+          }
+        }
+        setSelectedTimelineItemKey(foundKey);
+      }
+
+    } else if (selectedTimelineImage === null) {
+        // If originalIndex selection is cleared, clear unique key selection too
+        setSelectedTimelineItemKey(null);
     }
-  }, [selectedTimelineImage, storyData?.generatedImages]);
+  }, [selectedTimelineImage, storyData?.generatedImages, dynamicTimelineTracks]);
+
+  const handleDeleteItemFromTimeline = (itemIdToDelete?: string) => {
+    const keyToDelete = itemIdToDelete || selectedTimelineItemKey;
+    if (!keyToDelete) {
+      toast({ title: "No item selected", description: "Please select an item on the timeline to delete.", variant: "default", duration: 2000 });
+      return;
+    }
+
+    setDynamicTimelineTracks(prevTracks =>
+      prevTracks.map(track => ({
+        ...track,
+        items: track.items.filter(item => item.id !== keyToDelete),
+      }))
+    );
+    
+    toast({ title: "Item Deleted", description: `Item removed from the timeline.`, duration: 2000 });
+    setSelectedTimelineItemKey(null);
+    setSelectedTimelineImage(null); // Also clear the originalIndex based selection
+    setSelectedPanel("All Media"); // Switch panel as Edit Image might no longer be relevant
+  };
+
+  // Keyboard listener for delete
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if ((event.key === "Delete" || event.key === "Backspace") && selectedTimelineItemKey) {
+        // Prevent deletion if an input field is focused
+        const activeElement = document.activeElement;
+        if (activeElement && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA' || (activeElement as HTMLElement).isContentEditable)) {
+          return;
+        }
+        event.preventDefault(); // Prevent browser back navigation on Backspace
+        handleDeleteItemFromTimeline();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [selectedTimelineItemKey, handleDeleteItemFromTimeline]);
 
   
   const handleGenerateChapterImages = async () => {
@@ -777,14 +834,16 @@ export default function AssembleVideoPage() {
                 // storyData is still needed for some parts like narration URL, script, etc.
                 // but the tracks themselves will come from dynamicTimelineTracks
                 storyData={storyData}
-                timelineTracks={dynamicTimelineTracks} // Pass the new state here
+                timelineTracks={dynamicTimelineTracks}
                 selectedTimelineImage={selectedTimelineImage}
                 setSelectedTimelineImage={setSelectedTimelineImage}
+                selectedTimelineItemKey={selectedTimelineItemKey}
+                setSelectedTimelineItemKey={setSelectedTimelineItemKey}
+                handleDeleteItemFromTimeline={handleDeleteItemFromTimeline}
                 setSelectedPanel={setSelectedPanel}
-                isGeneratingImages={isGeneratingImages} // Still needed for generate button on empty video track
-                handleGenerateChapterImages={handleGenerateChapterImages} // Still needed
-                currentChapter={currentChapter} // Still needed
-                // chaptersGenerated, currentImageProgress, totalImagesToGenerate, generationProgress might not be directly needed by TimelineStrip if tracks are managed here
+                isGeneratingImages={isGeneratingImages}
+                handleGenerateChapterImages={handleGenerateChapterImages}
+                currentChapter={currentChapter}
                 className="flex-[2] min-h-0"
               />
             </div>

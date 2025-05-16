@@ -27,6 +27,38 @@ export interface ElevenLabsVoice {
   // Add other fields from ElevenLabs API if needed, e.g., preview_url
 }
 
+// Moved from page.tsx to be globally available
+export interface PageTimelineMediaItem {
+  id: string; // Unique ID for this item on the timeline
+  type: 'image' | 'audio' | 'text';
+  originalIndex?: number; // For images/texts from storyData.generatedImages
+  sourceId?: string; // ID of the source media item from AllMediaContent (e.g., `media-image-${originalIndex}`)
+  imageUrl?: string;
+  audioUrl?: string; // For audio items
+  scriptSegment?: string;
+  title?: string; // e.g., from image prompt or audio file name
+  // Timeline specific properties
+  startTime?: number; // In seconds from the beginning of the track/timeline
+  duration?: number;  // In seconds
+  ui?: {
+    width?: string | number; // Visual width on the timeline
+    // Potentially other UI related states like color, etc.
+  };
+}
+
+export interface PageTimelineTrack {
+  id: string; // e.g., "video-track-1", "narration-track-1"
+  type: 'video' | 'narration' | 'audio' | 'text'; // 'narration' is a specific type of audio track
+  name: string;
+  iconName?: string; // Name of the Lucide icon (e.g., "Video", "Music2", "MessageSquareText")
+  items: PageTimelineMediaItem[];
+  height: string;
+  accepts: Array<'image' | 'audio' | 'text'>; // Types of media this track can accept
+  emptyStateMessage: string;
+  showGenerateButton?: boolean; // For the initial video track that can generate images
+}
+
+
 export interface Story {
   id?: string; // Firestore document ID
   userId: string;
@@ -41,6 +73,7 @@ export interface Story {
   narrationVoiceId?: string; // Voice ID from ElevenLabs (alias for elevenLabsVoiceId)
   imagePrompts?: string[];
   generatedImages?: GeneratedImage[];
+  timelineTracks?: PageTimelineTrack[]; // To store the state of the timeline
   // videoUrl?: string; // For future video assembly
   createdAt?: Timestamp | Date; // Stored as Firestore Timestamp, hydrated as Date
   updatedAt?: Timestamp | Date; // Stored as Firestore Timestamp, hydrated as Date
