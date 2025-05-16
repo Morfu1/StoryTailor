@@ -11,7 +11,9 @@ interface AllMediaContentProps {
 }
 
 export default function AllMediaContent({ storyData }: AllMediaContentProps) {
-  const images = storyData.generatedImages || [];
+  const images = (storyData.generatedImages || []).filter(
+    (img) => img.isChapterGenerated === true,
+  );
   const narrationAudioUrl =
     (storyData as any).narrationAudioUrl ||
     (storyData as any).detailsPrompts?.narrationAudioUrl;

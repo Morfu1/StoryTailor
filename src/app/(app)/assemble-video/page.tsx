@@ -1,7 +1,7 @@
 
 "use client";
 
-import type { Story, StoryCharacterLocationItemPrompts } from "@/types/story"; // Import StoryCharacterLocationItemPrompts
+import type { Story } from "@/types/story"; // Import StoryCharacterLocationItemPrompts removed
 import { useAuth } from "@/components/auth-provider";
 import { Button } from "@/components/ui/button";
 // import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -36,7 +36,6 @@ import {
   Sparkles,
   Text,
   // Type,
-  User,
   Video,
   // Wand2,
   // X,
@@ -68,7 +67,6 @@ import { parseEntityReferences } from "./utils";
 import StoryContent from "./components/StoryContent";
 import VoicesContent from "./components/VoicesContent";
 import AllMediaContent from "./components/AllMediaContent";
-import CharactersPanelContent, { EntityType } from "./components/CharactersPanelContent";
 import EditTimelineItemPanelContent from "./components/EditTimelineItemPanelContent";
 import VideoPageSidebar from "./components/VideoPageSidebar";
 import VideoPreviewArea from "./components/VideoPreviewArea";
@@ -85,8 +83,7 @@ import TimelineStrip from "./components/TimelineStrip";
 
 const sidebarNavItems = [
   { name: "Story", icon: Text },
-  { name: "Characters", icon: User },
-  { name: "Edit Image", icon: Palette }, 
+  { name: "Edit Image", icon: Palette },
   { name: "Voices", icon: Music, sectionBreak: true }, // Changed icon to Music for Voices for variety
   { name: "All Media", icon: Video }, // Changed icon to Video for All Media
   { name: "Settings", icon: Settings },
@@ -435,83 +432,6 @@ export default function AssembleVideoPage() {
     }
   };
 
-  const handleNewEntityCreated = async (entityData: {
-    name: string;
-    description: string;
-    imageUrl: string;
-    requestPrompt?: string;
-    type: EntityType;
-  }) => {
-    if (!storyData || !user?.uid) return;
-
-    // Create the new image object
-    const newGeneratedImage: GeneratedImage = {
-      originalPrompt: entityData.description, // This is the core description of the entity
-      requestPrompt: entityData.requestPrompt || entityData.description, // What was sent to image gen
-      imageUrl: entityData.imageUrl,
-      // isChapterGenerated: false, // Not a chapter image
-      // chapterNumber: undefined, 
-      history: [],
-    };
-
-    let storyDataAfterOptimisticUpdate: Story | null = null;
-
-    setStoryData((prevStoryData) => {
-      if (!prevStoryData) return null;
-
-      const updatedGeneratedImages = [
-        ...(prevStoryData.generatedImages || []),
-        newGeneratedImage,
-      ];
-
-      const currentDetails = { ...((prevStoryData.detailsPrompts as StoryCharacterLocationItemPrompts) || { characterPrompts: "", itemPrompts: "", locationPrompts: "" }) };
-      let targetPromptString = "";
-      let promptKey: keyof StoryCharacterLocationItemPrompts;
-
-      switch (entityData.type) {
-        case "Character":
-          promptKey = 'characterPrompts';
-          targetPromptString = currentDetails.characterPrompts || "";
-          break;
-        case "Location":
-          promptKey = 'locationPrompts';
-          targetPromptString = currentDetails.locationPrompts || "";
-          break;
-        case "Item":
-          promptKey = 'itemPrompts';
-          targetPromptString = currentDetails.itemPrompts || "";
-          break;
-        default:
-          // This should ideally not happen if types are correct
-          console.error("Invalid entity type in handleNewEntityCreated:", entityData.type);
-          return prevStoryData;
-      }
-
-      const newEntry = `${entityData.name}\n${entityData.description}`;
-      if (targetPromptString.trim() === "") {
-        targetPromptString = newEntry;
-      } else {
-        targetPromptString = `${targetPromptString.trimEnd()}\n\n${newEntry}`;
-      }
-      
-      const updatedDetailsPrompts : StoryCharacterLocationItemPrompts = {
-        ...currentDetails,
-        [promptKey]: targetPromptString,
-      };
-      
-      storyDataAfterOptimisticUpdate = {
-        ...prevStoryData,
-        generatedImages: updatedGeneratedImages,
-        detailsPrompts: updatedDetailsPrompts,
-      };
-      return storyDataAfterOptimisticUpdate;
-    });
-
-    if (storyDataAfterOptimisticUpdate && user?.uid) {
-      await saveStoryData(storyDataAfterOptimisticUpdate); // Persist to DB
-    }
-  };
-
   useEffect(() => {
     if (authLoading) return;
     if (!user) {
@@ -638,11 +558,6 @@ export default function AssembleVideoPage() {
               />
             ) : selectedPanel === "Voices" ? (
               <VoicesContent storyData={storyData} />
-            ) : selectedPanel === "Characters" ? (
-              <CharactersPanelContent
-                storyData={storyData}
-                onCharacterCreated={handleNewEntityCreated}
-              />
             ) : selectedPanel === "Story" ? (
               storyData ? (
                 <StoryContent
