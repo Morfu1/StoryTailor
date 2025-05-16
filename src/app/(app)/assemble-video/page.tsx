@@ -1,69 +1,70 @@
+
 "use client";
 
-import type { Story } from "@/types/story";
+import type { Story, StoryCharacterLocationItemPrompts } from "@/types/story"; // Import StoryCharacterLocationItemPrompts
 import { useAuth } from "@/components/auth-provider";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+// import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+// import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
+// import {
+//   Tooltip,
+//   TooltipContent,
+//   TooltipProvider,
+//   TooltipTrigger,
+// } from "@/components/ui/tooltip";
 import {
   getStory,
   generateImageFromPrompt,
   saveStory,
-} from "@/actions/storyActions"; // Assuming functions are in storyActions
-import type { GeneratedImage } from "@/types/story"; // Assuming Story is imported elsewhere
+} from "@/actions/storyActions"; 
+import type { GeneratedImage } from "@/types/story"; 
 import {
-  AlignCenter,
-  AlignJustify,
-  ArrowLeft,
-  BookOpen,
-  Clapperboard,
+  // AlignCenter,
+  // AlignJustify,
+  // ArrowLeft,
+  // BookOpen,
+  // Clapperboard,
   Download,
-  Edit3,
-  Film,
+  // Edit3,
+  // Film,
   ImageIcon,
   Loader2,
   Music,
   Palette,
-  Save,
+  // Save,
   Settings,
   Sparkles,
   Text,
-  Type,
+  // Type,
   User,
   Video,
-  Wand2,
-  X,
-  ZoomIn,
-  ZoomOut,
-  Play,
-  Pause,
-  Maximize,
-  Check,
-  Trash2,
-  Edit2,
-  History,
-  Plus,
-  SidebarClose,
+  // Wand2,
+  // X,
+  // ZoomIn,
+  // ZoomOut,
+  // Play,
+  // Pause,
+  // Maximize,
+  // Check,
+  // Trash2,
+  // Edit2,
+  // History,
+  // Plus,
+  // SidebarClose,
   SidebarOpen,
-  Copy,
-  Scissors,
-  Info,
-  Volume2,
-  Upload,
+  // Copy,
+  // Scissors,
+  // Info,
+  // Volume2,
+  // Upload,
 } from "lucide-react";
-import Image from "next/image";
-import Link from "next/link";
+// import Image from "next/image";
+// import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import React, { Fragment, useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState } from "react"; // Removed Fragment, useMemo as they aren't used here now
 import { useToast } from "@/hooks/use-toast";
-import { Input } from "@/components/ui/input";
-import { parseNamedPrompts, parseEntityReferences } from "./utils";
+// import { Input } from "@/components/ui/input";
+import { parseEntityReferences } from "./utils";
 import StoryContent from "./components/StoryContent";
 import VoicesContent from "./components/VoicesContent";
 import AllMediaContent from "./components/AllMediaContent";
@@ -73,24 +74,22 @@ import VideoPageSidebar from "./components/VideoPageSidebar";
 import VideoPreviewArea from "./components/VideoPreviewArea";
 import VideoControls from "./components/VideoControls";
 import TimelineStrip from "./components/TimelineStrip";
-import { Label } from "@/components/ui/label";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Textarea } from "@/components/ui/textarea";
+// import { Label } from "@/components/ui/label";
+// import {
+//   DropdownMenu,
+//   DropdownMenuContent,
+//   DropdownMenuItem,
+//   DropdownMenuTrigger,
+// } from "@/components/ui/dropdown-menu";
+// import { Textarea } from "@/components/ui/textarea";
 
 const sidebarNavItems = [
-  { name: "All Media", icon: Wand2 },
-  // { name: "Edit", icon: Edit3 }, // This will be our new panel, let's rename or use a different icon later if needed
-  { name: "Edit Image", icon: ImageIcon }, // New panel for editing timeline items
-  { name: "Characters", icon: User },
   { name: "Story", icon: Text },
-  { name: "Music", icon: Music },
+  { name: "Characters", icon: User },
+  { name: "Edit Image", icon: Palette }, 
+  { name: "Voices", icon: Music, sectionBreak: true }, // Changed icon to Music for Voices for variety
+  { name: "All Media", icon: Video }, // Changed icon to Video for All Media
   { name: "Settings", icon: Settings },
-  { name: "Voices", icon: Video, sectionBreak: true },
 ];
 
 export default function AssembleVideoPage() {
@@ -103,11 +102,11 @@ export default function AssembleVideoPage() {
   const [storyData, setStoryData] = useState<Story | null>(null);
   const [pageLoading, setPageLoading] = useState(true);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-  const [selectedPanel, setSelectedPanel] = useState("Story"); // Default to Story panel to show script
+  const [selectedPanel, setSelectedPanel] = useState("Story"); 
   const [isGeneratingImages, setIsGeneratingImages] = useState(false);
   const [currentChapter, setCurrentChapter] = useState(1);
   const [chaptersGenerated, setChaptersGenerated] = useState<number[]>([]);
-  const [totalImagesToGenerate, setTotalImagesToGenerate] = useState<number>(7); // Default to 7 images
+  const [totalImagesToGenerate, setTotalImagesToGenerate] = useState<number>(7); 
   const [currentImageProgress, setCurrentImageProgress] = useState(0);
   const [generationProgress, setGenerationProgress] = useState(0);
   const [selectedTimelineImage, setSelectedTimelineImage] = useState<
@@ -127,18 +126,16 @@ export default function AssembleVideoPage() {
     }
   }, [selectedTimelineImage, storyData?.generatedImages]);
 
-  // Handle generating images for a chapter in batches of 7 per minute
+  
   const handleGenerateChapterImages = async () => {
     if (!storyData || isGeneratingImages) return;
 
     setIsGeneratingImages(true);
-    setSelectedPanel("Story"); // Switch to Story panel to show progress
+    setSelectedPanel("Story"); 
 
     try {
-      // Calculate the audio duration in minutes
-      const audioDuration = storyData?.narrationAudioDurationSeconds || 240; // Default to 4 minutes if not set
-
-      // We'll use 7 images per chapter, regardless of audio duration
+      
+      const audioDuration = storyData?.narrationAudioDurationSeconds || 240; 
       const imagesToGenerate = 7;
       setTotalImagesToGenerate(imagesToGenerate);
 
@@ -147,292 +144,137 @@ export default function AssembleVideoPage() {
         description: `Creating images for Chapter ${currentChapter}.`,
       });
 
-      // Generate prompts based on story content and characters
-      const script = storyData?.generatedScript || "";
-      const title = storyData?.title || "Story";
-
-      // Update UI state with total images to generate
-      setTotalImagesToGenerate(imagesToGenerate);
-
-      // Define a type for the prompt objects
       type EnhancedPrompt = {
         originalPromptWithReferences: string;
         expandedPrompt: string;
       };
 
-      // Log character, location, and item prompts for debugging
-      console.log(
-        "Character prompts:",
-        storyData?.detailsPrompts?.characterPrompts,
-      );
-      console.log(
-        "Location prompts:",
-        storyData?.detailsPrompts?.locationPrompts,
-      );
-      console.log("Item prompts:", storyData?.detailsPrompts?.itemPrompts);
-
-      // Get existing image prompts from the story data if available
       const existingImagePrompts = storyData?.imagePrompts || [];
-      console.log("Existing image prompts:", existingImagePrompts);
-
-      // Debug the character/location data for reference extraction
-      if (storyData?.detailsPrompts?.characterPrompts) {
-        console.log(
-          "Character data available:",
-          storyData.detailsPrompts.characterPrompts
-            .split("\n\n")
-            .map((block) => block.trim().split("\n")[0])
-            .filter(Boolean),
-        );
-      }
-      if (storyData?.detailsPrompts?.locationPrompts) {
-        console.log(
-          "Location data available:",
-          storyData.detailsPrompts.locationPrompts
-            .split("\n\n")
-            .map((block) => block.trim().split("\n")[0])
-            .filter(Boolean),
-        );
-      }
-
-      // Check if we have predefined image prompts in the database
       if (!existingImagePrompts || existingImagePrompts.length === 0) {
-        toast({
-          title: "Warning: No Image Prompts Found",
-          description:
-            "No predefined image prompts found in the database. Please make sure the story has image prompts.",
+         toast({
+          title: "No Image Prompts",
+          description: "Cannot generate chapter images without image prompts defined in the story.",
           variant: "destructive",
         });
+        setIsGeneratingImages(false);
+        return;
       }
 
-      // Use actual number of prompts or limit to imagesToGenerate (whichever is smaller)
-      const actualImagesToGenerate = Math.min(
-        imagesToGenerate,
-        existingImagePrompts.length || 0,
-      );
-      setTotalImagesToGenerate(actualImagesToGenerate);
 
-      // Select prompts for this chapter (7 per chapter)
-      const startIndex = (currentChapter - 1) * 7;
-      const selectedPrompts = existingImagePrompts.slice(
+      const startIndex = (currentChapter - 1) * imagesToGenerate;
+      const promptsForChapter = existingImagePrompts.slice(
         startIndex,
-        startIndex + actualImagesToGenerate,
+        startIndex + imagesToGenerate,
       );
 
-      if (selectedPrompts.length === 0) {
-        throw new Error(
-          "No image prompts available for this chapter. Please check the database.",
-        );
+      if (promptsForChapter.length === 0) {
+        toast({
+          title: "No More Prompts",
+          description: `No image prompts available for Chapter ${currentChapter}. All available prompts might have been used.`,
+          variant: "default",
+        });
+        setIsGeneratingImages(false);
+        return;
       }
+      
+      setTotalImagesToGenerate(promptsForChapter.length);
 
-      // Create enhanced prompts by parsing entity references in the existing prompts
-      const imagePrompts: EnhancedPrompt[] = selectedPrompts.map(
-        (prompt, index) => {
-          // Use the existing prompt with entity references
-          const originalPromptWithReferences = prompt;
 
-          console.log(
-            `Processing image prompt ${index + 1}: ${originalPromptWithReferences}`,
-          );
-
-          // Parse and replace entity references with full descriptions
+      const imagePrompts: EnhancedPrompt[] = promptsForChapter.map(
+        (promptText) => {
           const expandedPrompt = parseEntityReferences(
-            originalPromptWithReferences,
+            promptText,
             storyData,
           );
-
-          console.log(
-            `Expanded prompt ${index + 1}: ${expandedPrompt.substring(0, 100)}...`,
-          );
-
           return {
-            originalPromptWithReferences,
+            originalPromptWithReferences: promptText,
             expandedPrompt,
           };
         },
       );
 
-      // Process images sequentially rather than in parallel
-      const newImages: GeneratedImage[] = [];
+      const newImagesBatch: GeneratedImage[] = [];
 
       for (let index = 0; index < imagePrompts.length; index++) {
-        // Get the enhanced prompt for this index
-        const prompt = imagePrompts[index];
-        const originalPromptWithReferences =
-          prompt.originalPromptWithReferences;
-        const expandedPrompt = prompt.expandedPrompt;
-
-        // Update progress indicators
+        const currentPrompt = imagePrompts[index];
         setCurrentImageProgress(index + 1);
         setGenerationProgress(
-          Math.round((index / (imagePrompts.length || 1)) * 100),
+          Math.round(((index + 1) / imagePrompts.length) * 100),
         );
 
-        // Log which prompt is being processed for debugging
-        console.log(
-          `Processing prompt ${index + 1}/${imagePrompts.length}:`,
-          originalPromptWithReferences,
-        );
-
-        // Show individual progress
         toast({
-          title: `Generating Image ${index + 1}/${imagesToGenerate}`,
-          description: originalPromptWithReferences.substring(0, 100) + "...",
-          duration: 3000, // Show for 3 seconds
+          title: `Generating Image ${index + 1}/${imagePrompts.length}`,
+          description: currentPrompt.originalPromptWithReferences.substring(0, 100) + "...",
+          duration: 4000, 
         });
-
-        // Log the original and enhanced prompts for debugging
-        console.log(
-          `Original prompt with references: ${originalPromptWithReferences}`,
-        );
-        console.log(`Expanded prompt for generation: ${expandedPrompt}`);
-
-        // Call the actual image generation API
-        const result = await generateImageFromPrompt(expandedPrompt);
+        
+        // Append styles for PicsArt
+        const finalApiPrompt = `${currentPrompt.expandedPrompt}, 3D, Cartoon, High Quality, detailed illustration`;
+        const result = await generateImageFromPrompt(finalApiPrompt);
 
         if (!result.success || !result.imageUrl) {
           throw new Error(
             `Failed to generate image ${index + 1}: ${result.error || "Unknown error"}`,
           );
         }
-
-        // Add to our array
-        newImages.push({
-          originalPrompt: originalPromptWithReferences,
-          requestPrompt: result.requestPrompt || expandedPrompt,
+        
+        newImagesBatch.push({
+          originalPrompt: currentPrompt.originalPromptWithReferences, 
+          requestPrompt: result.requestPrompt || finalApiPrompt, 
           imageUrl: result.imageUrl,
           isChapterGenerated: true,
           chapterNumber: currentChapter,
-          expandedPrompt: expandedPrompt, // Store for reference
+          expandedPrompt: currentPrompt.expandedPrompt, 
+          history: [],
         });
 
-        // Update progress
-        setGenerationProgress(
-          Math.round(((index + 1) / (imagePrompts.length || 1)) * 100),
-        );
-
-        // Show success toast for each image
         toast({
-          title: `Image ${index + 1}/${imagesToGenerate} Generated`,
-          description: `Created from: ${originalPromptWithReferences.substring(0, 50)}...`,
+          title: `Image ${index + 1}/${imagePrompts.length} Generated!`,
+          description: `Created from: ${currentPrompt.originalPromptWithReferences.substring(0, 50)}...`,
           duration: 2000,
           className: "bg-green-500 text-white",
         });
-
-        // Add a second toast with more detail about entity replacements
-        toast({
-          title: "Entity References Replaced",
-          description:
-            "All @Entity references were replaced with their full descriptions",
-          duration: 3000,
-        });
-
-        // Log the final prompt with replacements for debugging
-        console.log("Final prompt with replacements:", expandedPrompt);
-        console.log(
-          "Entity references in original prompt:",
-          originalPromptWithReferences.match(
-            /@[A-Za-z0-9]+(?:\\s+[A-Za-z0-9]+)*/g,
-          ) || [],
-        );
-
-        // For completeness, also log both prompts side by side
-        console.log("BEFORE:", originalPromptWithReferences);
-        console.log("AFTER:", expandedPrompt);
-
-        // For debugging, show what @references were replaced
-        const beforeRefs =
-          originalPromptWithReferences.match(
-            /@[A-Za-z0-9]+(?:\\s+[A-Za-z0-9]+)*/g,
-          ) || [];
-        beforeRefs.forEach((ref) => {
-          const entityName = ref.substring(1).trim();
-          console.log(`@${entityName} was replaced with its description`);
-        });
-
-        newImages.push({
-          originalPrompt: originalPromptWithReferences,
-          requestPrompt: result.requestPrompt || expandedPrompt,
-          imageUrl: result.imageUrl,
-          isChapterGenerated: true,
-          chapterNumber: currentChapter,
-          expandedPrompt: expandedPrompt, // Store for reference
-          history: [], // Initialize history
-        });
       }
-
-      // Reset progress when complete
-      // Set final progress values
-      setCurrentImageProgress(imagesToGenerate);
+      
       setGenerationProgress(100);
 
-      // Add the new images to the story data
       setStoryData((prevData) => {
         if (!prevData) return null;
-
-        // Get existing images that weren't chapter-generated or were from different chapters
-        const existingImages = Array.isArray(prevData.generatedImages)
-          ? prevData.generatedImages.filter(
-              (img) =>
-                !img.isChapterGenerated ||
-                (img.isChapterGenerated &&
-                  img.chapterNumber !== currentChapter),
-            )
-          : [];
-
-        // Save the updated story with new images
-        if (prevData) {
-          saveStory(
-            {
-              ...prevData,
-              generatedImages: [...existingImages, ...newImages],
-            },
-            prevData.userId,
-          );
-        }
-
-        return {
+        const updatedStory = {
           ...prevData,
-          // Append new images to the story data
-          generatedImages: [...existingImages, ...newImages],
+          generatedImages: [...(prevData.generatedImages || []), ...newImagesBatch],
         };
+        saveStoryData(updatedStory); // Async save, don't await here to keep UI responsive
+        return updatedStory;
       });
 
-      // Mark this chapter as generated
       setChaptersGenerated((prev) => [...prev, currentChapter]);
-
-      // Check if we have more chapters to generate
       const totalPossibleChapters = Math.ceil(
-        (storyData?.imagePrompts?.length || 0) / 7,
+        (storyData?.imagePrompts?.length || 0) / imagesToGenerate,
       );
 
       if (currentChapter < totalPossibleChapters) {
-        // Update to next chapter if more are available
         setCurrentChapter((prev) => prev + 1);
-
         toast({
-          title: "Chapter Images Complete",
-          description: `Generated ${actualImagesToGenerate} images for Chapter ${currentChapter}. ${totalPossibleChapters - currentChapter} more chapters available.`,
+          title: "Chapter Images Complete!",
+          description: `Generated ${newImagesBatch.length} images for Chapter ${currentChapter -1}. Ready for Chapter ${currentChapter}.`,
           className: "bg-green-500 text-white",
           duration: 5000,
         });
       } else {
         toast({
-          title: "All Chapter Images Complete",
-          description: `Generated all available chapter images (${currentChapter} chapters total).`,
+          title: "All Chapter Images Generated!",
+          description: `Generated all available chapter images.`,
           className: "bg-green-500 text-white",
           duration: 5000,
         });
       }
-
-      // Switch to the Timeline panel to show the results
-      setSelectedPanel("All Media");
+      setSelectedPanel("All Media"); 
     } catch (error) {
       console.error("Error generating images:", error);
       toast({
         title: "Image Generation Failed",
-        description:
-          "There was an error generating the images. Please try again.",
+        description: (error as Error).message || "There was an error generating the images. Please try again.",
         variant: "destructive",
       });
     } finally {
@@ -460,44 +302,39 @@ export default function AssembleVideoPage() {
       const currentImage = storyData.generatedImages[selectedTimelineImage];
       if (!currentImage) throw new Error("Selected image not found");
 
-      // Use the same entity parsing logic
       const expandedPrompt = parseEntityReferences(editedPrompt, storyData);
-      const finalPrompt = `${expandedPrompt}, high quality, 3D, cartoon`;
+      const finalPrompt = `${expandedPrompt}, 3D, Cartoon, High Quality, detailed illustration`; // Added styles
 
-      console.log("Generating EDITED image with prompt:", finalPrompt);
       const result = await generateImageFromPrompt(finalPrompt);
 
       if (!result.success || !result.imageUrl) {
         throw new Error(result.error || "Failed to generate edited image.");
       }
 
-      // Create new image data
       const newImageData: GeneratedImage = {
         ...currentImage,
-        originalPrompt: editedPrompt, // The potentially edited prompt
+        originalPrompt: editedPrompt, 
         requestPrompt: result.requestPrompt || finalPrompt,
         imageUrl: result.imageUrl,
         expandedPrompt: expandedPrompt,
         history: [
-          ...(currentImage.history || []), // Keep existing history
+          ...(currentImage.history || []).slice(-4), // Keep last 4 + new current
           {
-            // Add current state to history
             imageUrl: currentImage.imageUrl,
             originalPrompt: currentImage.originalPrompt,
             timestamp: new Date(),
           },
-        ].slice(-5), // Keep last 5 history items
+        ],
       };
 
-      // Update storyData
       setStoryData((prevData) => {
         if (!prevData || !prevData.generatedImages) return null;
         const updatedImages = [...prevData.generatedImages];
         updatedImages[selectedTimelineImage] = newImageData;
-        return { ...prevData, generatedImages: updatedImages };
+        const updatedStory = { ...prevData, generatedImages: updatedImages };
+        saveStoryData(updatedStory);
+        return updatedStory;
       });
-
-      await saveStoryData(storyData); // Save to DB
 
       toast({
         title: "Image Updated!",
@@ -540,35 +377,33 @@ export default function AssembleVideoPage() {
     }
 
     const historicalImage = currentImage.history[historyIndex];
+    const newHistory = currentImage.history.filter((_, idx) => idx !== historyIndex);
+    // Add current image to history before reverting
+     newHistory.push({ 
+        imageUrl: currentImage.imageUrl, 
+        originalPrompt: currentImage.originalPrompt, 
+        timestamp: new Date() 
+    });
 
-    // Create new image data from history
+
     const revertedImageData: GeneratedImage = {
       ...currentImage,
       originalPrompt: historicalImage.originalPrompt,
       imageUrl: historicalImage.imageUrl,
-      // Remove the reverted item from history to avoid duplicates if re-edited
-      history: currentImage.history.filter((_, idx) => idx !== historyIndex),
-      // Add current state to history before reverting
-      // history: [
-      //   ...(currentImage.history.filter((_, idx) => idx !== historyIndex) || []),
-      //   {
-      //     imageUrl: currentImage.imageUrl,
-      //     originalPrompt: currentImage.originalPrompt,
-      //     timestamp: new Date()
-      //   }
-      // ].slice(-5),
+      // expandedPrompt: // Need to decide if we re-parse or store historical expandedPrompt
+      history: newHistory.slice(-5),
     };
 
-    setEditedPrompt(revertedImageData.originalPrompt); // Update the textarea
+    setEditedPrompt(revertedImageData.originalPrompt); 
 
     setStoryData((prevData) => {
       if (!prevData || !prevData.generatedImages) return null;
       const updatedImages = [...prevData.generatedImages];
       updatedImages[selectedTimelineImage] = revertedImageData;
-      return { ...prevData, generatedImages: updatedImages };
+      const updatedStory = { ...prevData, generatedImages: updatedImages };
+      saveStoryData(updatedStory);
+      return updatedStory;
     });
-
-    await saveStoryData(storyData);
 
     toast({
       title: "Image Reverted",
@@ -577,12 +412,21 @@ export default function AssembleVideoPage() {
     });
   };
 
-  // Update story data in the database
-  const saveStoryData = async (updatedStory: Story) => {
+  
+  const saveStoryData = async (updatedStory: Story | null) => {
+    if (!updatedStory || !user?.uid) {
+        toast({title: "Error", description: "Cannot save, story data or user ID is missing.", variant: "destructive"});
+        return;
+    }
     try {
-      await saveStory(updatedStory, updatedStory.userId);
+      const result = await saveStory(updatedStory, user.uid);
+      if (!result.success) {
+          toast({ title: "Save Error", description: result.error || "Failed to save story to database.", variant: "destructive"});
+      } else {
+          console.log("Story data saved successfully via Assemble Page action.");
+      }
     } catch (error) {
-      console.error("Error saving story data:", error);
+      console.error("Error saving story data from assemble page:", error);
       toast({
         title: "Error Saving Data",
         description: "There was a problem saving your story data.",
@@ -591,53 +435,70 @@ export default function AssembleVideoPage() {
     }
   };
 
-  // Define how to handle a newly created character
-  const handleNewCharacterCreated = async (characterData: {
+  const handleNewEntityCreated = async (entityData: {
     name: string;
     description: string;
     imageUrl: string;
     requestPrompt?: string;
     type: EntityType;
   }) => {
-    // Optimistic UI update first
+    if (!storyData || !user?.uid) return;
+
+    // Create the new image object
+    const newGeneratedImage: GeneratedImage = {
+      originalPrompt: entityData.description, // This is the core description of the entity
+      requestPrompt: entityData.requestPrompt || entityData.description, // What was sent to image gen
+      imageUrl: entityData.imageUrl,
+      // isChapterGenerated: false, // Not a chapter image
+      // chapterNumber: undefined, 
+      history: [],
+    };
+
     let storyDataAfterOptimisticUpdate: Story | null = null;
 
     setStoryData((prevStoryData) => {
       if (!prevStoryData) return null;
 
-      const newGeneratedImage: GeneratedImage = {
-        originalPrompt: characterData.description,
-        requestPrompt: characterData.requestPrompt || characterData.description,
-        imageUrl: characterData.imageUrl,
-      };
       const updatedGeneratedImages = [
         ...(prevStoryData.generatedImages || []),
         newGeneratedImage,
       ];
 
-      let updatedCharacterPrompts =
-        (prevStoryData.detailsPrompts as any)?.characterPrompts || "";
-      if (characterData.type === "Character") {
-        // Construct the new entry: Name on the first line, description on subsequent lines.
-        const newEntry = `${characterData.name}\n${characterData.description}`;
+      const currentDetails = { ...((prevStoryData.detailsPrompts as StoryCharacterLocationItemPrompts) || { characterPrompts: "", itemPrompts: "", locationPrompts: "" }) };
+      let targetPromptString = "";
+      let promptKey: keyof StoryCharacterLocationItemPrompts;
 
-        // Ensure a robust separator: always two newlines if there's existing content.
-        if (updatedCharacterPrompts.trim() === "") {
-          updatedCharacterPrompts = newEntry;
-        } else {
-          // Remove any trailing newlines/whitespace from existing prompts, then add two newlines, then the new entry.
-          updatedCharacterPrompts = `${updatedCharacterPrompts.trimEnd()}\n\n${newEntry}`;
-        }
+      switch (entityData.type) {
+        case "Character":
+          promptKey = 'characterPrompts';
+          targetPromptString = currentDetails.characterPrompts || "";
+          break;
+        case "Location":
+          promptKey = 'locationPrompts';
+          targetPromptString = currentDetails.locationPrompts || "";
+          break;
+        case "Item":
+          promptKey = 'itemPrompts';
+          targetPromptString = currentDetails.itemPrompts || "";
+          break;
+        default:
+          // This should ideally not happen if types are correct
+          console.error("Invalid entity type in handleNewEntityCreated:", entityData.type);
+          return prevStoryData;
       }
 
-      const updatedDetailsPrompts = {
-        ...((prevStoryData.detailsPrompts as any) || {}), // Guard against non-object spread
-        characterPrompts: updatedCharacterPrompts,
-        // Preserve other prompt types if they exist
-        itemPrompts: (prevStoryData.detailsPrompts as any)?.itemPrompts,
-        locationPrompts: (prevStoryData.detailsPrompts as any)?.locationPrompts,
+      const newEntry = `${entityData.name}\n${entityData.description}`;
+      if (targetPromptString.trim() === "") {
+        targetPromptString = newEntry;
+      } else {
+        targetPromptString = `${targetPromptString.trimEnd()}\n\n${newEntry}`;
+      }
+      
+      const updatedDetailsPrompts : StoryCharacterLocationItemPrompts = {
+        ...currentDetails,
+        [promptKey]: targetPromptString,
       };
-
+      
       storyDataAfterOptimisticUpdate = {
         ...prevStoryData,
         generatedImages: updatedGeneratedImages,
@@ -646,80 +507,8 @@ export default function AssembleVideoPage() {
       return storyDataAfterOptimisticUpdate;
     });
 
-    // Now, attempt to save to the database
     if (storyDataAfterOptimisticUpdate && user?.uid) {
-      try {
-        // Ensure storyDataAfterOptimisticUpdate is an object before spreading
-        if (
-          typeof storyDataAfterOptimisticUpdate !== "object" ||
-          storyDataAfterOptimisticUpdate === null
-        ) {
-          toast({
-            title: "Error",
-            description: "Invalid story data.",
-            variant: "destructive",
-          });
-          return;
-        }
-        // Since we've verified it's a non-null object, we can safely cast it as Story
-        const storyData = storyDataAfterOptimisticUpdate as Story;
-        // Ensure the storyId is included if it exists, for updates
-        const storyToSave = {
-          ...storyData,
-          id: storyId || undefined,
-        };
-
-        toast({ title: "Saving to Database...", description: "Please wait." });
-        const saveResult = await saveStory(storyToSave, user.uid);
-
-        if (saveResult.success && saveResult.storyId) {
-          toast({
-            title: "Successfully Saved to Database!",
-            description: `${characterData.name} details are now stored.`,
-            className: "bg-green-500 text-white",
-          });
-          if (!storyId && saveResult.storyId) {
-            router.replace(`/assemble-video?storyId=${saveResult.storyId}`, {
-              scroll: false,
-            });
-          }
-          // Guard access to .id on storyDataAfterOptimisticUpdate
-          if (
-            saveResult.storyId &&
-            storyDataAfterOptimisticUpdate &&
-            typeof storyDataAfterOptimisticUpdate === "object" &&
-            "id" in storyDataAfterOptimisticUpdate &&
-            (storyDataAfterOptimisticUpdate as Story).id !== saveResult.storyId
-          ) {
-            setStoryData((prev) =>
-              prev ? { ...prev, id: saveResult.storyId } : null,
-            );
-          }
-        } else {
-          toast({
-            title: "Database Save Failed",
-            description:
-              saveResult.error ||
-              "Could not save the new character to the database. The change is currently local.",
-            variant: "destructive",
-          });
-        }
-      } catch (error) {
-        console.error("Error during saveStory:", error);
-        toast({
-          title: "Database Save Error",
-          description:
-            "An unexpected error occurred while saving to the database.",
-          variant: "destructive",
-        });
-      }
-    } else if (!user?.uid) {
-      toast({
-        title: "User Not Authenticated",
-        description:
-          "Cannot save to database. Please ensure you are logged in.",
-        variant: "destructive",
-      });
+      await saveStoryData(storyDataAfterOptimisticUpdate); // Persist to DB
     }
   };
 
@@ -745,6 +534,22 @@ export default function AssembleVideoPage() {
       .then((response) => {
         if (response.success && response.data) {
           setStoryData(response.data);
+          // Determine current chapter based on generated images
+          if (response.data.generatedImages && response.data.imagePrompts) {
+            const generatedChapterNumbers = response.data.generatedImages
+              .filter(img => img.isChapterGenerated && typeof img.chapterNumber === 'number')
+              .map(img => img.chapterNumber as number);
+            const maxGeneratedChapter = generatedChapterNumbers.length > 0 ? Math.max(...generatedChapterNumbers) : 0;
+            
+            const totalPossibleChapters = Math.ceil((response.data.imagePrompts.length || 0) / 7);
+            if (maxGeneratedChapter < totalPossibleChapters) {
+              setCurrentChapter(maxGeneratedChapter + 1);
+            } else {
+              setCurrentChapter(totalPossibleChapters > 0 ? totalPossibleChapters : 1); // Or indicate completion
+            }
+            setChaptersGenerated([...new Set(generatedChapterNumbers)]);
+          }
+
         } else {
           toast({
             title: "Error Loading Story",
@@ -810,6 +615,7 @@ export default function AssembleVideoPage() {
           <Button
             variant="default"
             className="bg-accent hover:bg-accent/90 text-accent-foreground"
+            disabled // Temporarily disable export
           >
             <Download className="w-4 h-4 mr-2" />
             Export (Coming Soon)
@@ -817,7 +623,7 @@ export default function AssembleVideoPage() {
         </div>
 
         <div className="flex-1 flex overflow-hidden">
-          <div className="w-2/5 p-4 overflow-auto border-r border-border">
+          <div className="w-2/5 p-4 overflow-auto border-r border-border bg-background/30"> {/* Changed background */}
             {selectedPanel === "All Media" ? (
               <AllMediaContent storyData={storyData} />
             ) : selectedPanel === "Edit Image" ? (
@@ -835,7 +641,7 @@ export default function AssembleVideoPage() {
             ) : selectedPanel === "Characters" ? (
               <CharactersPanelContent
                 storyData={storyData}
-                onCharacterCreated={handleNewCharacterCreated}
+                onCharacterCreated={handleNewEntityCreated}
               />
             ) : selectedPanel === "Story" ? (
               storyData ? (
@@ -854,18 +660,19 @@ export default function AssembleVideoPage() {
                   <Loader2 className="w-8 h-8 animate-spin" />
                 </div>
               )
-            ) : (
-              <div className="flex h-full items-center justify-center text-muted-foreground">
-                Select an option from the sidebar to view settings.
+            ) : ( // Fallback for settings or any other panel
+              <div className="flex h-full items-center justify-center p-6 text-center rounded-lg border border-border shadow-sm bg-card">
+                <Settings className="w-12 h-12 text-muted-foreground mb-3" />
+                <p className="text-muted-foreground text-sm">
+                  {selectedPanel} settings will be available here. <br/> This section is under construction.
+                </p>
               </div>
             )}
           </div>
 
           <div className="w-3/5 flex flex-col p-4 gap-4 overflow-hidden">
             <VideoPreviewArea storyData={storyData} selectedTimelineImage={selectedTimelineImage} />
-
             <VideoControls storyData={storyData} />
-
             <TimelineStrip
               storyData={storyData}
               selectedTimelineImage={selectedTimelineImage}
@@ -879,10 +686,11 @@ export default function AssembleVideoPage() {
               totalImagesToGenerate={totalImagesToGenerate}
               generationProgress={generationProgress}
             />
-            {/* The Edit Timeline Item panel is now part of the left sidebar content */}
           </div>
         </div>
       </div>
     </div>
   );
 }
+
+    
