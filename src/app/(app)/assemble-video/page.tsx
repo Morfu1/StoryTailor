@@ -18,7 +18,7 @@ import {
   saveStory,
   updateStoryTimeline,
 } from "@/actions/storyActions";
-import type { GeneratedImage } from "@/types/story"; 
+import type { GeneratedImage } from "@/types/story";
 import {
   // AlignCenter,
   // AlignJustify,
@@ -108,6 +108,7 @@ export interface PageTimelineMediaItem { // Renamed to avoid conflict if types a
   duration?: number;  // In seconds
   ui?: {
     width?: string | number; // Visual width on the timeline
+    marginLeft?: string | number; // Space before this item
     // Potentially other UI related states like color, etc.
   };
 }
@@ -245,7 +246,7 @@ export default function AssembleVideoPage() {
               emptyStateMessage = `Image track empty. Generate images for Chapter ${currentChapter}.`;
               showGenerateButton = true;
           }
-          
+
           if (config.type === 'text' && imagesToShow.length > 0 && storyData.generatedScript) {
             items = imagesToShow.map((img, filteredIndex) => {
               const originalImageIndex = storyData.generatedImages?.findIndex(
@@ -316,7 +317,7 @@ export default function AssembleVideoPage() {
         if (iconComponent === Video) return "Video";
         if (iconComponent === Music2) return "Music2";
         if (iconComponent === Text) return "Text";
-        
+
         // Fallback for other components (less likely for current track setup)
         // Check for displayName first, then function name
         if ((iconComponent as any).displayName && typeof (iconComponent as any).displayName === 'string') {
@@ -414,7 +415,7 @@ export default function AssembleVideoPage() {
       setTimelineModified(true); // Mark timeline as modified
       return updatedTracks;
     });
-    
+
     toast({ title: "Item Deleted", description: `Item removed from the timeline.`, duration: 2000 });
     setSelectedTimelineItemKey(null);
     setSelectedTimelineImage(null); // Also clear the originalIndex based selection
@@ -441,16 +442,16 @@ export default function AssembleVideoPage() {
     };
   }, [selectedTimelineItemKey, handleDeleteItemFromTimeline]);
 
-  
+
   const handleGenerateChapterImages = async () => {
     if (!storyData || isGeneratingImages) return;
 
     setIsGeneratingImages(true);
-    setSelectedPanel("Story"); 
+    setSelectedPanel("Story");
 
     try {
-      
-      const audioDuration = storyData?.narrationAudioDurationSeconds || 240; 
+
+      const audioDuration = storyData?.narrationAudioDurationSeconds || 240;
       const imagesToGenerate = 7;
       setTotalImagesToGenerate(imagesToGenerate);
 
@@ -491,7 +492,7 @@ export default function AssembleVideoPage() {
         setIsGeneratingImages(false);
         return;
       }
-      
+
       setTotalImagesToGenerate(promptsForChapter.length);
 
 
@@ -520,9 +521,9 @@ export default function AssembleVideoPage() {
         toast({
           title: `Generating Image ${index + 1}/${imagePrompts.length}`,
           description: currentPrompt.originalPromptWithReferences.substring(0, 100) + "...",
-          duration: 4000, 
+          duration: 4000,
         });
-        
+
         // Append styles for PicsArt
         const finalApiPrompt = `${currentPrompt.expandedPrompt}, 3D, Cartoon, High Quality, detailed illustration`;
         const result = await generateImageFromPrompt(finalApiPrompt);
@@ -532,14 +533,14 @@ export default function AssembleVideoPage() {
             `Failed to generate image ${index + 1}: ${result.error || "Unknown error"}`,
           );
         }
-        
+
         newImagesBatch.push({
-          originalPrompt: currentPrompt.originalPromptWithReferences, 
-          requestPrompt: result.requestPrompt || finalApiPrompt, 
+          originalPrompt: currentPrompt.originalPromptWithReferences,
+          requestPrompt: result.requestPrompt || finalApiPrompt,
           imageUrl: result.imageUrl,
           isChapterGenerated: true,
           chapterNumber: currentChapter,
-          expandedPrompt: currentPrompt.expandedPrompt, 
+          expandedPrompt: currentPrompt.expandedPrompt,
           history: [],
         });
 
@@ -550,7 +551,7 @@ export default function AssembleVideoPage() {
           className: "bg-green-500 text-white",
         });
       }
-      
+
       setGenerationProgress(100);
 
       setStoryData((prevData) => {
@@ -584,7 +585,7 @@ export default function AssembleVideoPage() {
           duration: 5000,
         });
       }
-      setSelectedPanel("All Media"); 
+      setSelectedPanel("All Media");
     } catch (error) {
       console.error("Error generating images:", error);
       toast({
@@ -628,7 +629,7 @@ export default function AssembleVideoPage() {
 
       const newImageData: GeneratedImage = {
         ...currentImage,
-        originalPrompt: editedPrompt, 
+        originalPrompt: editedPrompt,
         requestPrompt: result.requestPrompt || finalPrompt,
         imageUrl: result.imageUrl,
         expandedPrompt: expandedPrompt,
@@ -694,10 +695,10 @@ export default function AssembleVideoPage() {
     const historicalImage = currentImage.history[historyIndex];
     const newHistory = currentImage.history.filter((_, idx) => idx !== historyIndex);
     // Add current image to history before reverting
-     newHistory.push({ 
-        imageUrl: currentImage.imageUrl, 
-        originalPrompt: currentImage.originalPrompt, 
-        timestamp: new Date() 
+     newHistory.push({
+        imageUrl: currentImage.imageUrl,
+        originalPrompt: currentImage.originalPrompt,
+        timestamp: new Date()
     });
 
 
@@ -709,7 +710,7 @@ export default function AssembleVideoPage() {
       history: newHistory.slice(-5),
     };
 
-    setEditedPrompt(revertedImageData.originalPrompt); 
+    setEditedPrompt(revertedImageData.originalPrompt);
 
     setStoryData((prevData) => {
       if (!prevData || !prevData.generatedImages) return null;
@@ -727,7 +728,89 @@ export default function AssembleVideoPage() {
     });
   };
 
-  
+
+  // Get the width of the currently selected timeline item
+  const getSelectedItemWidth = (): number => {
+    if (!selectedTimelineItemKey) return 120; // Default width
+
+    for (const track of dynamicTimelineTracks) {
+      const selectedItem = track.items.find(item => item.id === selectedTimelineItemKey);
+      if (selectedItem) {
+        if (selectedItem.ui?.width) {
+          const width = selectedItem.ui.width;
+          return typeof width === 'string' ? parseInt(width.replace('px', '')) : width;
+        }
+        return 120; // Default width if ui.width is not set
+      }
+    }
+    return 120; // Default width if item not found
+  };
+
+  // Get the margin of the currently selected timeline item
+  const getSelectedItemMargin = (): number => {
+    if (!selectedTimelineItemKey) return 0; // Default margin
+
+    for (const track of dynamicTimelineTracks) {
+      const selectedItem = track.items.find(item => item.id === selectedTimelineItemKey);
+      if (selectedItem) {
+        if (selectedItem.ui?.marginLeft) {
+          const margin = selectedItem.ui.marginLeft;
+          return typeof margin === 'string' ? parseInt(margin.replace('px', '')) : margin;
+        }
+        return 0; // Default margin if ui.marginLeft is not set
+      }
+    }
+    return 0; // Default margin if item not found
+  };
+
+  // Update the width of the selected timeline item
+  const handleUpdateItemWidth = (itemId: string, width: number) => {
+    setDynamicTimelineTracks(prevTracks => {
+      const updatedTracks = prevTracks.map(track => ({
+        ...track,
+        items: track.items.map(item => {
+          if (item.id === itemId) {
+            return {
+              ...item,
+              ui: {
+                ...item.ui,
+                width: width
+              }
+            };
+          }
+          return item;
+        })
+      }));
+      setTimelineModified(true); // Mark timeline as modified
+      return updatedTracks;
+    });
+  };
+
+  // Update the margin of the selected timeline item
+  const handleUpdateItemMargin = (margin: number) => {
+    if (!selectedTimelineItemKey) return;
+
+    setDynamicTimelineTracks(prevTracks => {
+      const updatedTracks = prevTracks.map(track => ({
+        ...track,
+        items: track.items.map(item => {
+          if (item.id === selectedTimelineItemKey) {
+            return {
+              ...item,
+              ui: {
+                ...item.ui,
+                marginLeft: `${margin}px`
+              }
+            };
+          }
+          return item;
+        })
+      }));
+      setTimelineModified(true); // Mark timeline as modified
+      return updatedTracks;
+    });
+  };
+
   const saveStoryData = async (updatedStory: Story | null) => {
     if (!updatedStory || !user?.uid) {
         toast({title: "Error", description: "Cannot save, story data or user ID is missing.", variant: "destructive"});
@@ -778,7 +861,7 @@ export default function AssembleVideoPage() {
               .filter(img => img.isChapterGenerated && typeof img.chapterNumber === 'number')
               .map(img => img.chapterNumber as number);
             const maxGeneratedChapter = generatedChapterNumbers.length > 0 ? Math.max(...generatedChapterNumbers) : 0;
-            
+
             const totalPossibleChapters = Math.ceil((response.data.imagePrompts.length || 0) / 7);
             if (maxGeneratedChapter < totalPossibleChapters) {
               setCurrentChapter(maxGeneratedChapter + 1);
@@ -829,7 +912,7 @@ export default function AssembleVideoPage() {
         console.warn("DragEnd: Missing dragged item data or target track not found.", { draggedItemSourceData, targetTrackId, dynamicTimelineTracks });
         return;
       }
-      
+
       const itemType = draggedItemSourceData.type;
 
       if (!targetTrack.accepts.includes(itemType)) {
@@ -919,8 +1002,8 @@ export default function AssembleVideoPage() {
             </Button>
           </div>
 
-          <div className="flex-1 flex overflow-hidden">
-            <div className="w-2/5 p-4 overflow-auto border-r border-border bg-background/30"> {/* Changed background */}
+          <div className="flex-1 flex min-w-0"> {/* Removed overflow-hidden */}
+            <div className="w-[490px] p-4 overflow-auto border-r border-border bg-background/30"> {/* Changed background */}
               {selectedPanel === "All Media" ? (
                 <AllMediaContent storyData={storyData} />
               ) : selectedPanel === "Edit Image" ? (
@@ -932,6 +1015,8 @@ export default function AssembleVideoPage() {
                   handleEditGenerate={handleEditGenerate}
                   isEditingImage={isEditingImage}
                   handleRevertToHistory={handleRevertToHistory}
+                  handleUpdateItemWidth={(width) => selectedTimelineItemKey && handleUpdateItemWidth(selectedTimelineItemKey, width)}
+                  selectedItemWidth={getSelectedItemWidth()}
                 />
               ) : selectedPanel === "Voices" ? (
                 <VoicesContent storyData={storyData} />
@@ -962,24 +1047,29 @@ export default function AssembleVideoPage() {
               )}
             </div>
 
-            <div className="w-3/5 flex flex-col p-4 overflow-hidden">
-              <VideoPreviewArea storyData={storyData} selectedTimelineImage={selectedTimelineImage} className="flex-[3] min-h-0" />
-              <TimelineStrip
-                // storyData is still needed for some parts like narration URL, script, etc.
-                // but the tracks themselves will come from dynamicTimelineTracks
-                storyData={storyData}
-                timelineTracks={dynamicTimelineTracks}
-                selectedTimelineImage={selectedTimelineImage}
-                setSelectedTimelineImage={setSelectedTimelineImage}
-                selectedTimelineItemKey={selectedTimelineItemKey}
-                setSelectedTimelineItemKey={setSelectedTimelineItemKey}
-                handleDeleteItemFromTimeline={handleDeleteItemFromTimeline}
-                setSelectedPanel={setSelectedPanel}
-                isGeneratingImages={isGeneratingImages}
-                handleGenerateChapterImages={handleGenerateChapterImages}
-                currentChapter={currentChapter}
-                className="flex-[2] min-h-0"
-              />
+            <div className="flex-1 min-w-0 p-4 overflow-y-auto overflow-x-hidden"> {/* Right Panel: flex-col and items-center removed */}
+              <div className="h-full w-full flex flex-col items-center"> {/* New Inner Wrapper for layout */}
+                <div className="w-full max-w-[800px] aspect-video">
+                  <VideoPreviewArea storyData={storyData} selectedTimelineImage={selectedTimelineImage} className="w-full h-full" />
+                </div>
+                <TimelineStrip
+                  // storyData is still needed for some parts like narration URL, script, etc.
+                  // but the tracks themselves will come from dynamicTimelineTracks
+                  storyData={storyData}
+                  timelineTracks={dynamicTimelineTracks}
+                  selectedTimelineImage={selectedTimelineImage}
+                  setSelectedTimelineImage={setSelectedTimelineImage}
+                  selectedTimelineItemKey={selectedTimelineItemKey}
+                  setSelectedTimelineItemKey={setSelectedTimelineItemKey}
+                  handleDeleteItemFromTimeline={handleDeleteItemFromTimeline}
+                  setSelectedPanel={setSelectedPanel}
+                  isGeneratingImages={isGeneratingImages}
+                  handleGenerateChapterImages={handleGenerateChapterImages}
+                  currentChapter={currentChapter}
+                  className="w-full max-w-[800px] mt-4"
+                  handleUpdateItemWidth={handleUpdateItemWidth}
+                />
+              </div>
             </div>
           </div>
         </div>
@@ -988,4 +1078,3 @@ export default function AssembleVideoPage() {
   );
 }
 
-    

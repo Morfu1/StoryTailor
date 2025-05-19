@@ -17,7 +17,7 @@ export default function VideoPreviewArea({
   className,
 }: VideoPreviewAreaProps) {
   return (
-    <div className={`flex-1 bg-muted rounded-lg flex items-center justify-center shadow-inner relative overflow-hidden ${className || ''}`}>
+    <div className={`bg-muted rounded-lg flex items-center justify-center shadow-inner relative overflow-hidden ${className || ''}`}>
       {selectedTimelineImage !== null &&
       storyData?.generatedImages?.[selectedTimelineImage]?.imageUrl ? (
         <Image
@@ -25,9 +25,9 @@ export default function VideoPreviewArea({
             storyData.generatedImages[selectedTimelineImage].imageUrl
           }
           alt={`Preview of Scene ${selectedTimelineImage + 1}`}
-          width={800}
-          height={450}
-          className="max-w-full max-h-full object-contain rounded-md"
+          fill
+          className="object-contain rounded-md"
+          sizes="(max-width: 800px) 100vw, 800px"
           key={
             storyData.generatedImages[selectedTimelineImage].imageUrl
           } // Force re-render if URL changes for same index
@@ -45,9 +45,9 @@ export default function VideoPreviewArea({
             )?.imageUrl || ""
           }
           alt="Video Preview Placeholder"
-          width={800}
-          height={450}
-          className="max-w-full max-h-full object-contain rounded-md"
+          fill
+          className="object-contain rounded-md"
+          sizes="(max-width: 800px) 100vw, 800px"
         />
       ) : (
         <div className="flex flex-col items-center justify-center p-8">

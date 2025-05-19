@@ -17,6 +17,10 @@ interface EditTimelineItemPanelContentProps {
   handleEditGenerate: () => Promise<void>;
   isEditingImage: boolean;
   handleRevertToHistory: (historyIndex: number) => Promise<void>;
+  handleUpdateItemWidth?: (width: number) => void;
+  handleUpdateItemMargin?: (margin: number) => void;
+  selectedItemWidth?: number;
+  selectedItemMargin?: number;
 }
 
 export default function EditTimelineItemPanelContent({
@@ -27,6 +31,10 @@ export default function EditTimelineItemPanelContent({
   handleEditGenerate,
   isEditingImage,
   handleRevertToHistory,
+  handleUpdateItemWidth,
+  handleUpdateItemMargin,
+  selectedItemWidth = 120,
+  selectedItemMargin = 0,
 }: EditTimelineItemPanelContentProps) {
   if (selectedTimelineImage === null || !storyData?.generatedImages?.[selectedTimelineImage]) {
     return (
@@ -58,35 +66,39 @@ export default function EditTimelineItemPanelContent({
               />
             )}
           </div>
-          <div>
-            <Label htmlFor="editedPromptSidebar" className="text-xs font-medium mb-1">
-              Prompt:
-            </Label>
-            <Textarea
-              id="editedPromptSidebar"
-              value={editedPrompt}
-              onChange={(e) => setEditedPrompt(e.target.value)}
-              className="text-xs min-h-[100px] mb-2"
-              placeholder="Edit the prompt for the image..."
-            />
-            <div className="flex items-center justify-between mb-3">
-              <p className="text-[10px] text-muted-foreground">
-                Use @EntityName for auto-expansion.
-              </p>
-              <Button
-                size="sm"
-                variant="default"
-                className="text-xs h-8"
-                onClick={handleEditGenerate}
-                disabled={isEditingImage}
-              >
-                {isEditingImage ? (
-                  <Loader2 className="w-3 h-3 mr-1 animate-spin" />
-                ) : (
-                  <Sparkles className="w-3 h-3 mr-1" />
-                )}
-                Generate
-              </Button>
+          <div className="space-y-4">
+            
+            {/* Prompt editor */}
+            <div>
+              <Label htmlFor="editedPromptSidebar" className="text-xs font-medium mb-1">
+                Prompt:
+              </Label>
+              <Textarea
+                id="editedPromptSidebar"
+                value={editedPrompt}
+                onChange={(e) => setEditedPrompt(e.target.value)}
+                className="text-xs min-h-[100px] mb-2"
+                placeholder="Edit the prompt for the image..."
+              />
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-[10px] text-muted-foreground">
+                  Use @EntityName for auto-expansion.
+                </p>
+                <Button
+                  size="sm"
+                  variant="default"
+                  className="text-xs h-8"
+                  onClick={handleEditGenerate}
+                  disabled={isEditingImage}
+                >
+                  {isEditingImage ? (
+                    <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                  ) : (
+                    <Sparkles className="w-3 h-3 mr-1" />
+                  )}
+                  Generate
+                </Button>
+              </div>
             </div>
           </div>
 

@@ -18,7 +18,14 @@ export interface TimelineStripMediaItem {
   imageUrl?: string;
   scriptSegment?: string;
   title?: string; // Added title
-  // Potentially more UI-specific or timeline-specific properties if needed by TimelineStrip
+  // Timeline specific properties
+  startTime?: number; // In seconds from the beginning of the track/timeline
+  duration?: number;  // In seconds
+  ui?: {
+    width?: string | number; // Visual width on the timeline
+    marginLeft?: string | number; // Space before this item
+    // Potentially other UI related states like color, etc.
+  };
 }
 
 export interface TimelineStripTrack {
@@ -46,6 +53,7 @@ interface TimelineStripProps {
   handleGenerateChapterImages: () => Promise<void>;
   currentChapter: number;
   className?: string;
+  handleUpdateItemWidth?: (itemId: string, width: number) => void;
 }
 
 export default function TimelineStrip({
@@ -61,6 +69,7 @@ export default function TimelineStrip({
   handleGenerateChapterImages,
   currentChapter,
   className,
+  handleUpdateItemWidth,
 }: TimelineStripProps) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -243,8 +252,17 @@ export default function TimelineStrip({
         {/* TODO: Add button for "Add Track" here later */}
       </div>
       <ScrollArea
-        className="bg-background p-2 rounded-md shadow-sm border border-border w-full" // Removed fixed totalTimelineHeight
+        className="bg-background p-2 rounded-md shadow-sm border border-border w-full overflow-x-auto"
       >
+        {/* Time markers */}
+        <div className="relative h-6 mb-2 border-b border-border/50 flex items-end">
+          {Array.from({ length: 10 }).map((_, i) => (
+            <div key={`time-marker-${i}`} className="absolute flex flex-col items-center" style={{ left: `${i * 10}%` }}>
+              <div className="h-2 w-0.5 bg-border mb-1"></div>
+              <span className="text-[10px] text-muted-foreground">{formatTime(i * (duration / 10 || 24))}</span>
+            </div>
+          ))}
+        </div>
         <div className="flex flex-col space-y-1 pb-1"> {/* Main flex container for controls + tracks area */}
           {/* Playback Controls */}
           {storyData?.narrationAudioUrl && ( // Keep controls if narration exists
@@ -302,6 +320,7 @@ export default function TimelineStrip({
                 duration={duration}
                 setCurrentTime={setCurrentTime}
                 imagesToShowForAudioSync={imagesToShow} // Pass the filtered images for audio sync
+                handleUpdateItemWidth={handleUpdateItemWidth}
               />
             ))}
 
@@ -318,7 +337,7 @@ export default function TimelineStrip({
             )}
           </div> {/* End of Wrapper for Tracks and Playhead */}
         </div> {/* End of Main flex container */}
-        <ScrollBar orientation="horizontal" />
+        <ScrollBar orientation="horizontal" className="h-3" /> {/* Make scrollbar more visible */}
       </ScrollArea>
     </div>
   );
