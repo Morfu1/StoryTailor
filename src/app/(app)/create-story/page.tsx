@@ -2,6 +2,7 @@
 "use client";
 
 import type { Story, GeneratedImage, StoryCharacterLocationItemPrompts, ElevenLabsVoice } from '@/types/story';
+import type { NarrationChunk } from '@/types/narration';
 import { useAuth } from '@/components/auth-provider';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -12,7 +13,10 @@ import { useToast } from '@/hooks/use-toast';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Progress } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { splitScriptIntoChunks } from '@/utils/scriptSplitter'; // Keep for manual edit fallback
+import { prepareScriptChunksAI, prepareScriptChunksSimple, calculateTotalNarrationDuration } from '@/utils/narrationUtils';
+import { v4 as uuidv4 } from 'uuid';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -50,6 +54,8 @@ const initialStoryState: Story = {
   elevenLabsVoiceId: undefined,
   imagePrompts: [],
   generatedImages: [],
+  scriptChunks: [], // Initialize
+  narrationChunks: [], // Initialize
 };
 
 export default function CreateStoryPage() {
@@ -77,6 +83,8 @@ export default function CreateStoryPage() {
   const [isImagePromptEditing, setIsImagePromptEditing] = useState<boolean[]>([]);
   const [isGeneratingDetailImage, setIsGeneratingDetailImage] = useState<Record<string, boolean>>({});
   const [firebaseError, setFirebaseError] = useState<string | null>(null);
+  const [currentNarrationChunkIndex, setCurrentNarrationChunkIndex] = useState<number>(-1);
+  const [processingAllMode, setProcessingAllMode] = useState<boolean>(false); // New state for "Generate All"
 
 interface ParsedPrompt {
   name?: string;
@@ -193,34 +201,63 @@ const parseNamedPrompts = (rawPrompts: string | undefined, type: 'Character' | '
       setFirebaseError(null);
       
       getStory(storyId, user.uid)
-        .then(response => {
+        .then(async response => { // Make the callback async
           if (response.success && response.data) {
-                    const loadedStory = response.data;
+                    let loadedStory = response.data; // Use let to allow modification
                      if (loadedStory.createdAt && !(loadedStory.createdAt instanceof Date)) {
                         loadedStory.createdAt = (loadedStory.createdAt as any).toDate();
                     }
                     if (loadedStory.updatedAt && !(loadedStory.updatedAt instanceof Date)) {
                         loadedStory.updatedAt = (loadedStory.updatedAt as any).toDate();
                     }
-                    setStoryData(loadedStory);
+                    
+                    // Proactively prepare text chunks if script exists but chunks don't
+                    if (loadedStory.generatedScript && (!loadedStory.narrationChunks || loadedStory.narrationChunks.length === 0)) {
+                      console.log("Loaded story has script but no narration chunks. Attempting to prepare them now...");
+                      try {
+                        const newNarrationChunks = await prepareScriptChunksAI(loadedStory.generatedScript);
+                        if (newNarrationChunks.length > 0) {
+                          // Update the loadedStory object directly before setting state
+                          loadedStory = { ...loadedStory, narrationChunks: newNarrationChunks };
+                          toast({ title: 'Script Chunks Prepared', description: `AI created ${newNarrationChunks.length} text chunks for the loaded story.`, className: 'bg-primary text-primary-foreground'});
+                        } else {
+                          // Ensure narrationChunks is at least an empty array if AI returns nothing
+                          loadedStory = { ...loadedStory, narrationChunks: [] };
+                          toast({ title: 'Chunk Preparation Note', description: 'Could not automatically prepare text chunks for this loaded story (AI returned no chunks).', variant: 'default'});
+                        }
+                      } catch (error) {
+                        console.error("Error proactively preparing chunks for loaded story:", error);
+                        // Ensure narrationChunks is at least an empty array on error
+                        loadedStory = { ...loadedStory, narrationChunks: [] };
+                        toast({ title: 'Chunk Preparation Error', description: 'Failed to auto-prepare text chunks.', variant: 'destructive'});
+                      }
+                    }
+                    
+                    setStoryData(loadedStory); // This sets the initial loadedStory (potentially with new chunks)
+
                     if (loadedStory.elevenLabsVoiceId) {
                       setSelectedVoiceId(loadedStory.elevenLabsVoiceId);
                       setNarrationSource('generate');
-                    } else if (loadedStory.narrationAudioUrl) {
-                      setNarrationSource('upload');
-                      setUploadedAudioFileName("Previously uploaded audio");
+                    } else if (loadedStory.narrationAudioUrl && (!loadedStory.narrationChunks || loadedStory.narrationChunks.length === 0) ) { // Only consider legacy URL if no chunks
+                      setNarrationSource('upload'); // Or treat as legacy generated
+                      setUploadedAudioFileName("Previously uploaded audio (legacy)");
                     }
             
-                    updateStoryData({
-                        generatedScript: loadedStory.generatedScript || undefined,
-                        detailsPrompts: loadedStory.detailsPrompts || { characterPrompts: "", itemPrompts: "", locationPrompts: "" }
-                    });
+                    // updateStoryData is redundant if setStoryData(loadedStory) is comprehensive
+                    // updateStoryData({
+                    //     generatedScript: loadedStory.generatedScript || undefined,
+                    //     detailsPrompts: loadedStory.detailsPrompts || { characterPrompts: "", itemPrompts: "", locationPrompts: "" },
+                    //     narrationChunks: loadedStory.narrationChunks || undefined // Ensure narrationChunks are part of the state
+                    // });
 
 
-                    if (loadedStory.imagePrompts && loadedStory.imagePrompts.length > 0) initialStep = 4;
-                    else if (loadedStory.narrationAudioUrl) initialStep = 3;
+                    // Determine initial step based on chunked narration primarily
+                    if (loadedStory.imagePrompts && loadedStory.imagePrompts.length > 0) initialStep = 4; // Assuming images depend on prompts from chunks
+                    else if (loadedStory.narrationChunks && loadedStory.narrationChunks.length > 0 && loadedStory.narrationChunks.every(c => c.audioUrl)) initialStep = 4; // All chunks narrated
+                    else if (loadedStory.narrationChunks && loadedStory.narrationChunks.length > 0) initialStep = 3; // Chunks exist (text or partial audio)
+                    else if (loadedStory.narrationAudioUrl) initialStep = 3; // Legacy audio
                     else if (loadedStory.detailsPrompts && (loadedStory.detailsPrompts.characterPrompts || loadedStory.detailsPrompts.itemPrompts || loadedStory.detailsPrompts.locationPrompts)) initialStep = 2;
-                    else if (loadedStory.generatedScript) initialStep = 2;
+                    else if (loadedStory.generatedScript) initialStep = 2; // Script exists, implies chunks can be made
                     else initialStep = 1;
             
             setCurrentStep(initialStep);
@@ -231,7 +268,7 @@ const parseNamedPrompts = (rawPrompts: string | undefined, type: 'Character' | '
 
           } else {
             toast({ title: 'Error Loading Story', description: response.error || 'Failed to load story. Creating a new one.', variant: 'destructive' });
-             setStoryData({...initialStoryState, userId: user.uid, generatedScript: initialStoryState.generatedScript || undefined});
+             setStoryData({...initialStoryState, userId: user.uid }); // Ensure all initial fields are reset
              setCurrentStep(1);
              setActiveAccordionItem('step-1');
           }
@@ -259,6 +296,25 @@ const parseNamedPrompts = (rawPrompts: string | undefined, type: 'Character' | '
   useEffect(() => {
     setActiveAccordionItem(`step-${currentStep}`);
   }, [currentStep]);
+
+  // Effect to automatically process the next narration chunk WHEN IN "PROCESSING ALL" MODE
+  useEffect(() => {
+    if (processingAllMode && currentNarrationChunkIndex >= 0 && storyData.narrationChunks && currentNarrationChunkIndex < storyData.narrationChunks.length && (selectedVoiceId || storyData.elevenLabsVoiceId) && narrationSource === 'generate') {
+      // Call handleGenerateNarration without an index to process the currentNarrationChunkIndex in sequence
+      // The isLoading.narration check might be tricky here; handleGenerateNarration itself manages this.
+      // We rely on handleGenerateNarration to advance currentNarrationChunkIndex or set it to -1.
+      console.log(`useEffect detected processingAllMode for chunk index: ${currentNarrationChunkIndex}`);
+      handleGenerateNarration();
+    } else if (processingAllMode && currentNarrationChunkIndex === -1) {
+      // This means the "Generate All" sequence has finished or was interrupted.
+      console.log("useEffect detected end of processingAllMode sequence.");
+      setProcessingAllMode(false); // Turn off "generate all" mode
+      // isLoading.narration should have been set to false by handleGenerateNarration
+      if (isLoading.narration) { // Safety check
+          handleSetLoading('narration', false);
+      }
+    }
+  }, [currentNarrationChunkIndex, processingAllMode, storyData.narrationChunks, storyData.elevenLabsVoiceId, selectedVoiceId, narrationSource]); // Removed isLoading.narration from deps, let handleGenerateNarration manage it.
 
 
   const handleGenerateScript = async () => {
@@ -291,7 +347,18 @@ const parseNamedPrompts = (rawPrompts: string | undefined, type: 'Character' | '
     
     const scriptResult = await generateScript({ prompt: storyData.userPrompt });
     if (scriptResult.success && scriptResult.data) {
-      updateStoryData({ generatedScript: scriptResult.data.script });
+      // Split the script into chunks for narration using AI
+      const scriptText = scriptResult.data.script;
+      handleSetLoading('scriptChunks', true);
+      const narrationChunks = await prepareScriptChunksAI(scriptText);
+      handleSetLoading('scriptChunks', false);
+      
+      updateStoryData({
+        generatedScript: scriptText,
+        // scriptChunks: scriptChunks, // scriptChunks in storyData might be deprecated if narrationChunks holds the text
+        narrationChunks
+      });
+      
       setCurrentStep(2);
       toast({ title: 'Script Generated!', description: 'Your story script is ready.', className: 'bg-primary text-primary-foreground' });
     } else {
@@ -476,34 +543,184 @@ const parseNamedPrompts = (rawPrompts: string | undefined, type: 'Character' | '
     );
   };
 
-  const handleGenerateNarration = async () => {
-    if (!storyData.generatedScript || narrationSource !== 'generate') return;
-    handleSetLoading('narration', true);
+  const handleGenerateNarration = async (specificChunkIndexToProcess?: number) => {
+    if (narrationSource !== 'generate') return;
+    // If a specific chunk is requested, ensure script and chunks exist for that index.
+    // If "generate all" is implied (no specific index), ensure script exists.
+    if (typeof specificChunkIndexToProcess === 'number') {
+        if (!storyData.narrationChunks || !storyData.narrationChunks[specificChunkIndexToProcess]) {
+            toast({ title: 'Error', description: 'Chunk not found for individual generation.', variant: 'destructive'});
+            return;
+        }
+    } else if (!storyData.generatedScript) { // For "generate all" or initial prep
+        toast({ title: 'No Script', description: 'Please generate a script first.', variant: 'destructive' });
+        return;
+    }
+    
+    handleSetLoading('narration', true); // General loading state
 
-    const input = selectedVoiceId
-      ? { script: storyData.generatedScript, voiceId: selectedVoiceId }
-      : { script: storyData.generatedScript }; 
-
-    const result = await generateNarrationAudio(input);
-
-    if (result.success && result.data) {
-      if (result.data.voices) {
+    // 1. Voice Loading/Selection (remains the same)
+    if (!selectedVoiceId && !storyData.elevenLabsVoiceId) {
+      const result = await generateNarrationAudio({ script: "Loading voices" }); // Script content doesn't matter here
+      if (result.success && result.data && result.data.voices) {
         setElevenLabsVoices(result.data.voices);
         toast({ title: 'Voices Loaded', description: 'Please select a voice to generate narration.', className: 'bg-primary text-primary-foreground' });
-      } else if (result.data.audioDataUri) {
-        updateStoryData({ 
-          narrationAudioUrl: result.data.audioDataUri, 
-          narrationAudioDurationSeconds: result.data.duration,
-          elevenLabsVoiceId: selectedVoiceId 
-        });
-        setUploadedAudioFileName(null); 
-        setCurrentStep(4);
-        toast({ title: 'Narration Generated!', description: 'Audio narration is ready.', className: 'bg-primary text-primary-foreground' });
+      } else {
+        toast({ title: 'Error Loading Voices', description: result.error || 'Failed to load voices.', variant: 'destructive' });
       }
-    } else {
-      toast({ title: 'Narration Error', description: result.error || 'Failed to process narration.', variant: 'destructive' });
+      handleSetLoading('narration', false);
+      return;
     }
-    handleSetLoading('narration', false);
+
+    const voiceIdToUse = selectedVoiceId || storyData.elevenLabsVoiceId;
+    if (!voiceIdToUse) {
+      toast({ title: 'Voice Not Selected', description: 'Please select a voice first.', variant: 'destructive' });
+      handleSetLoading('narration', false);
+      return;
+    }
+
+    // Ensure narrationChunks exist (with text) before proceeding
+    if (!storyData.narrationChunks || storyData.narrationChunks.length === 0) {
+      if (storyData.generatedScript) {
+        toast({ title: 'Preparing Chunks...', description: 'AI is splitting the script. Please wait.', className: 'bg-primary text-primary-foreground' });
+        handleSetLoading('scriptChunksUpdate', true);
+        try {
+          const newNarrationChunks = await prepareScriptChunksAI(storyData.generatedScript);
+          updateStoryData({ narrationChunks: newNarrationChunks });
+          handleSetLoading('scriptChunksUpdate', false);
+          if (newNarrationChunks.length > 0) {
+            toast({ title: 'Script Chunks Ready!', description: `AI created ${newNarrationChunks.length} chunks. Now select a voice and generate audio.`, className: 'bg-primary text-primary-foreground' });
+            // Don't proceed to audio generation immediately, let user click again after voice selection if needed.
+            handleSetLoading('narration', false);
+            return;
+          } else {
+            toast({ title: 'No Chunks Generated', description: 'AI could not split the script into chunks.', variant: 'destructive' });
+            handleSetLoading('narration', false);
+            return;
+          }
+        } catch (error) {
+            toast({ title: 'Error Preparing Chunks', description: 'Failed to split script with AI.', variant: 'destructive' });
+            handleSetLoading('scriptChunksUpdate', false);
+            handleSetLoading('narration', false);
+            return;
+        }
+      } else {
+        toast({ title: 'No Script', description: 'Please generate a script first.', variant: 'destructive' });
+        handleSetLoading('narration', false);
+        return;
+      }
+    }
+    
+    // At this point, voice is selected, and narrationChunks (with text) should exist if we got this far.
+
+    let chunkToProcessIndex = -1;
+
+    if (typeof specificChunkIndexToProcess === 'number') {
+      chunkToProcessIndex = specificChunkIndexToProcess;
+      // If processing a single chunk, ensure currentNarrationChunkIndex reflects this specific chunk for UI feedback
+      setCurrentNarrationChunkIndex(chunkToProcessIndex);
+    } else { // "Generate All" flow
+      if (currentNarrationChunkIndex === -1) { // If not already processing a sequence
+        const firstUnprocessed = storyData.narrationChunks!.findIndex(chunk => !chunk.audioUrl);
+        if (firstUnprocessed !== -1) {
+          chunkToProcessIndex = firstUnprocessed;
+          setCurrentNarrationChunkIndex(firstUnprocessed);
+        } else { // All are already processed
+          // Option to re-generate all: clear existing audio and start from 0
+          const confirmReGenerate = storyData.narrationChunks!.every(c => c.audioUrl); // True if all have audio
+          if (confirmReGenerate) {
+             const resetChunks = storyData.narrationChunks!.map(c => ({...c, audioUrl: undefined, duration: undefined}));
+             updateStoryData({ narrationChunks: resetChunks, narrationAudioDurationSeconds: 0 });
+             chunkToProcessIndex = 0;
+             setCurrentNarrationChunkIndex(0);
+             toast({title: "Re-generating All Chunks", description: "Previous audio cleared.", className: "bg-primary text-primary-foreground"})
+          } else {
+            toast({ title: 'All Chunks Processed', description: 'All narration chunks already have audio.', className: 'bg-primary text-primary-foreground' });
+            handleSetLoading('narration', false);
+            return;
+          }
+        }
+      } else { // Already in a "Generate All" sequence
+        chunkToProcessIndex = currentNarrationChunkIndex;
+      }
+    }
+
+    if (chunkToProcessIndex === -1 || !storyData.narrationChunks || !storyData.narrationChunks[chunkToProcessIndex]) {
+      setCurrentNarrationChunkIndex(-1);
+      if (typeof specificChunkIndexToProcess !== 'number') { // Part of "Generate All" flow that finished or had nothing to do
+        setProcessingAllMode(false);
+        if (storyData.narrationChunks?.every(c => c.audioUrl)) {
+             setCurrentStep(4);
+        }
+      }
+      handleSetLoading('narration', false);
+      return;
+    }
+    
+    // If this call is for a single chunk, ensure processingAllMode is false.
+    if (typeof specificChunkIndexToProcess === 'number' && processingAllMode) {
+      setProcessingAllMode(false); // Stop any "generate all" sequence if user clicks a single chunk.
+    }
+    
+    const chunk = storyData.narrationChunks![chunkToProcessIndex]; // Assert narrationChunks is not null/undefined
+    const result = await generateNarrationAudio({
+      script: chunk.text,
+      voiceId: voiceIdToUse,
+      userId: storyData.userId,
+      storyId: storyData.id, // Ensure storyData.id is available (it should be if saving is possible)
+      chunkId: chunk.id
+    });
+    
+    if (result.success && result.data && result.data.audioStorageUrl) { // Check for audioStorageUrl
+      const updatedChunks = [...storyData.narrationChunks!];
+      updatedChunks[chunkToProcessIndex] = {
+        ...chunk,
+        audioUrl: result.data.audioStorageUrl, // Use audioStorageUrl
+        duration: result.data.duration
+      };
+      
+      const totalDuration = calculateTotalNarrationDuration(updatedChunks);
+      updateStoryData({
+        narrationChunks: updatedChunks,
+        narrationAudioDurationSeconds: totalDuration,
+        elevenLabsVoiceId: voiceIdToUse
+      });
+      
+      toast({
+        title: `Chunk ${chunkToProcessIndex + 1} Generated!`,
+        description: `Audio for chunk ${chunkToProcessIndex + 1} of ${storyData.narrationChunks.length} is ready.`,
+        className: 'bg-primary text-primary-foreground'
+      });
+      
+      if (typeof specificChunkIndexToProcess === 'number') {
+        // Single chunk processed.
+        setCurrentNarrationChunkIndex(-1); // Reset index, indicating no specific chunk is "active" for sequence.
+        setProcessingAllMode(false); // Ensure "all" mode is off.
+        handleSetLoading('narration', false);
+      } else { // This was part of a "Generate All" sequence (processingAllMode should be true)
+        const nextUnprocessed = updatedChunks.findIndex((c, idx) => idx > chunkToProcessIndex && !c.audioUrl);
+        if (nextUnprocessed !== -1) {
+          setCurrentNarrationChunkIndex(nextUnprocessed); // useEffect (with processingAllMode true) will pick this up
+        } else { // No more unprocessed chunks after the current one in the sequence
+          setCurrentNarrationChunkIndex(-1);
+          setProcessingAllMode(false); // Sequence finished
+          handleSetLoading('narration', false);
+          if (updatedChunks.every(c => c.audioUrl)) {
+             setCurrentStep(4);
+             toast({ title: 'All Narration Generated!', description: 'Audio for all chunks is ready.', className: 'bg-primary text-primary-foreground' });
+          }
+        }
+      }
+    } else { // Audio generation for current chunk failed
+      toast({
+        title: 'Chunk Narration Error',
+        description: result.error || `Failed to generate audio for chunk ${chunkToProcessIndex + 1}.`,
+        variant: 'destructive'
+      });
+      setCurrentNarrationChunkIndex(-1);
+      setProcessingAllMode(false); // Stop "all" mode on error
+      handleSetLoading('narration', false);
+    }
   };
 
   const handleAudioFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -549,18 +766,45 @@ const parseNamedPrompts = (rawPrompts: string | undefined, type: 'Character' | '
   const handleGenerateImagePrompts = async () => {
     if (!storyData.generatedScript || !storyData.detailsPrompts || !storyData.narrationAudioDurationSeconds) return;
     handleSetLoading('imagePrompts', true);
+    
+    // If we have narration chunks, use them to generate more targeted image prompts
+    const scriptToUse = storyData.narrationChunks && storyData.narrationChunks.length > 0
+      ? storyData.narrationChunks.map(chunk => chunk.text).join("\n\n")
+      : storyData.generatedScript;
+    
     const result = await generateImagePrompts({
-      script: storyData.generatedScript,
+      script: scriptToUse,
       characterPrompts: storyData.detailsPrompts.characterPrompts || '',
       locationPrompts: storyData.detailsPrompts.locationPrompts || '',
       itemPrompts: storyData.detailsPrompts.itemPrompts || '',
       audioDurationSeconds: storyData.narrationAudioDurationSeconds,
       imagesPerMinute: imagesPerMinute,
     });
+    
     if (result.success && result.data) {
-      updateStoryData({ imagePrompts: result.data.imagePrompts });
-      setIsImagePromptEditing(Array(result.data.imagePrompts.length).fill(false));
-      toast({ title: 'Image Prompts Generated!', description: 'Prompts for your animation visuals are ready.', className: 'bg-primary text-primary-foreground' });
+      // If we have narration chunks, try to align the number of image prompts with the number of chunks
+      let imagePrompts = result.data.imagePrompts;
+      
+      if (storyData.narrationChunks && storyData.narrationChunks.length > 0) {
+        // If we have more image prompts than chunks, trim the excess
+        if (imagePrompts.length > storyData.narrationChunks.length) {
+          imagePrompts = imagePrompts.slice(0, storyData.narrationChunks.length);
+        }
+        // If we have fewer image prompts than chunks, duplicate the last one to fill
+        else if (imagePrompts.length < storyData.narrationChunks.length && imagePrompts.length > 0) {
+          while (imagePrompts.length < storyData.narrationChunks.length) {
+            imagePrompts.push(imagePrompts[imagePrompts.length - 1]);
+          }
+        }
+      }
+      
+      updateStoryData({ imagePrompts });
+      setIsImagePromptEditing(Array(imagePrompts.length).fill(false));
+      toast({
+        title: 'Image Prompts Generated!',
+        description: `${imagePrompts.length} prompts for your animation visuals are ready.`,
+        className: 'bg-primary text-primary-foreground'
+      });
     } else {
       toast({ title: 'Error', description: result.error || 'Failed to generate image prompts.', variant: 'destructive' });
     }
@@ -732,16 +976,60 @@ const parseNamedPrompts = (rawPrompts: string | undefined, type: 'Character' | '
   const isSaveButtonDisabled = !storyData.title?.trim() || isLoading.save || !user?.uid;
 
   const narrationButtonText = () => {
-    if (isLoading.narration) return "Processing...";
-    if (narrationSource === 'generate') {
-        if (storyData.narrationAudioUrl && storyData.elevenLabsVoiceId) return "Re-generate Narration";
-        if (elevenLabsVoices.length > 0) return "Generate Narration with Selected Voice";
-        return "Load Voices & Generate Narration";
+    if (isLoading.narration) {
+      if (currentNarrationChunkIndex >= 0 && storyData.narrationChunks) {
+        return `Processing Chunk ${currentNarrationChunkIndex + 1} of ${storyData.narrationChunks.length}...`;
+      }
+      return "Processing Narration...";
     }
-    return "Generate Narration (AI)" 
+    if (narrationSource === 'generate') {
+      if (storyData.narrationChunks && storyData.narrationChunks.every(chunk => chunk.audioUrl)) {
+        return "Re-generate All Narration Chunks";
+      }
+      if (storyData.narrationChunks && storyData.narrationChunks.length > 0) {
+        // If some chunks are processed, but not all, or none are.
+        const currentChunkToProcess = storyData.narrationChunks.findIndex(chunk => !chunk.audioUrl);
+        if (currentChunkToProcess !== -1) {
+             return `Generate Narration (Chunk ${currentChunkToProcess + 1}/${storyData.narrationChunks.length})`;
+        }
+        // This case should ideally be caught by "Re-generate All" if all are done.
+        // Or if no chunks exist yet but script does.
+      }
+      if (elevenLabsVoices.length > 0 && (selectedVoiceId || storyData.elevenLabsVoiceId)) {
+         if (storyData.generatedScript && (!storyData.narrationChunks || storyData.narrationChunks.length === 0)) {
+            return "Prepare & Generate Narration Chunks";
+         }
+         return "Generate Narration for Chunks";
+      }
+      return "Load Voices & Prepare for Chunked Narration";
+    }
+    return "Generate Narration (AI)"; // Fallback for upload state, though button is disabled
   };
 
-  const isNarrationButtonDisabled = narrationSource === 'upload' || isLoading.narration || !storyData.generatedScript || (narrationSource === 'generate' && elevenLabsVoices.length > 0 && !selectedVoiceId && !storyData.elevenLabsVoiceId) || isLoading.narrationUpload;
+  const isNarrationButtonDisabled = narrationSource === 'upload' ||
+                                  (isLoading.narration && processingAllMode) || // Disable main button if "all" is processing
+                                  !storyData.generatedScript ||
+                                  (narrationSource === 'generate' && elevenLabsVoices.length > 0 && !selectedVoiceId && !storyData.elevenLabsVoiceId && (!storyData.narrationChunks || storyData.narrationChunks.length === 0)) ||
+                                  isLoading.narrationUpload;
+
+  const isIndividualChunkButtonDisabled = (chunk: NarrationChunk, index: number): boolean => {
+    if (narrationSource === 'upload') return true;
+    if (!selectedVoiceId && !storyData.elevenLabsVoiceId) return true; // No voice selected
+    if (processingAllMode) return true; // "Generate All" sequence is active, disable individual buttons to prevent interference
+    
+    // Disable if global loading is on for a *different* chunk or for the main "generate all" button (before sequence starts)
+    if (isLoading.narration && currentNarrationChunkIndex !== index && currentNarrationChunkIndex !== -1) return true;
+    // Disable if this specific chunk is currently being processed via the main "generate all" flow
+    if (isLoading.narration && currentNarrationChunkIndex === index && processingAllMode) return true;
+
+
+    // The button text changes to "Re-generate" if chunk.audioUrl exists, so we don't disable based on that.
+    // Allow clicking if this specific chunk is loading via its own button.
+    if (isLoading.narration && currentNarrationChunkIndex === index && !processingAllMode) return false;
+
+
+    return false; // Otherwise, enable
+  };
 
 
   return (
@@ -843,9 +1131,40 @@ const parseNamedPrompts = (rawPrompts: string | undefined, type: 'Character' | '
                     {storyData.generatedScript !== undefined ? 'Re-generate Script &amp; Title' : 'Generate Script &amp; Title'}
                     </Button>
                     {storyData.generatedScript !== undefined && (
-                        <Button 
-                            variant="outline" 
-                            onClick={() => setIsScriptManuallyEditing(!isScriptManuallyEditing)}
+                        <Button
+                            variant="outline"
+                            onClick={async () => {
+                              if (isScriptManuallyEditing && storyData.generatedScript) {
+                                // When done editing, regenerate the script chunks using AI
+                                handleSetLoading('scriptChunksUpdate', true);
+                                try {
+                                  const narrationChunks = await prepareScriptChunksAI(storyData.generatedScript);
+                                  updateStoryData({
+                                    // scriptChunks: regeneratedScriptChunks, // Deprecate if narrationChunks has text
+                                    narrationChunks
+                                  });
+                                  toast({
+                                    title: 'Script Chunks Updated (AI)',
+                                    description: `AI created ${narrationChunks.length} chunks for narration.`,
+                                    className: 'bg-primary text-primary-foreground'
+                                  });
+                                } catch (error) {
+                                  console.error("Error updating script chunks with AI:", error);
+                                  toast({ title: 'Error Updating Chunks', description: 'Could not update script chunks using AI.', variant: 'destructive' });
+                                  // Optionally, fall back to simple splitting or leave chunks as they were
+                                  // const simpleNarrationChunks = prepareScriptChunksSimple(storyData.generatedScript);
+                                  // updateStoryData({ narrationChunks: simpleNarrationChunks });
+                                  // toast({ title: 'Script Chunks Updated (Simple)', description: `Used simple splitting: ${simpleNarrationChunks.length} chunks.`, variant: 'default' });
+                                } finally {
+                                  handleSetLoading('scriptChunksUpdate', false);
+                                }
+                              } else if (isScriptManuallyEditing && !storyData.generatedScript) {
+                                // Handle case where script might be empty after editing
+                                updateStoryData({ narrationChunks: [] });
+                                toast({ title: 'Script Empty', description: 'Script is empty, no chunks generated.', variant: 'default' });
+                              }
+                              setIsScriptManuallyEditing(!isScriptManuallyEditing);
+                            }}
                             disabled={isLoading.script}
                         >
                             <Edit2 className="mr-2 h-4 w-4" />
@@ -1013,8 +1332,31 @@ const parseNamedPrompts = (rawPrompts: string | undefined, type: 'Character' | '
                             </Select>
                           </div>
                         )}
-                        <Button onClick={handleGenerateNarration} disabled={isNarrationButtonDisabled} className="bg-accent hover:bg-accent/90 text-accent-foreground">
-                            {isLoading.narration ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : (storyData.narrationAudioUrl && storyData.elevenLabsVoiceId ? <Mic className="mr-2 h-4 w-4" /> : <ListMusic className="mr-2 h-4 w-4" />)}
+                        <Button
+                          onClick={() => {
+                            // Determine if we should enter "processing all" mode
+                            // This mode is for sequential generation of all unprocessed chunks.
+                            if (storyData.generatedScript && (!storyData.narrationChunks || storyData.narrationChunks.length === 0)) {
+                                // Case: Script exists, but chunks haven't been prepared yet.
+                                // handleGenerateNarration will prepare them first. Then user might need to click again.
+                                // Or, we can set processingAllMode to true if voice is selected, to auto-start after chunk prep.
+                                if (selectedVoiceId || storyData.elevenLabsVoiceId) {
+                                   setProcessingAllMode(true);
+                                }
+                            } else if (storyData.narrationChunks && storyData.narrationChunks.some(c => !c.audioUrl)) {
+                                // Case: Chunks exist, and some are unprocessed.
+                                setProcessingAllMode(true);
+                            } else if (storyData.narrationChunks && storyData.narrationChunks.every(c => c.audioUrl)) {
+                                // Case: All chunks have audio; this implies re-generate all.
+                                setProcessingAllMode(true);
+                            }
+                            handleGenerateNarration(); // Call without index for "Generate All" / preparation logic
+                          }}
+                          disabled={isNarrationButtonDisabled || (isLoading.narration && processingAllMode)} // Disable if already processing all via this button
+                          className="bg-accent hover:bg-accent/90 text-accent-foreground"
+                        >
+                            {/* Show loader if "processing all" mode is active and narration is loading */}
+                            {isLoading.narration && processingAllMode ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ListMusic className="mr-2 h-4 w-4" />}
                             {narrationButtonText()}
                         </Button>
                         {storyData.elevenLabsVoiceId && <p className="text-sm text-muted-foreground mt-1">Using AI voice: {elevenLabsVoices.find(v => v.voice_id === storyData.elevenLabsVoiceId)?.name || storyData.elevenLabsVoiceId}</p>}
@@ -1030,9 +1372,67 @@ const parseNamedPrompts = (rawPrompts: string | undefined, type: 'Character' | '
                         </div>
                     )}
 
-                    {storyData.narrationAudioUrl && (
+                    {/* Display script chunks for narration */}
+                    {storyData.narrationChunks && storyData.narrationChunks.length > 0 && (
+                      <div className="mt-6">
+                        <Label className="block text-md font-medium">Script Chunks for Narration</Label>
+                        <div className="space-y-3 mt-2 max-h-96 overflow-y-auto pr-2 rounded-md border p-3 bg-muted/20">
+                          {storyData.narrationChunks.map((chunk, index) => (
+                            <div key={chunk.id} className={`p-3 border rounded-md ${currentNarrationChunkIndex === index && isLoading.narration ? 'border-primary bg-primary/10 ring-2 ring-primary' : 'bg-card/50'}`}>
+                              <div className="flex justify-between items-start mb-1">
+                                <p className="text-sm font-semibold">Chunk {index + 1}</p>
+                                <div className="flex items-center space-x-2">
+                                  {currentNarrationChunkIndex === index && isLoading.narration && (
+                                    <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                                  )}
+                                  {chunk.audioUrl && !(currentNarrationChunkIndex === index && isLoading.narration) && (
+                                    <CheckCircle className="h-5 w-5 text-green-500" />
+                                  )}
+                                </div>
+                              </div>
+                              <p className="text-xs text-muted-foreground mb-2">{chunk.text}</p>
+                              
+                              {/* Individual Chunk Audio Player */}
+                              {chunk.audioUrl && (
+                                <div className="mt-2 mb-2">
+                                  <audio controls src={chunk.audioUrl} className="w-full h-8" style={{ height: '32px' }}>
+                                    Your browser does not support the audio element.
+                                  </audio>
+                                  {chunk.duration && (
+                                    <p className="text-xs text-muted-foreground mt-1">Duration: {chunk.duration.toFixed(1)}s</p>
+                                  )}
+                                </div>
+                              )}
+
+                              {/* Button to generate/re-generate audio for this specific chunk */}
+                              {narrationSource === 'generate' && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => handleGenerateNarration(index)} // Pass the specific chunk index
+                                  disabled={isIndividualChunkButtonDisabled(chunk, index)}
+                                  className="text-xs py-1 h-auto"
+                                >
+                                  {/* Show loader if this specific chunk is processing (currentNarrationChunkIndex === index && isLoading.narration) */}
+                                  {currentNarrationChunkIndex === index && isLoading.narration ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Mic className="mr-1 h-3 w-3" />}
+                                  {chunk.audioUrl ? 'Re-generate Audio' : 'Generate Audio'}
+                                </Button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                        {storyData.narrationAudioDurationSeconds && storyData.narrationAudioDurationSeconds > 0 && (
+                          <p className="text-sm font-semibold text-primary mt-2">
+                            Total Estimated Narration Duration: {storyData.narrationAudioDurationSeconds.toFixed(1)} seconds
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Legacy single audio player for backward compatibility - show only if no narrationChunks array or it's empty AND old URL exists */}
+                    {storyData.narrationAudioUrl && (!storyData.narrationChunks || storyData.narrationChunks.length === 0) && (
                         <div className="mt-6">
-                            <Label className="block text-md font-medium">Current Narration Audio</Label>
+                            <Label className="block text-md font-medium">Current Narration Audio (Legacy)</Label>
                              <audio controls src={storyData.narrationAudioUrl} key={storyData.narrationAudioUrl} className="w-full mt-1">Your browser does not support the audio element.</audio>
                              <p className="text-sm text-muted-foreground mt-1">Duration: {storyData.narrationAudioDurationSeconds?.toFixed(2) || 'N/A'} seconds</p>
                         </div>
@@ -1049,23 +1449,20 @@ const parseNamedPrompts = (rawPrompts: string | undefined, type: 'Character' | '
                 </div>
               </AccordionTrigger>
               <AccordionContent className="pt-4 space-y-4">
-                {storyData.narrationAudioUrl ? (
+                {(storyData.narrationAudioUrl || (storyData.narrationChunks && storyData.narrationChunks.length > 0 && storyData.narrationChunks.every(c => c.audioUrl))) ? (
                   <div>
-                     <p className="text-sm text-muted-foreground mt-1">Audio Duration: {storyData.narrationAudioDurationSeconds?.toFixed(2) || 'N/A'} seconds. Based on this, we'll generate prompts for images.</p>
-                    <div className="mt-4">
-                        <Label htmlFor="imagesPerMinute" className="block text-md font-medium">Images per Minute of Audio</Label>
-                        <Input
-                            type="number"
-                            id="imagesPerMinute"
-                            value={imagesPerMinute}
-                            onChange={(e) => setImagesPerMinute(Math.max(1, parseInt(e.target.value,10) || 1))}
-                            min="1"
-                            max="20"
-                            className="w-32 mt-1"
-                        />
-                    </div>
+                     <p className="text-sm text-muted-foreground mt-1">
+                       {storyData.narrationChunks && storyData.narrationChunks.length > 0
+                         ? `Based on ${storyData.narrationChunks.length} narration chunk(s), we'll generate corresponding image prompts.`
+                         : `Audio Duration: ${storyData.narrationAudioDurationSeconds?.toFixed(2) || 'N/A'} seconds. Based on this, we'll generate prompts for images.`}
+                     </p>
+                    {/* Removed Images per Minute Input Field */}
 
-                    <Button onClick={handleGenerateImagePrompts} disabled={isLoading.imagePrompts || !storyData.narrationAudioDurationSeconds} className="mt-4 bg-accent hover:bg-accent/90 text-accent-foreground">
+                    <Button
+                      onClick={handleGenerateImagePrompts}
+                      disabled={isLoading.imagePrompts || !(storyData.narrationAudioDurationSeconds || (storyData.narrationChunks && storyData.narrationChunks.length > 0))}
+                      className="mt-4 bg-accent hover:bg-accent/90 text-accent-foreground"
+                    >
                       {isLoading.imagePrompts ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <LucideImage className="mr-2 h-4 w-4" />}
                       {storyData.imagePrompts && storyData.imagePrompts.length > 0 ? 'Re-generate Image Prompts' : 'Generate Image Prompts'}
                     </Button>

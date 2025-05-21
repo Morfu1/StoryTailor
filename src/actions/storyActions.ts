@@ -10,6 +10,8 @@ import type { GenerateScriptInput } from '@/ai/flows/generate-script';
 import { generateScript as aiGenerateScript } from '@/ai/flows/generate-script';
 import type { GenerateTitleInput } from '@/ai/flows/generate-title';
 import { generateTitle as aiGenerateTitle } from '@/ai/flows/generate-title';
+import type { GenerateScriptChunksInput } from '@/ai/flows/generate-script-chunks';
+import { generateScriptChunks as aiGenerateScriptChunks } from '@/ai/flows/generate-script-chunks';
 import { firebaseAdmin, dbAdmin } from '@/lib/firebaseAdmin';
 import type { Story, ElevenLabsVoice } from '@/types/story';
 import type { Timestamp as AdminTimestamp } from 'firebase-admin/firestore';
@@ -93,9 +95,21 @@ function getMp3DurationFromDataUri(dataUri: string): number {
 }
 
 
-export async function generateNarrationAudio(input: GenerateNarrationAudioInput): Promise<{ success: boolean; data?: { audioDataUri?: string; voices?: ElevenLabsVoice[]; duration?: number }; error?: string }> {
+// Define a new input type for the server action that includes storage parameters
+export interface GenerateNarrationAudioActionInput extends GenerateNarrationAudioInput {
+  userId?: string;
+  storyId?: string;
+  chunkId?: string; // Or chunkIndex: number
+}
+
+export async function generateNarrationAudio(actionInput: GenerateNarrationAudioActionInput): Promise<{ success: boolean; data?: { audioStorageUrl?: string; voices?: ElevenLabsVoice[]; duration?: number }; error?: string }> {
   try {
-    const result: GenerateNarrationAudioOutput = await aiGenerateNarrationAudio(input);
+    // Prepare input for the AI flow (only script and voiceId)
+    const aiFlowInput: GenerateNarrationAudioInput = {
+      script: actionInput.script,
+      voiceId: actionInput.voiceId,
+    };
+    const result: GenerateNarrationAudioOutput = await aiGenerateNarrationAudio(aiFlowInput);
 
     if (result.error) {
       return { success: false, error: result.error };
@@ -103,14 +117,35 @@ export async function generateNarrationAudio(input: GenerateNarrationAudioInput)
 
     if (result.audioDataUri) {
       const duration = getMp3DurationFromDataUri(result.audioDataUri);
-      return { success: true, data: { audioDataUri: result.audioDataUri, duration } };
+      // If userId, storyId, and chunkId are provided, upload to storage
+      if (actionInput.userId && actionInput.storyId && actionInput.chunkId) {
+        try {
+          const filename = `narration_chunk_${actionInput.chunkId}.mp3`;
+          const storageUrl = await uploadAudioToFirebaseStorage(result.audioDataUri, actionInput.userId, actionInput.storyId, filename);
+          console.log(`Uploaded narration chunk ${actionInput.chunkId} to: ${storageUrl}`);
+          return { success: true, data: { audioStorageUrl: storageUrl, duration } };
+        } catch (uploadError) {
+          console.error(`Failed to upload narration chunk ${actionInput.chunkId} to Firebase Storage:`, uploadError);
+          // Fallback: return data URI if upload fails? Or just error? For now, error.
+          return { success: false, error: `Failed to upload audio for chunk ${actionInput.chunkId}: ${(uploadError as Error).message}` };
+        }
+      } else {
+        // This case should ideally not happen if we always want to store generated audio for chunks.
+        // If it's just listing voices, this part is skipped.
+        // If it's generating audio but without storage info, it's a problem for document size.
+        // For now, we'll assume if audioDataUri is present, storage info should also be present for chunks.
+        // However, the voice listing part of the flow doesn't produce audioDataUri.
+        console.warn("generateNarrationAudio action: audioDataUri present but missing userId, storyId, or chunkId for storage. Returning data URI (not recommended for chunks).");
+        // To strictly enforce storage for generated audio, we might error here if storage params are missing.
+        // For now, to maintain compatibility with potential non-chunked use or voice listing:
+        return { success: true, data: { audioStorageUrl: result.audioDataUri, duration } }; // Effectively still a data URI if not uploaded
+      }
     }
     
     if (result.voices) {
       return { success: true, data: { voices: result.voices as ElevenLabsVoice[] } };
     }
     
-    // Should not happen if schema is correct and flow behaves
     return { success: false, error: "Unknown error from narration generation." };
 
   } catch (error) {
@@ -127,6 +162,19 @@ export async function generateImagePrompts(input: GenerateImagePromptsInput) {
   } catch (error) {
     console.error("Error in generateImagePrompts AI flow:", error);
     return { success: false, error: "Failed to generate image prompts." };
+  }
+}
+
+export async function generateScriptChunks(input: GenerateScriptChunksInput) {
+  try {
+    const result = await aiGenerateScriptChunks(input);
+    if (result.error) {
+      return { success: false, error: result.error };
+    }
+    return { success: true, data: { scriptChunks: result.scriptChunks } };
+  } catch (error) {
+    console.error("Error in generateScriptChunks action:", error);
+    return { success: false, error: "Failed to generate script chunks." };
   }
 }
 
@@ -597,8 +645,8 @@ async function uploadImageToFirebaseStorage(imageUrl: string, userId: string, st
   }
 }
 
-async function uploadAudioToFirebaseStorage(audioDataUri: string, userId: string, storyId: string): Promise<string> {
-  console.log('[uploadAudioToFirebaseStorage] Initiating audio upload...');
+async function uploadAudioToFirebaseStorage(audioDataUri: string, userId: string, storyId: string, filename: string): Promise<string> {
+  console.log(`[uploadAudioToFirebaseStorage] Initiating audio upload for filename: ${filename}...`);
   if (!firebaseAdmin.apps.length || !firebaseAdmin.app()) {
     console.error("[uploadAudioToFirebaseStorage] CRITICAL: Firebase Admin SDK app is not initialized. Cannot perform storage operations.");
     throw new Error("Firebase Admin SDK app is not initialized for storage operations.");
@@ -624,7 +672,8 @@ async function uploadAudioToFirebaseStorage(audioDataUri: string, userId: string
   const base64Data = audioDataUri.substring('data:audio/mpeg;base64,'.length);
   const audioBuffer = Buffer.from(base64Data, 'base64');
   
-  const filePath = `users/${userId}/stories/${storyId}/narration.mp3`;
+  // Use the provided filename and store chunks in a dedicated subfolder
+  const filePath = `users/${userId}/stories/${storyId}/narration_chunks/${filename}`;
   const file = bucket.file(filePath);
 
   console.log(`[uploadAudioToFirebaseStorage] INFO: Uploading audio buffer (${audioBuffer.length} bytes) to gs://${bucketName}/${filePath}`);
@@ -670,7 +719,8 @@ export async function saveStory(storyData: Story, userId: string): Promise<{ suc
   if (processedStoryData.narrationAudioUrl && processedStoryData.narrationAudioUrl.startsWith('data:audio/mpeg;base64,')) {
     try {
       console.log("[saveStory Action] INFO: narrationAudioUrl is a data URI. Attempting upload to Firebase Storage.");
-      const storageUrl = await uploadAudioToFirebaseStorage(processedStoryData.narrationAudioUrl, userId, storyIdForPath);
+      const defaultFilename = "uploaded_narration.mp3"; // Or simply "narration.mp3"
+      const storageUrl = await uploadAudioToFirebaseStorage(processedStoryData.narrationAudioUrl, userId, storyIdForPath, defaultFilename);
       processedStoryData.narrationAudioUrl = storageUrl; // Update with the actual storage URL
       newNarrationUrl = storageUrl;
       console.log("[saveStory Action] SUCCESS: Audio successfully uploaded. narrationAudioUrl updated to Firebase Storage URL:", storageUrl);

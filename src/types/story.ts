@@ -77,4 +77,14 @@ export interface Story {
   // videoUrl?: string; // For future video assembly
   createdAt?: Timestamp | Date; // Stored as Firestore Timestamp, hydrated as Date
   updatedAt?: Timestamp | Date; // Stored as Firestore Timestamp, hydrated as Date
+  
+  // New fields for chunked narration
+  scriptChunks?: string[]; // The script split into chunks for narration
+  narrationChunks?: {
+    id: string;
+    text: string;
+    audioUrl?: string;
+    duration?: number;
+    index: number;
+  }[]; // Audio narration for each script chunk
 }
