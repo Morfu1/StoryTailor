@@ -325,7 +325,9 @@ export async function getStory(storyId: string, userId: string): Promise<{ succe
 }
 
 export async function generateImageFromPrompt(
-  originalPrompt: string
+  originalPrompt: string,
+  userId?: string,
+  storyId?: string
 ): Promise<{ success: boolean; imageUrl?: string; error?: string; requestPrompt?: string }> {
   const apiKey = process.env.PICSART_API_KEY;
 
@@ -384,11 +386,60 @@ export async function generateImageFromPrompt(
     // PicsArt text2image POST call returns 202 Accepted with an inference_id for async processing.
     if (response.status === 202 && result.status === 'ACCEPTED' && result.inference_id) {
       console.log(`PicsArt API job accepted with inference ID: ${result.inference_id}. Starting polling.`);
-      return await pollForPicsArtImage(result.inference_id, apiKey!, requestPrompt); // apiKey is checked for null/undefined at the start
+      const pollResult = await pollForPicsArtImage(result.inference_id, apiKey!, requestPrompt); // apiKey is checked for null/undefined at the start
+      
+      // If image generation was successful and we have userId and storyId, upload to Firebase Storage
+      if (pollResult.success && pollResult.imageUrl && userId && storyId) {
+        try {
+          // Create a safe filename from the prompt
+          const safePrompt = originalPrompt.substring(0, 30).replace(/[^a-z0-9]/gi, '_').toLowerCase();
+          const imageName = `${Date.now()}_${safePrompt}`;
+          
+          // Upload the image to Firebase Storage
+          const firebaseUrl = await uploadImageToFirebaseStorage(pollResult.imageUrl, userId, storyId, imageName);
+          
+          // Return the Firebase Storage URL instead of the original URL
+          return {
+            success: true,
+            imageUrl: firebaseUrl,
+            requestPrompt: pollResult.requestPrompt
+          };
+        } catch (uploadError) {
+          console.error("Error uploading image to Firebase Storage:", uploadError);
+          // If upload fails, still return the original URL so the user can see the image
+          return pollResult;
+        }
+      }
+      
+      return pollResult;
     } else if (response.ok && result.data && Array.isArray(result.data) && result.data.length > 0 && result.data[0].url) {
       // This handles a less likely case where the API might return image data directly on a successful POST (e.g. status 200).
       // The primary documentation for text2image suggests a 202 response.
       console.log("PicsArt API returned image data directly on POST:", result.data[0].url);
+      
+      // If we have userId and storyId, upload to Firebase Storage
+      if (userId && storyId) {
+        try {
+          // Create a safe filename from the prompt
+          const safePrompt = originalPrompt.substring(0, 30).replace(/[^a-z0-9]/gi, '_').toLowerCase();
+          const imageName = `${Date.now()}_${safePrompt}`;
+          
+          // Upload the image to Firebase Storage
+          const firebaseUrl = await uploadImageToFirebaseStorage(result.data[0].url, userId, storyId, imageName);
+          
+          // Return the Firebase Storage URL instead of the original URL
+          return {
+            success: true,
+            imageUrl: firebaseUrl,
+            requestPrompt
+          };
+        } catch (uploadError) {
+          console.error("Error uploading image to Firebase Storage:", uploadError);
+          // If upload fails, still return the original URL so the user can see the image
+          return { success: true, imageUrl: result.data[0].url, requestPrompt };
+        }
+      }
+      
       return { success: true, imageUrl: result.data[0].url, requestPrompt };
     } else {
       // If POST was 'ok' (2xx) but not the expected 202 with 'ACCEPTED' status & inference_id,
@@ -490,7 +541,61 @@ async function pollForPicsArtImage(
   return { success: false, error: "Image generation timed out after polling.", requestPrompt };
 }
 
+// Function to upload image to Firebase Storage
+async function uploadImageToFirebaseStorage(imageUrl: string, userId: string, storyId: string, imageName: string): Promise<string> {
+  console.log('[uploadImageToFirebaseStorage] Initiating image upload...');
+  if (!firebaseAdmin.apps.length || !firebaseAdmin.app()) {
+    console.error("[uploadImageToFirebaseStorage] CRITICAL: Firebase Admin SDK app is not initialized. Cannot perform storage operations.");
+    throw new Error("Firebase Admin SDK app is not initialized for storage operations.");
+  }
+  const adminAppInstance = firebaseAdmin.app();
+  const storage = getAdminStorage(adminAppInstance);
 
+  const bucketName = process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET;
+
+  if (!bucketName || bucketName.trim() === "") {
+    console.error("[uploadImageToFirebaseStorage] CRITICAL: NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET environment variable is not set or is empty. Cannot determine storage bucket.");
+    throw new Error("Firebase Storage bucket name is not configured. Please set NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET in your .env.local file.");
+  }
+  console.log(`[uploadImageToFirebaseStorage] INFO: Attempting to use Firebase Storage bucket: '${bucketName}'`);
+
+  const bucket = storage.bucket(bucketName);
+
+  try {
+    // Fetch the image from the URL
+    const response = await fetch(imageUrl);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch image from URL: ${response.statusText}`);
+    }
+    
+    const imageBuffer = Buffer.from(await response.arrayBuffer());
+    const contentType = response.headers.get('content-type') || 'image/jpeg';
+    
+    // Create a unique file path for the image
+    const filePath = `users/${userId}/stories/${storyId}/images/${imageName}.jpg`;
+    const file = bucket.file(filePath);
+
+    console.log(`[uploadImageToFirebaseStorage] INFO: Uploading image buffer (${imageBuffer.length} bytes) to gs://${bucketName}/${filePath}`);
+
+    await file.save(imageBuffer, {
+      metadata: {
+        contentType: contentType,
+      },
+    });
+
+    // Using getSignedUrl for better security
+    const [signedUrl] = await file.getSignedUrl({
+      action: 'read',
+      expires: Date.now() + 1000 * 60 * 60 * 24 * 7 // 7 days expiry for simplicity
+    });
+
+    console.log(`[uploadImageToFirebaseStorage] SUCCESS: Image uploaded to ${filePath}. Signed URL (valid for 7 days): ${signedUrl}`);
+    return signedUrl;
+  } catch (error) {
+    console.error("[uploadImageToFirebaseStorage] ERROR: Failed to upload image:", error);
+    throw error;
+  }
+}
 
 async function uploadAudioToFirebaseStorage(audioDataUri: string, userId: string, storyId: string): Promise<string> {
   console.log('[uploadAudioToFirebaseStorage] Initiating audio upload...');

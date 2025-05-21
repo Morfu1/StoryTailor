@@ -322,7 +322,8 @@ const parseNamedPrompts = (rawPrompts: string | undefined, type: 'Character' | '
     setIsGeneratingDetailImage(prev => ({ ...prev, [loadingKey]: true }));
 
     toast({ title: `Generating ${promptType} Image...`, description: `Prompt: "${individualPrompt.substring(0, 50)}..."` });
-    const result = await generateImageFromPrompt(individualPrompt);
+    // Pass userId and storyId to store images in Firebase Storage
+    const result = await generateImageFromPrompt(individualPrompt, storyData.userId, storyData.id);
 
     if (result.success && result.imageUrl && result.requestPrompt) {
       const newImage: GeneratedImage = {
@@ -377,7 +378,8 @@ const parseNamedPrompts = (rawPrompts: string | undefined, type: 'Character' | '
       
       setIsGeneratingDetailImage(prev => ({ ...prev, [key]: true })); // Show individual loading
       toast({ title: `Generating ${type} Image for ${name || `Prompt ${i+1}`}...`, description: `"${description.substring(0, 50)}..."`});
-      const result = await generateImageFromPrompt(description); // Use description as the prompt
+      // Pass userId and storyId to store images in Firebase Storage
+      const result = await generateImageFromPrompt(description, storyData.userId, storyData.id); // Use description as the prompt
       if (result.success && result.imageUrl && result.requestPrompt) {
         newImages = newImages.filter(img => img.originalPrompt !== description); // Remove old if any
         newImages.push({ originalPrompt: description, requestPrompt: result.requestPrompt, imageUrl: result.imageUrl });
@@ -582,7 +584,8 @@ const parseNamedPrompts = (rawPrompts: string | undefined, type: 'Character' | '
 
   const handleGenerateSingleImage = async (prompt: string, index: number) => {
     handleSetLoading(`image-${index}`, true);
-    const result = await generateImageFromPrompt(prompt);
+    // Pass userId and storyId to store images in Firebase Storage
+    const result = await generateImageFromPrompt(prompt, storyData.userId, storyData.id);
     if (result.success && result.imageUrl) {
       const newImage: GeneratedImage = { originalPrompt: prompt, requestPrompt: result.requestPrompt || prompt, imageUrl: result.imageUrl };
       const currentGeneratedImages = Array.isArray(storyData.generatedImages) ? storyData.generatedImages : [];
@@ -626,7 +629,8 @@ const parseNamedPrompts = (rawPrompts: string | undefined, type: 'Character' | '
     const results = await Promise.all(
       imagesToGenerate.map(async ({prompt, index}) => {
         handleSetLoading(`image-${index}`, true);
-        const result = await generateImageFromPrompt(prompt);
+        // Pass userId and storyId to store images in Firebase Storage
+        const result = await generateImageFromPrompt(prompt, storyData.userId, storyData.id);
         handleSetLoading(`image-${index}`, false);
         if (result.success && result.imageUrl) {
           return { prompt, imageUrl: result.imageUrl, requestPrompt: result.requestPrompt, success: true, index };
