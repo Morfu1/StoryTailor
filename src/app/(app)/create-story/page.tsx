@@ -43,6 +43,38 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState, useCallback } from 'react';
 import { cn } from '@/lib/utils';
 
+// Helper function to extract meaningful keywords from text for image prompt variations
+const extractKeywordsFromText = (text: string): string => {
+  if (!text || text.length < 5) return '';
+  
+  // Extract nouns, adjectives, and verbs using basic heuristics
+  // Look for phrases that might represent visual elements
+  const sentences = text.split(/[.!?]\s+/);
+  if (sentences.length === 0) return '';
+  
+  // Find the most descriptive sentence (usually one with the most visual words)
+  const descriptiveSentence = sentences.reduce((best, current) => {
+    const visualWords = (current.match(/(?:look|see|appear|bright|dark|color|red|blue|green|yellow|gold|silver|shine|glow|sparkle|face|eyes|hands|sky|mountain|river|tree|flower|castle|building)/gi) || []).length;
+    const bestVisualWords = (best.match(/(?:look|see|appear|bright|dark|color|red|blue|green|yellow|gold|silver|shine|glow|sparkle|face|eyes|hands|sky|mountain|river|tree|flower|castle|building)/gi) || []).length;
+    return visualWords > bestVisualWords ? current : best;
+  }, sentences[0]);
+  
+  // Extract a key phrase (3-6 words) from the most descriptive sentence
+  const words = descriptiveSentence.split(/\s+/);
+  if (words.length <= 6) return descriptiveSentence.trim();
+  
+  // Find the most interesting segment of the sentence
+  for (let i = 0; i < words.length - 5; i++) {
+    const segment = words.slice(i, i + 6).join(' ');
+    if (segment.match(/(?:look|see|appear|bright|dark|color|red|blue|green|yellow|gold|silver|shine|glow|sparkle|face|eyes|hands|sky|mountain|river|tree|flower|castle|building)/gi)) {
+      return segment.trim();
+    }
+  }
+  
+  // Fallback to a simple 6-word phrase if no visual elements found
+  return words.slice(0, 6).join(' ').trim();
+};
+
 const initialStoryState: Story = {
   userId: '',
   title: '',
@@ -790,10 +822,35 @@ const parseNamedPrompts = (rawPrompts: string | undefined, type: 'Character' | '
         if (imagePrompts.length > storyData.narrationChunks.length) {
           imagePrompts = imagePrompts.slice(0, storyData.narrationChunks.length);
         }
-        // If we have fewer image prompts than chunks, duplicate the last one to fill
+        // If we have fewer image prompts than chunks, generate unique variants for each remaining chunk
         else if (imagePrompts.length < storyData.narrationChunks.length && imagePrompts.length > 0) {
-          while (imagePrompts.length < storyData.narrationChunks.length) {
-            imagePrompts.push(imagePrompts[imagePrompts.length - 1]);
+          const deficit = storyData.narrationChunks.length - imagePrompts.length;
+          const lastChunksToFill = storyData.narrationChunks.slice(imagePrompts.length);
+          
+          // Use the last generated prompt as a base but modify it for each remaining chunk
+          const basePrompt = imagePrompts[imagePrompts.length - 1];
+          
+          for (let i = 0; i < deficit; i++) {
+            const chunkText = lastChunksToFill[i]?.text || '';
+            let newPrompt = basePrompt;
+            
+            // Extract meaningful elements from chunk text to make the prompt unique
+            const keywords = extractKeywordsFromText(chunkText);
+            if (keywords) {
+              // Check if the prompt already contains these elements
+              if (!newPrompt.includes(keywords)) {
+                // Inject new unique elements into the prompt
+                newPrompt = newPrompt.replace(/\.$/, `, with ${keywords}.`);
+              } else {
+                // If keywords already in prompt, add a slight variation
+                newPrompt = `${newPrompt.replace(/\.$/, '')} from a different angle.`;
+              }
+            } else {
+              // Fallback: add a variation indicator
+              newPrompt = `${newPrompt.replace(/\.$/, '')} - variation ${i+1}.`;
+            }
+            
+            imagePrompts.push(newPrompt);
           }
         }
       }
