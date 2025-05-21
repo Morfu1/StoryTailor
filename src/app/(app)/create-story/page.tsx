@@ -76,6 +76,7 @@ export default function CreateStoryPage() {
   const [isLocationPromptsEditing, setIsLocationPromptsEditing] = useState(false);
   const [isImagePromptEditing, setIsImagePromptEditing] = useState<boolean[]>([]);
   const [isGeneratingDetailImage, setIsGeneratingDetailImage] = useState<Record<string, boolean>>({});
+  const [firebaseError, setFirebaseError] = useState<string | null>(null);
 
 interface ParsedPrompt {
   name?: string;
@@ -176,19 +177,21 @@ const parseNamedPrompts = (rawPrompts: string | undefined, type: 'Character' | '
 
 
   useEffect(() => {
-    if (authLoading) return; 
+    if (authLoading) return;
     if (!user) {
         router.replace('/login');
         return;
     }
 
     if (user.uid && !storyData.userId) {
-      updateStoryData({ userId: user.uid }); 
+      updateStoryData({ userId: user.uid });
     }
 
     let initialStep = 1;
     if (storyId && user) {
-      setPageLoading(true); 
+      setPageLoading(true);
+      setFirebaseError(null);
+      
       getStory(storyId, user.uid)
         .then(response => {
           if (response.success && response.data) {
@@ -202,13 +205,13 @@ const parseNamedPrompts = (rawPrompts: string | undefined, type: 'Character' | '
                     setStoryData(loadedStory);
                     if (loadedStory.elevenLabsVoiceId) {
                       setSelectedVoiceId(loadedStory.elevenLabsVoiceId);
-                      setNarrationSource('generate'); 
+                      setNarrationSource('generate');
                     } else if (loadedStory.narrationAudioUrl) {
                       setNarrationSource('upload');
                       setUploadedAudioFileName("Previously uploaded audio");
                     }
             
-                    updateStoryData({ 
+                    updateStoryData({
                         generatedScript: loadedStory.generatedScript || undefined,
                         detailsPrompts: loadedStory.detailsPrompts || { characterPrompts: "", itemPrompts: "", locationPrompts: "" }
                     });
@@ -228,19 +231,28 @@ const parseNamedPrompts = (rawPrompts: string | undefined, type: 'Character' | '
 
           } else {
             toast({ title: 'Error Loading Story', description: response.error || 'Failed to load story. Creating a new one.', variant: 'destructive' });
-             setStoryData({...initialStoryState, userId: user.uid, generatedScript: initialStoryState.generatedScript || undefined}); 
+             setStoryData({...initialStoryState, userId: user.uid, generatedScript: initialStoryState.generatedScript || undefined});
              setCurrentStep(1);
              setActiveAccordionItem('step-1');
           }
         })
-        .finally(() => setPageLoading(false)); 
+        .catch(error => {
+          console.error("Firebase connection error:", error);
+          setFirebaseError("Connection to Firebase failed. If you're using an ad blocker or privacy extension, please disable it for this site.");
+          toast({
+            title: 'Firebase Connection Error',
+            description: 'Connection to Firebase failed. If you are using an ad blocker or privacy extension, please disable it for this site.',
+            variant: 'destructive'
+          });
+        })
+        .finally(() => setPageLoading(false));
     } else {
-       setPageLoading(false); 
-       if(user?.uid) { 
+       setPageLoading(false);
+       if(user?.uid) {
         setStoryData(prev => ({...prev, userId: user.uid, generatedScript: prev.generatedScript || undefined}));
        }
-       setCurrentStep(initialStep); 
-       setActiveAccordionItem(`step-${initialStep}`); 
+       setCurrentStep(initialStep);
+       setActiveAccordionItem(`step-${initialStep}`);
     }
   }, [storyId, user, router, toast, authLoading]);
 
@@ -728,6 +740,7 @@ const parseNamedPrompts = (rawPrompts: string | undefined, type: 'Character' | '
 
   return (
     <div className="container mx-auto max-w-5xl py-8">
+      {/* Firebase error banner removed - now handled by FirebaseConnectionStatus component */}
       <Card className="shadow-2xl">
         <CardHeader className="bg-card-foreground/5">
           <CardTitle className="text-3xl font-bold tracking-tight text-primary flex items-center">

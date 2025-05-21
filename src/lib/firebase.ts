@@ -1,7 +1,14 @@
 import { initializeApp, getApps, type FirebaseApp } from 'firebase/app';
 import { getAuth, type Auth } from 'firebase/auth';
-import { getFirestore, type Firestore } from 'firebase/firestore';
-import { getStorage, type FirebaseStorage } from 'firebase/storage'; // Added import for Firebase Storage
+import {
+  getFirestore,
+  type Firestore,
+  connectFirestoreEmulator,
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager
+} from 'firebase/firestore';
+import { getStorage, type FirebaseStorage, connectStorageEmulator } from 'firebase/storage';
 
 // For Firebase JS SDK v7.20.0 and later, measurementId is optional
 // It's crucial to use environment variables for Firebase config in a real application.
@@ -16,15 +23,42 @@ const firebaseConfig = {
 };
 
 let app: FirebaseApp;
-if (!getApps().length) {
-  app = initializeApp(firebaseConfig);
-} else {
-  app = getApps()[0];
+let auth: Auth;
+let db: Firestore;
+let storage: FirebaseStorage;
+
+try {
+  if (!getApps().length) {
+    app = initializeApp(firebaseConfig);
+  } else {
+    app = getApps()[0];
+  }
+
+  auth = getAuth(app);
+  
+  // Initialize Firestore with persistence cache settings
+  // This uses the recommended approach instead of the deprecated enableIndexedDbPersistence()
+  if (typeof window !== 'undefined') {
+    db = initializeFirestore(app, {
+      localCache: persistentLocalCache({
+        tabManager: persistentMultipleTabManager()
+      })
+    }, 'storytailordb');
+  } else {
+    // For server-side rendering, use standard initialization
+    db = getFirestore(app, 'storytailordb');
+  }
+  
+  storage = getStorage(app); // Initialize Firebase Storage
+  
+  console.log('Firebase initialized successfully');
+} catch (error) {
+  console.error('Error initializing Firebase:', error);
+  // Initialize with empty objects to prevent app crashes
+  app = {} as FirebaseApp;
+  auth = {} as Auth;
+  db = {} as Firestore;
+  storage = {} as FirebaseStorage;
 }
 
-const auth: Auth = getAuth(app);
-// Explicitly connect to the 'storytailordb' Firestore instance for the client-side SDK.
-const db: Firestore = getFirestore(app, 'storytailordb');
-const storage: FirebaseStorage = getStorage(app); // Initialize Firebase Storage
-
-export { app, auth, db, storage }; // Export storage
+export { app, auth, db, storage };

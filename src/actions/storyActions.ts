@@ -136,7 +136,7 @@ interface FirebaseErrorWithCode extends Error {
 
 
 // Helper function to check if a URL is a Firebase Storage URL and refresh it if needed
-async function refreshFirebaseStorageUrl(url: string, userId: string, storyId: string): Promise<string | null> {
+async function refreshFirebaseStorageUrl(url: string, userId: string, storyId: string, filePath?: string): Promise<string | null> {
   if (!url || typeof url !== 'string') return null;
   
   // Check if this is a Firebase Storage URL
@@ -155,9 +155,29 @@ async function refreshFirebaseStorageUrl(url: string, userId: string, storyId: s
     const storage = getAdminStorage(adminAppInstance);
     const bucket = storage.bucket(bucketName);
     
-    // Extract the file path from the URL
-    // This is a simplistic approach - in a real app, you might want to store the path separately
-    const filePath = `users/${userId}/stories/${storyId}/narration.mp3`;
+    // If filePath is not provided, try to extract it from the URL or use default path
+    if (!filePath) {
+      // Try to extract the file path from the URL
+      try {
+        // Parse the URL to extract the path
+        const urlObj = new URL(url);
+        const pathMatch = urlObj.pathname.match(/\/o\/(.+?)(?:\?|$)/);
+        if (pathMatch && pathMatch[1]) {
+          // Firebase Storage URLs encode the path, so decode it
+          filePath = decodeURIComponent(pathMatch[1]);
+          console.log(`[refreshFirebaseStorageUrl] Extracted file path from URL: ${filePath}`);
+        } else {
+          // Default to narration.mp3 if path extraction fails
+          filePath = `users/${userId}/stories/${storyId}/narration.mp3`;
+          console.log(`[refreshFirebaseStorageUrl] Using default narration path: ${filePath}`);
+        }
+      } catch (error) {
+        // If URL parsing fails, use default path
+        filePath = `users/${userId}/stories/${storyId}/narration.mp3`;
+        console.log(`[refreshFirebaseStorageUrl] URL parsing failed, using default path: ${filePath}`);
+      }
+    }
+    
     const file = bucket.file(filePath);
     
     // Check if file exists
@@ -191,8 +211,22 @@ export async function getStory(storyId: string, userId: string): Promise<{ succe
     return { success: false, error: "User not authenticated." };
   }
   try {
-    const storyRef = dbAdmin.collection("stories").doc(storyId);
-    const docSnap = await storyRef.get();
+    // Add timeout to detect connection issues faster
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error("Firebase connection timeout")), 10000);
+    });
+    
+    const fetchPromise = async () => {
+      if (!dbAdmin) {
+        throw new Error("Firebase Admin SDK not initialized");
+      }
+      const storyRef = dbAdmin.collection("stories").doc(storyId);
+      const docSnap = await storyRef.get();
+      return { docSnap, storyRef };
+    };
+    
+    // Race between the fetch and the timeout
+    const { docSnap, storyRef } = await Promise.race([fetchPromise(), timeoutPromise]);
 
     if (docSnap.exists) {
       const storyData = docSnap.data();
@@ -221,6 +255,32 @@ export async function getStory(storyId: string, userId: string): Promise<{ succe
         }
       }
       
+      // Refresh the character/item/location image URLs if they exist
+      if (story.generatedImages && Array.isArray(story.generatedImages) && story.generatedImages.length > 0) {
+        let hasUpdatedImages = false;
+        
+        // Create a new array with refreshed URLs
+        const refreshedImages = await Promise.all(story.generatedImages.map(async (image) => {
+          if (image && image.imageUrl) {
+            const refreshedUrl = await refreshFirebaseStorageUrl(image.imageUrl, userId, storyId);
+            if (refreshedUrl) {
+              console.log(`[getStory Action] Refreshed image URL from: ${image.imageUrl} to: ${refreshedUrl}`);
+              hasUpdatedImages = true;
+              return { ...image, imageUrl: refreshedUrl };
+            }
+          }
+          return image;
+        }));
+        
+        // Update the story data with refreshed image URLs
+        if (hasUpdatedImages) {
+          story.generatedImages = refreshedImages;
+          
+          // Update the story in Firestore with the new image URLs
+          await storyRef.update({ generatedImages: refreshedImages });
+        }
+      }
+      
       return { success: true, data: story };
     } else {
       return { success: false, error: "Story not found." };
@@ -229,13 +289,36 @@ export async function getStory(storyId: string, userId: string): Promise<{ succe
     console.error("[getStory Action] Error fetching story from Firestore (Admin SDK):", error);
     let errorMessage = "Failed to fetch story.";
     const firebaseError = error as FirebaseErrorWithCode;
-    if (firebaseError && firebaseError.code) {
+    
+    if (error instanceof Error && error.message === "Firebase connection timeout") {
+      console.error("[getStory Action] Firebase connection timed out. Possible network or ad blocker issue.");
+      return {
+        success: false,
+        error: "Connection to Firebase timed out. If you're using an ad blocker or privacy extension, please disable it for this site."
+      };
+    } else if (firebaseError && firebaseError.code) {
       errorMessage = `Failed to fetch story (Admin SDK): ${firebaseError.message} (Code: ${firebaseError.code})`;
       if (firebaseError.code === 'permission-denied' || (typeof firebaseError.code === 'number' && firebaseError.code === 7)) {
         console.error("[getStory Action] PERMISSION DENIED while fetching. Check Firestore rules and IAM for service account.");
+      } else if (firebaseError.code === 'unavailable' || firebaseError.code === 'resource-exhausted') {
+        return {
+          success: false,
+          error: "Firebase connection unavailable. If you're using an ad blocker or privacy extension, please disable it for this site."
+        };
       }
     } else if (error instanceof Error) {
       errorMessage = `Failed to fetch story (Admin SDK): ${error.message}`;
+      
+      // Check for common connection error patterns
+      if (error.message.includes('network') ||
+          error.message.includes('connection') ||
+          error.message.includes('ERR_BLOCKED_BY_CLIENT') ||
+          error.message.includes('ERR_HTTP2_PROTOCOL_ERROR')) {
+        return {
+          success: false,
+          error: "Firebase connection failed. If you're using an ad blocker or privacy extension, please disable it for this site."
+        };
+      }
     }
     return { success: false, error: errorMessage };
   }
