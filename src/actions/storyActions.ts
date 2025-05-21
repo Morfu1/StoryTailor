@@ -135,6 +135,52 @@ interface FirebaseErrorWithCode extends Error {
 }
 
 
+// Helper function to check if a URL is a Firebase Storage URL and refresh it if needed
+async function refreshFirebaseStorageUrl(url: string, userId: string, storyId: string): Promise<string | null> {
+  if (!url || typeof url !== 'string') return null;
+  
+  // Check if this is a Firebase Storage URL
+  const bucketName = process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET;
+  if (!bucketName || !url.includes(bucketName)) return null;
+  
+  try {
+    console.log(`[refreshFirebaseStorageUrl] Refreshing signed URL for: ${url}`);
+    
+    if (!firebaseAdmin.apps.length || !firebaseAdmin.app()) {
+      console.error("[refreshFirebaseStorageUrl] Firebase Admin SDK app is not initialized.");
+      return null;
+    }
+    
+    const adminAppInstance = firebaseAdmin.app();
+    const storage = getAdminStorage(adminAppInstance);
+    const bucket = storage.bucket(bucketName);
+    
+    // Extract the file path from the URL
+    // This is a simplistic approach - in a real app, you might want to store the path separately
+    const filePath = `users/${userId}/stories/${storyId}/narration.mp3`;
+    const file = bucket.file(filePath);
+    
+    // Check if file exists
+    const [exists] = await file.exists();
+    if (!exists) {
+      console.warn(`[refreshFirebaseStorageUrl] File does not exist at path: ${filePath}`);
+      return null;
+    }
+    
+    // Generate a new signed URL
+    const [signedUrl] = await file.getSignedUrl({
+      action: 'read',
+      expires: Date.now() + 1000 * 60 * 60 * 24 * 7 // 7 days expiry
+    });
+    
+    console.log(`[refreshFirebaseStorageUrl] Generated new signed URL valid for 7 days: ${signedUrl}`);
+    return signedUrl;
+  } catch (error) {
+    console.error("[refreshFirebaseStorageUrl] Error refreshing signed URL:", error);
+    return null;
+  }
+}
+
 export async function getStory(storyId: string, userId: string): Promise<{ success: boolean; data?: Story; error?: string }> {
   if (!dbAdmin) {
     console.error("[getStory Action] Firebase Admin SDK (dbAdmin) is not initialized. Cannot fetch story. Check server logs for firebaseAdmin.ts output.");
@@ -152,7 +198,7 @@ export async function getStory(storyId: string, userId: string): Promise<{ succe
       const storyData = docSnap.data();
       const story = { id: docSnap.id, ...storyData } as Story;
       
-      if (story.userId !== userId && storyData?.['_testMarker'] !== "BASIC_SAVE_TEST_DOCUMENT_V2") { 
+      if (story.userId !== userId && storyData?.['_testMarker'] !== "BASIC_SAVE_TEST_DOCUMENT_V2") {
         console.warn(`[getStory Action] User ${userId} fetched story ${storyId} belonging to ${story.userId}. This is expected if rules permit or for admin access.`);
       }
 
@@ -162,6 +208,19 @@ export async function getStory(storyId: string, userId: string): Promise<{ succe
       if (story.updatedAt && typeof (story.updatedAt as any).toDate === 'function') {
         story.updatedAt = (story.updatedAt as AdminTimestamp).toDate();
       }
+      
+      // Refresh the narration audio URL if it's a Firebase Storage URL
+      if (story.narrationAudioUrl) {
+        const refreshedUrl = await refreshFirebaseStorageUrl(story.narrationAudioUrl, userId, storyId);
+        if (refreshedUrl) {
+          console.log(`[getStory Action] Refreshed narrationAudioUrl from: ${story.narrationAudioUrl} to: ${refreshedUrl}`);
+          story.narrationAudioUrl = refreshedUrl;
+          
+          // Update the story in Firestore with the new URL
+          await storyRef.update({ narrationAudioUrl: refreshedUrl });
+        }
+      }
+      
       return { success: true, data: story };
     } else {
       return { success: false, error: "Story not found." };
