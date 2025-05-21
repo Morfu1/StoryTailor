@@ -458,9 +458,11 @@ const parseNamedPrompts = (rawPrompts: string | undefined, type: 'Character' | '
                     <Image
                       src={existingImage.imageUrl}
                       alt={`Generated image for ${promptType}: ${promptDetail.description.substring(0, 30)}...`}
-                      layout="fill"
-                      objectFit="contain" // or "cover" depending on desired display
+                      fill
+                      sizes="(max-width: 768px) 100vw, 400px"
+                      style={{ objectFit: "contain" }} // Modern replacement for objectFit prop
                       className="bg-muted"
+                      priority // Add priority to prevent LCP warnings
                       unoptimized // If using external URLs like picsum or if optimization causes issues
                     />
                   </div>
