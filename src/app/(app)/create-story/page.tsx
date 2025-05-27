@@ -37,7 +37,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { generateTitle, generateScript, generateCharacterPrompts, generateNarrationAudio, generateImagePrompts, saveStory, getStory, generateImageFromPrompt } from '@/actions/storyActions';
+import { generateTitle, generateScript, generateCharacterPrompts, generateNarrationAudio, generateImagePrompts, saveStory, getStory, generateImageFromPrompt, cleanupBrokenImages } from '@/actions/storyActions';
 import { Bot, Clapperboard, ImageIcon, Loader2, Mic, Save, Sparkles, FileText, Image as LucideImage, AlertCircle, CheckCircle, Info, Pencil, ListMusic, Upload, Film, Edit2, Users, Settings } from 'lucide-react';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -157,6 +157,7 @@ export default function CreateStoryPage() {
   const [firebaseError, setFirebaseError] = useState<string | null>(null);
   const [currentNarrationChunkIndex, setCurrentNarrationChunkIndex] = useState<number>(-1);
   const [processingAllMode, setProcessingAllMode] = useState<boolean>(false); // New state for "Generate All"
+  const [imageProvider, setImageProvider] = useState<'picsart' | 'gemini' | 'imagen3'>('picsart'); // AI provider selection for image generation
 
 interface ParsedPrompt {
   name?: string;
@@ -276,6 +277,12 @@ const parseNamedPrompts = (rawPrompts: string | undefined, type: 'Character' | '
         .then(async response => { // Make the callback async
           if (response.success && response.data) {
                     let loadedStory = response.data; // Use let to allow modification
+                    console.log('=== LOADED STORY FROM FIRESTORE ===');
+                    console.log('Story ID:', storyId);
+                    console.log('Full story data:', loadedStory);
+                    console.log('generatedImages field:', loadedStory.generatedImages);
+                    console.log('generatedImages length:', loadedStory.generatedImages?.length);
+
                      if (loadedStory.createdAt && !(loadedStory.createdAt instanceof Date)) {
                         loadedStory.createdAt = (loadedStory.createdAt as any).toDate();
                     }
@@ -305,7 +312,20 @@ const parseNamedPrompts = (rawPrompts: string | undefined, type: 'Character' | '
                       }
                     }
                     
-                    setStoryData(loadedStory); // This sets the initial loadedStory (potentially with new chunks)
+                    // Auto-clean corrupted images before setting state
+                    if (loadedStory.generatedImages && Array.isArray(loadedStory.generatedImages)) {
+                    const cleanImages = loadedStory.generatedImages.filter(img => 
+                    img.imageUrl && 
+                    !img.imageUrl.includes('.mp3')
+                    );
+                       
+                       if (cleanImages.length !== loadedStory.generatedImages.length) {
+                         console.log(`[Story Load] Auto-cleaned ${loadedStory.generatedImages.length - cleanImages.length} corrupted images`);
+                         loadedStory = { ...loadedStory, generatedImages: cleanImages };
+                       }
+                     }
+                     
+                     setStoryData(loadedStory); // This sets the initial loadedStory (potentially with new chunks and clean images)
 
                     if (loadedStory.elevenLabsVoiceId) {
                       setSelectedVoiceId(loadedStory.elevenLabsVoiceId);
@@ -442,7 +462,7 @@ const parseNamedPrompts = (rawPrompts: string | undefined, type: 'Character' | '
 
     toast({ title: `Generating ${promptType} Image...`, description: `Prompt: "${individualPrompt.substring(0, 50)}..."` });
     // Pass userId and storyId to store images in Firebase Storage
-    const result = await generateImageFromPrompt(individualPrompt, storyData.userId, storyData.id);
+    const result = await generateImageFromPrompt(individualPrompt, storyData.userId, storyData.id, imageProvider);
 
     if (result.success && result.imageUrl && result.requestPrompt) {
       const newImage: GeneratedImage = {
@@ -451,13 +471,27 @@ const parseNamedPrompts = (rawPrompts: string | undefined, type: 'Character' | '
         imageUrl: result.imageUrl,
       };
       // Add to generatedImages, ensuring no duplicates for the exact same originalPrompt
+      const updatedImages = [
+        ...(storyData.generatedImages || []).filter(img => img.originalPrompt !== individualPrompt),
+        newImage,
+      ];
       setStoryData(prev => ({
         ...prev,
-        generatedImages: [
-          ...(prev.generatedImages || []).filter(img => img.originalPrompt !== individualPrompt),
-          newImage,
-        ]
+        generatedImages: updatedImages
       }));
+      
+      // Auto-save the story with the new image
+      if (storyData.id && storyData.userId) {
+        try {
+          const storyToSave = { ...storyData, generatedImages: updatedImages };
+          console.log('Auto-saving story with generatedImages:', storyToSave.generatedImages);
+          await saveStory(storyToSave, storyData.userId);
+          console.log('Auto-saved story with new image');
+        } catch (error) {
+          console.error('Failed to auto-save story:', error);
+        }
+      }
+      
       toast({ title: `${promptType} Image Generated!`, description: `Image for "${individualPrompt.substring(0, 50)}..." is ready.`, className: 'bg-green-500 text-white' });
     } else {
       toast({ title: 'Image Generation Error', description: result.error || `Failed to generate image for "${individualPrompt.substring(0,50)}...".`, variant: 'destructive' });
@@ -498,7 +532,7 @@ const parseNamedPrompts = (rawPrompts: string | undefined, type: 'Character' | '
       setIsGeneratingDetailImage(prev => ({ ...prev, [key]: true })); // Show individual loading
       toast({ title: `Generating ${type} Image for ${name || `Prompt ${i+1}`}...`, description: `"${description.substring(0, 50)}..."`});
       // Pass userId and storyId to store images in Firebase Storage
-      const result = await generateImageFromPrompt(description, storyData.userId, storyData.id); // Use description as the prompt
+      const result = await generateImageFromPrompt(description, storyData.userId, storyData.id, imageProvider); // Use description as the prompt
       if (result.success && result.imageUrl && result.requestPrompt) {
         newImages = newImages.filter(img => img.originalPrompt !== description); // Remove old if any
         newImages.push({ originalPrompt: description, requestPrompt: result.requestPrompt, imageUrl: result.imageUrl });
@@ -511,6 +545,16 @@ const parseNamedPrompts = (rawPrompts: string | undefined, type: 'Character' | '
     }
     
     updateStoryData({ generatedImages: newImages });
+
+    // Auto-save the story with the new images
+    if (storyData.id && storyData.userId && successCount > 0) {
+      try {
+        await saveStory({ ...storyData, generatedImages: newImages }, storyData.userId);
+        console.log(`Auto-saved story with ${successCount} new images`);
+      } catch (error) {
+        console.error('Failed to auto-save story:', error);
+      }
+    }
 
     if (successCount > 0) {
       toast({ title: 'Finished Generating Images!', description: `${successCount} images generated. ${errorCount > 0 ? `${errorCount} errors.` : ''}`, className: errorCount === 0 ? 'bg-green-500 text-white' : 'bg-yellow-500 text-black' });
@@ -540,7 +584,12 @@ const parseNamedPrompts = (rawPrompts: string | undefined, type: 'Character' | '
         {parsedPrompts.map((promptDetail) => {
           const loadingKey = `${promptType}-${promptDetail.originalIndex}`;
           // individualPrompt for image generation is promptDetail.description
-          const existingImage = storyData.generatedImages?.find(img => img.originalPrompt === promptDetail.description);
+          // Find existing image, but filter out corrupted ones (audio files)
+          const existingImage = storyData.generatedImages?.find(img => 
+            img.originalPrompt === promptDetail.description && 
+            img.imageUrl && 
+            !img.imageUrl.includes('.mp3')
+          );
           const isCurrentlyGenerating = isGeneratingDetailImage[loadingKey] || false;
 
           return (
@@ -570,6 +619,21 @@ const parseNamedPrompts = (rawPrompts: string | undefined, type: 'Character' | '
                   <span>Generating image for {promptDetail.name || `${promptType} Prompt ${promptDetail.originalIndex + 1}`}...</span>
                 </div>
               )}
+              {/* Debug: Show any image that might be related */}
+              {!existingImage && storyData.generatedImages && storyData.generatedImages.length > 0 && (
+                <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded">
+                  <p className="text-xs font-medium text-yellow-800">DEBUG: Available images:</p>
+                  {storyData.generatedImages.slice(0, 3).map((img, idx) => (
+                    <div key={idx} className="text-xs text-yellow-700 mt-1">
+                      <strong>Original:</strong> "{img.originalPrompt?.substring(0, 50)}..."
+                      <br />
+                      <strong>Looking for:</strong> "{promptDetail.description.substring(0, 50)}..."
+                      <br />
+                      <strong>Match:</strong> {img.originalPrompt === promptDetail.description ? 'YES' : 'NO'}
+                    </div>
+                  ))}
+                </div>
+              )}
               {existingImage?.imageUrl && (
                 <div className="mt-2">
                   <Label className="text-xs font-medium">Generated Image{promptDetail.name ? ` for ${promptDetail.name}` : ''}:</Label>
@@ -583,8 +647,10 @@ const parseNamedPrompts = (rawPrompts: string | undefined, type: 'Character' | '
                       className="bg-muted"
                       priority // Add priority to prevent LCP warnings
                       unoptimized // If using external URLs like picsum or if optimization causes issues
+
                     />
                   </div>
+
                    <p className="text-xs text-muted-foreground mt-1">Full prompt: "{existingImage.requestPrompt}"</p>
                 </div>
               )}
@@ -981,7 +1047,7 @@ const parseNamedPrompts = (rawPrompts: string | undefined, type: 'Character' | '
   const handleGenerateSingleImage = async (prompt: string, index: number) => {
     handleSetLoading(`image-${index}`, true);
     // Pass userId and storyId to store images in Firebase Storage
-    const result = await generateImageFromPrompt(prompt, storyData.userId, storyData.id);
+    const result = await generateImageFromPrompt(prompt, storyData.userId, storyData.id, imageProvider);
     if (result.success && result.imageUrl) {
       const newImage: GeneratedImage = { originalPrompt: prompt, requestPrompt: result.requestPrompt || prompt, imageUrl: result.imageUrl };
       const currentGeneratedImages = Array.isArray(storyData.generatedImages) ? storyData.generatedImages : [];
@@ -1026,7 +1092,7 @@ const parseNamedPrompts = (rawPrompts: string | undefined, type: 'Character' | '
       imagesToGenerate.map(async ({prompt, index}) => {
         handleSetLoading(`image-${index}`, true);
         // Pass userId and storyId to store images in Firebase Storage
-        const result = await generateImageFromPrompt(prompt, storyData.userId, storyData.id);
+        const result = await generateImageFromPrompt(prompt, storyData.userId, storyData.id, imageProvider);
         handleSetLoading(`image-${index}`, false);
         if (result.success && result.imageUrl) {
           return { prompt, imageUrl: result.imageUrl, requestPrompt: result.requestPrompt, success: true, index };
@@ -1064,6 +1130,82 @@ const parseNamedPrompts = (rawPrompts: string | undefined, type: 'Character' | '
     handleSetLoading('allImages', false);
   };
 
+
+  // Temporary function to clean up broken images
+  // Temporary function to manually add existing images to Firestore
+  const handleLinkExistingImages = async () => {
+    if (!storyData.id || !storyData.userId) {
+      toast({ title: 'Error', description: 'Story ID or User ID missing', variant: 'destructive' });
+      return;
+    }
+
+    handleSetLoading('linkingImages', true);
+    toast({ title: 'Linking existing images...', description: 'Generating proper signed URLs for Firebase Storage images...' });
+
+    // First, let me check the actual images using a simpler approach
+    // I'll generate new images instead of trying to link old ones, since the old ones have access issues
+    
+    try {
+      // For now, just clear the old broken images and show a message
+      const emptyImages: any[] = [];
+      
+      // Update the story to clear broken images
+      const updatedStory = { ...storyData, generatedImages: emptyImages };
+      await saveStory(updatedStory, storyData.userId);
+      
+      // Update the local state
+      setStoryData(prev => ({ ...prev, generatedImages: emptyImages }));
+      
+      toast({ 
+        title: 'Images cleared!', 
+        description: 'Old broken images have been cleared. Please generate new images using the "Generate Image" buttons.',
+        className: 'bg-blue-500 text-white'
+      });
+    } catch (error) {
+      console.error('Error clearing broken images:', error);
+      toast({ title: 'Error', description: 'Failed to clear broken images.', variant: 'destructive' });
+    }
+    
+    handleSetLoading('linkingImages', false);
+  };
+
+  const handleCleanupBrokenImages = async () => {
+    console.log('Starting cleanup process...');
+    console.log('Story Data:', { id: storyData.id, userId: storyData.userId });
+    
+    if (!storyData.userId || !storyData.id) {
+      console.error('Missing Story ID or User ID');
+      toast({ title: 'Error', description: 'Story ID or User ID not available', variant: 'destructive' });
+      return;
+    }
+
+    toast({ title: 'Starting cleanup...', description: 'Removing broken PicsArt images...' });
+
+    try {
+      console.log('Calling cleanupBrokenImages function...');
+      const result = await cleanupBrokenImages(storyData.id, storyData.userId);
+      console.log('Cleanup result:', result);
+      
+      if (result.success) {
+        toast({ title: 'Success', description: 'Cleaned up broken images successfully!' });
+        // Reload the story data
+        console.log('Reloading story data...');
+        const refreshedStory = await getStory(storyData.id, storyData.userId);
+        console.log('Refreshed story result:', refreshedStory);
+        
+        if (refreshedStory.success && refreshedStory.data) {
+          setStoryData(refreshedStory.data);
+          toast({ title: 'Reloaded', description: 'Story data refreshed successfully!' });
+        }
+      } else {
+        console.error('Cleanup failed:', result.error);
+        toast({ title: 'Error', description: result.error || 'Failed to cleanup images', variant: 'destructive' });
+      }
+    } catch (error) {
+      console.error('Error cleaning up broken images:', error);
+      toast({ title: 'Error', description: `Failed to cleanup broken images: ${error}`, variant: 'destructive' });
+    }
+  };
 
   const handleConfirmSaveStory = async () => {
     if (!user || !user.uid || typeof user.uid !== 'string' || user.uid.trim() === '') {
@@ -1342,16 +1484,135 @@ const parseNamedPrompts = (rawPrompts: string | undefined, type: 'Character' | '
                       Using the script generated in Step 1, we will now create detailed descriptions for characters, items, and locations. You can then generate images for each detail.
                     Using the script generated in Step 1, we will now create detailed descriptions for characters, items, and locations. You can then generate images for each detail.
                   </p>
-                  <div className="flex space-x-2 mt-4">
-                    <Button onClick={handleGenerateDetails} disabled={isLoading.details || !storyData.generatedScript} className="bg-accent hover:bg-accent/90 text-accent-foreground">
-                      {isLoading.details ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Bot className="mr-2 h-4 w-4" />}
+                  <div className="flex flex-col space-y-4 mt-4">
+                  <div className="flex space-x-2">
+                  <Button onClick={handleGenerateDetails} disabled={isLoading.details || !storyData.generatedScript} className="bg-accent hover:bg-accent/90 text-accent-foreground">
+                    {isLoading.details ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Bot className="mr-2 h-4 w-4" />}
                       {storyData.detailsPrompts && (storyData.detailsPrompts.characterPrompts || storyData.detailsPrompts.itemPrompts || storyData.detailsPrompts.locationPrompts) ? 'Re-generate Details' : 'Generate Details'}
                     </Button>
-                    {storyData.detailsPrompts && (storyData.detailsPrompts.characterPrompts || storyData.detailsPrompts.itemPrompts || storyData.detailsPrompts.locationPrompts) && (
-                      <Button onClick={handleGenerateAllDetailImages} disabled={isLoading.allDetailImages || isLoading.details} variant="outline">
-                        {isLoading.allDetailImages ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ImageIcon className="mr-2 h-4 w-4" />}
-                        Generate All Detail Images
+                  {storyData.detailsPrompts && (storyData.detailsPrompts.characterPrompts || storyData.detailsPrompts.itemPrompts || storyData.detailsPrompts.locationPrompts) && (
+                  <Button onClick={handleGenerateAllDetailImages} disabled={isLoading.allDetailImages || isLoading.details} variant="outline">
+                    {isLoading.allDetailImages ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ImageIcon className="mr-2 h-4 w-4" />}
+                      Generate All Detail Images
                       </Button>
+                      )}
+                    </div>
+                    
+                    {/* AI Provider Selection for Image Generation */}
+                    <div className="flex items-center space-x-3">
+                      <Label htmlFor="image-provider" className="text-sm font-medium whitespace-nowrap">
+                        Image Generation AI:
+                      </Label>
+                      <Select value={imageProvider} onValueChange={(value: 'picsart' | 'gemini' | 'imagen3') => setImageProvider(value)}>
+                        <SelectTrigger className="w-56">
+                          <SelectValue placeholder="Select AI provider" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="picsart">PicsArt AI</SelectItem>
+                          <SelectItem value="gemini">Google Gemini 2.0</SelectItem>
+                          <SelectItem value="imagen3">Google Imagen 3 (16:9)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <span className="text-xs text-muted-foreground">
+                        Choose AI provider for image generation
+                      </span>
+                    </div>
+                    
+                    {/* Temporary cleanup button for broken images */}
+                    {storyData.id === 'l4aMUPsc7MTMZ8QOhB41' && (
+                      <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
+                        <p className="text-sm text-yellow-800 mb-2">
+                          <strong>Fix for this story:</strong> Clean up broken PicsArt image URLs
+                        </p>
+                        <div className="flex gap-2">
+                          <Button 
+                            onClick={handleLinkExistingImages} 
+                            variant="outline" 
+                            size="sm"
+                            className="text-green-700 border-green-300 hover:bg-green-100 mr-2"
+                            disabled={isLoading.linkingImages}
+                          >
+                            {isLoading.linkingImages ? (
+                              <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                            ) : (
+                              '🔗'
+                            )} Clear Broken Images
+                          </Button>
+                          <Button 
+                            onClick={handleCleanupBrokenImages} 
+                            variant="outline" 
+                            size="sm"
+                            className="text-yellow-700 border-yellow-300 hover:bg-yellow-100"
+                          >
+                            🧹 Clean Up Broken Images
+                          </Button>
+                          <Button 
+                            onClick={() => {
+                              console.log('=== FULL STORY DATA DEBUG ===');
+                              console.log('Current story data:', storyData);
+                              console.log('Generated images:', storyData.generatedImages);
+                              
+                              // Check all possible image properties
+                              console.log('Image prompts:', storyData.imagePrompts);
+                              console.log('Details prompts:', storyData.detailsPrompts);
+                              
+                              // Deep inspection of all story properties
+                              Object.keys(storyData).forEach(key => {
+                                const value = (storyData as any)[key];
+                                if (Array.isArray(value)) {
+                                  console.log(`${key} (array):`, value);
+                                  value.forEach((item, index) => {
+                                    if (item && typeof item === 'object' && item.imageUrl) {
+                                      console.log(`  [${index}] imageUrl:`, item.imageUrl);
+                                      if (item.imageUrl.includes('aicdn.picsart.com')) {
+                                        console.log(`    ⚠️  BROKEN PICSART URL FOUND IN ${key}[${index}]`);
+                                      }
+                                    }
+                                  });
+                                }
+                              });
+                              
+                              // Check for audio files being misplaced as images
+                              console.log('Narration audio URL:', storyData.narrationAudioUrl);
+                              if (storyData.narrationAudioUrl && storyData.narrationAudioUrl.includes('.mp3')) {
+                                console.log('⚠️  Audio file detected in narrationAudioUrl - this should not be displayed as image');
+                              }
+                              
+                              if (storyData.generatedImages) {
+                                // Fix the major issue: audio files in image URLs
+                                const audioCorruptedImages = storyData.generatedImages.filter(img => 
+                                  img.imageUrl && img.imageUrl.includes('.mp3')
+                                );
+                                console.log('🚨 FOUND CORRUPTED IMAGES (audio files):', audioCorruptedImages);
+                                
+                                const brokenImages = storyData.generatedImages.filter(img => 
+                                  img.imageUrl && img.imageUrl.includes('aicdn.picsart.com')
+                                );
+                                console.log('Found broken PicsArt URLs in generatedImages:', brokenImages);
+                                
+                                // Manual cleanup - remove both audio-corrupted and broken PicsArt images
+                                const cleanImages = storyData.generatedImages.filter(img => 
+                                  img.imageUrl && 
+                                  !img.imageUrl.includes('aicdn.picsart.com') && 
+                                  !img.imageUrl.includes('.mp3')
+                                );
+                                
+                                console.log('Clean images after filtering:', cleanImages);
+                                updateStoryData({ generatedImages: cleanImages });
+                                toast({ 
+                                  title: 'Fixed corruption!', 
+                                  description: `Removed ${audioCorruptedImages.length} corrupted audio refs + ${brokenImages.length} broken PicsArt URLs` 
+                                });
+                              }
+                            }} 
+                            variant="outline" 
+                            size="sm"
+                            className="text-blue-700 border-blue-300 hover:bg-blue-100"
+                          >
+                            🔍 Manual Fix
+                          </Button>
+                        </div>
+                      </div>
                     )}
                   </div>
 

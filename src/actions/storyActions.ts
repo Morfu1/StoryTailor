@@ -18,6 +18,19 @@ import type { Timestamp as AdminTimestamp } from 'firebase-admin/firestore';
 import { getStorage as getAdminStorage } from 'firebase-admin/storage';
 import { revalidatePath } from 'next/cache';
 
+// Environment variable getters to prevent serialization issues
+function getGeminiApiKey(): string | undefined {
+  return process.env?.GEMINI_API_KEY;
+}
+
+function getPicsartApiKey(): string | undefined {
+  return process.env?.PICSART_API_KEY;
+}
+
+function getStorageBucket(): string | undefined {
+  return process.env?.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET;
+}
+
 // Log dbAdmin status when this module is loaded (server-side)
 console.log('---------------------------------------------------------------------');
 console.log('[storyActions Module Load] Checking dbAdmin status...');
@@ -205,7 +218,7 @@ async function refreshFirebaseStorageUrl(url: string, userId: string, storyId: s
   if (!url || typeof url !== 'string') return null;
   
   // Check if this is a Firebase Storage URL
-  const bucketName = process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET;
+  const bucketName = getStorageBucket();
   if (!bucketName || !url.includes(bucketName)) return null;
   
   try {
@@ -389,14 +402,215 @@ export async function getStory(storyId: string, userId: string): Promise<{ succe
   }
 }
 
-export async function generateImageFromPrompt(
+export async function generateImageFromGemini(
   originalPrompt: string,
   userId?: string,
   storyId?: string
 ): Promise<{ success: boolean; imageUrl?: string; error?: string; requestPrompt?: string }> {
-  const apiKey = process.env.PICSART_API_KEY;
+  const apiKey = getGeminiApiKey();
 
   if (!apiKey) {
+    console.error("Gemini API key is not configured.");
+    return { success: false, error: "Gemini API key is not configured." };
+  }
+
+  const styles = "3D, Cartoon, High Quality, 16:9 aspect ratio, detailed, sharp, professional photography";
+  const requestPrompt = originalPrompt ? `${originalPrompt}, ${styles}` : styles;
+
+  try {
+    console.log(`Calling Gemini API with prompt: "${requestPrompt}"`);
+    
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-preview-image-generation:generateContent?key=${apiKey}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        contents: [{
+          parts: [
+            { text: requestPrompt }
+          ]
+        }],
+        generationConfig: { responseModalities: ["TEXT", "IMAGE"] }
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("Gemini API Error Response:", errorText);
+      return { success: false, error: `Gemini API request failed: ${response.status}`, requestPrompt };
+    }
+
+    const result = await response.json();
+    console.log("Gemini API Response:", result);
+
+    // Extract image data from response
+    const candidate = result.candidates?.[0];
+    const parts = candidate?.content?.parts || [];
+    
+    let imageData = null;
+    for (const part of parts) {
+      if (part.inlineData && part.inlineData.data) {
+        imageData = part.inlineData.data;
+        break;
+      }
+    }
+
+    if (!imageData) {
+      return { success: false, error: "No image data returned from Gemini API", requestPrompt };
+    }
+
+    // Convert base64 to blob URL or upload to Firebase
+    if (userId && storyId) {
+      try {
+        // Create a safe filename from the prompt
+        const safePrompt = originalPrompt.substring(0, 30).replace(/[^a-z0-9]/gi, '_').toLowerCase();
+        const imageName = `gemini_${Date.now()}_${safePrompt}`;
+        
+        // Convert base64 to buffer and upload to Firebase Storage
+        const imageBuffer = Buffer.from(imageData, 'base64');
+        const firebaseUrl = await uploadImageBufferToFirebaseStorage(imageBuffer, userId, storyId, imageName, 'image/png');
+        
+        return {
+          success: true,
+          imageUrl: firebaseUrl,
+          requestPrompt
+        };
+      } catch (uploadError) {
+        console.error("Error uploading image to Firebase Storage:", uploadError);
+        // If upload fails, return base64 data URL
+        return { 
+          success: true, 
+          imageUrl: `data:image/png;base64,${imageData}`, 
+          requestPrompt 
+        };
+      }
+    }
+    
+    return { 
+      success: true, 
+      imageUrl: `data:image/png;base64,${imageData}`, 
+      requestPrompt 
+    };
+
+  } catch (error: any) {
+    console.error("Error calling Gemini API:", error);
+    return { success: false, error: error.message || "An unknown error occurred while generating the image.", requestPrompt };
+  }
+}
+
+export async function generateImageFromImagen3(
+  originalPrompt: string,
+  userId?: string,
+  storyId?: string
+): Promise<{ success: boolean; imageUrl?: string; error?: string; requestPrompt?: string }> {
+  const apiKey = getGeminiApiKey();
+
+  if (!apiKey) {
+    console.error("Gemini API key is not configured.");
+    return { success: false, error: "Gemini API key is not configured." };
+  }
+
+  const styles = "3D, Cartoon, High Quality";
+  const requestPrompt = originalPrompt ? `${originalPrompt}, ${styles}` : styles;
+
+  try {
+    console.log(`Calling Imagen 3 API with prompt: "${requestPrompt}"`);
+    
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key=${apiKey}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        instances: [{
+          prompt: requestPrompt
+        }],
+        parameters: {
+          sampleCount: 1,
+          aspectRatio: "16:9",
+          personGeneration: "ALLOW_ADULT"
+        }
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("Imagen 3 API Error Response:", errorText);
+      return { success: false, error: `Imagen 3 API request failed: ${response.status}`, requestPrompt };
+    }
+
+    const result = await response.json();
+    console.log("Imagen 3 API Response:", result);
+
+    // Extract image data from response
+    const predictions = result.predictions;
+    if (!predictions || predictions.length === 0) {
+      return { success: false, error: "No image data returned from Imagen 3 API", requestPrompt };
+    }
+
+    const imageData = predictions[0]?.bytesBase64Encoded;
+    if (!imageData) {
+      return { success: false, error: "No image bytes in Imagen 3 response", requestPrompt };
+    }
+
+    // Convert base64 to blob URL or upload to Firebase
+    if (userId && storyId) {
+      try {
+        // Create a safe filename from the prompt
+        const safePrompt = originalPrompt.substring(0, 30).replace(/[^a-z0-9]/gi, '_').toLowerCase();
+        const imageName = `imagen3_${Date.now()}_${safePrompt}`;
+        
+        // Convert base64 to buffer and upload to Firebase Storage
+        const imageBuffer = Buffer.from(imageData, 'base64');
+        const firebaseUrl = await uploadImageBufferToFirebaseStorage(imageBuffer, userId, storyId, imageName, 'image/png');
+        
+        return {
+          success: true,
+          imageUrl: firebaseUrl,
+          requestPrompt
+        };
+      } catch (uploadError) {
+        console.error("Error uploading image to Firebase Storage:", uploadError);
+        // If upload fails, return base64 data URL
+        return { 
+          success: true, 
+          imageUrl: `data:image/png;base64,${imageData}`, 
+          requestPrompt 
+        };
+      }
+    }
+    
+    return { 
+      success: true, 
+      imageUrl: `data:image/png;base64,${imageData}`, 
+      requestPrompt 
+    };
+
+  } catch (error: any) {
+    console.error("Error calling Imagen 3 API:", error);
+    return { success: false, error: error.message || "An unknown error occurred while generating the image.", requestPrompt };
+  }
+}
+
+export async function generateImageFromPrompt(
+  originalPrompt: string,
+  userId?: string,
+  storyId?: string,
+  provider: 'picsart' | 'gemini' | 'imagen3' = 'picsart'
+): Promise<{ success: boolean; imageUrl?: string; error?: string; requestPrompt?: string }> {
+  if (provider === 'gemini') {
+    return generateImageFromGemini(originalPrompt, userId, storyId);
+  }
+  
+  if (provider === 'imagen3') {
+    return generateImageFromImagen3(originalPrompt, userId, storyId);
+  }
+  
+  // Original Picsart implementation
+  const picsartApiKey = getPicsartApiKey();
+
+  if (!picsartApiKey) {
     console.error("PicsArt API key is not configured.");
     return { success: false, error: "PicsArt API key is not configured." };
   }
@@ -419,7 +633,7 @@ export async function generateImageFromPrompt(
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-picsart-api-key": apiKey,
+        "x-picsart-api-key": picsartApiKey,
       },
       body: JSON.stringify({
         prompt: requestPrompt,
@@ -451,7 +665,7 @@ export async function generateImageFromPrompt(
     // PicsArt text2image POST call returns 202 Accepted with an inference_id for async processing.
     if (response.status === 202 && result.status === 'ACCEPTED' && result.inference_id) {
       console.log(`PicsArt API job accepted with inference ID: ${result.inference_id}. Starting polling.`);
-      const pollResult = await pollForPicsArtImage(result.inference_id, apiKey!, requestPrompt); // apiKey is checked for null/undefined at the start
+      const pollResult = await pollForPicsArtImage(result.inference_id, picsartApiKey!, requestPrompt); // picsartApiKey is checked for null/undefined at the start
       
       // If image generation was successful and we have userId and storyId, upload to Firebase Storage
       if (pollResult.success && pollResult.imageUrl && userId && storyId) {
@@ -616,7 +830,7 @@ async function uploadImageToFirebaseStorage(imageUrl: string, userId: string, st
   const adminAppInstance = firebaseAdmin.app();
   const storage = getAdminStorage(adminAppInstance);
 
-  const bucketName = process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET;
+  const bucketName = getStorageBucket();
 
   if (!bucketName || bucketName.trim() === "") {
     console.error("[uploadImageToFirebaseStorage] CRITICAL: NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET environment variable is not set or is empty. Cannot determine storage bucket.");
@@ -662,6 +876,52 @@ async function uploadImageToFirebaseStorage(imageUrl: string, userId: string, st
   }
 }
 
+async function uploadImageBufferToFirebaseStorage(imageBuffer: Buffer, userId: string, storyId: string, imageName: string, contentType: string): Promise<string> {
+  console.log('[uploadImageBufferToFirebaseStorage] Initiating image buffer upload...');
+  if (!firebaseAdmin.apps.length || !firebaseAdmin.app()) {
+    console.error("[uploadImageBufferToFirebaseStorage] CRITICAL: Firebase Admin SDK app is not initialized. Cannot perform storage operations.");
+    throw new Error("Firebase Admin SDK app is not initialized for storage operations.");
+  }
+  const adminAppInstance = firebaseAdmin.app();
+  const storage = getAdminStorage(adminAppInstance);
+
+  const bucketName = getStorageBucket();
+
+  if (!bucketName || bucketName.trim() === "") {
+    console.error("[uploadImageBufferToFirebaseStorage] CRITICAL: NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET environment variable is not set or is empty. Cannot determine storage bucket.");
+    throw new Error("Firebase Storage bucket name is not configured. Please set NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET in your .env.local file.");
+  }
+  console.log(`[uploadImageBufferToFirebaseStorage] INFO: Attempting to use Firebase Storage bucket: '${bucketName}'`);
+
+  const bucket = storage.bucket(bucketName);
+
+  try {
+    // Create a unique file path for the image
+    const filePath = `users/${userId}/stories/${storyId}/images/${imageName}.png`;
+    const file = bucket.file(filePath);
+
+    console.log(`[uploadImageBufferToFirebaseStorage] INFO: Uploading image buffer (${imageBuffer.length} bytes) to gs://${bucketName}/${filePath}`);
+
+    await file.save(imageBuffer, {
+      metadata: {
+        contentType: contentType,
+      },
+    });
+
+    // Using getSignedUrl for better security
+    const [signedUrl] = await file.getSignedUrl({
+      action: 'read',
+      expires: Date.now() + 1000 * 60 * 60 * 24 * 7 // 7 days expiry for simplicity
+    });
+
+    console.log(`[uploadImageBufferToFirebaseStorage] SUCCESS: Image uploaded to ${filePath}. Signed URL (valid for 7 days): ${signedUrl}`);
+    return signedUrl;
+  } catch (error) {
+    console.error("[uploadImageBufferToFirebaseStorage] ERROR: Failed to upload image:", error);
+    throw error;
+  }
+}
+
 async function uploadAudioToFirebaseStorage(audioDataUri: string, userId: string, storyId: string, filename: string): Promise<string> {
   console.log(`[uploadAudioToFirebaseStorage] Initiating audio upload for filename: ${filename}...`);
   if (!firebaseAdmin.apps.length || !firebaseAdmin.app()) {
@@ -671,7 +931,7 @@ async function uploadAudioToFirebaseStorage(audioDataUri: string, userId: string
   const adminAppInstance = firebaseAdmin.app();
   const storage = getAdminStorage(adminAppInstance);
 
-  const bucketName = process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET;
+  const bucketName = getStorageBucket();
 
   if (!bucketName || bucketName.trim() === "") {
     console.error("[uploadAudioToFirebaseStorage] CRITICAL: NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET environment variable is not set or is empty. Cannot determine storage bucket.");
@@ -718,6 +978,82 @@ async function uploadAudioToFirebaseStorage(audioDataUri: string, userId: string
   return signedUrl;
 }
 
+
+// Helper function to clean up broken image URLs
+export async function cleanupBrokenImages(storyId: string, userId: string): Promise<{ success: boolean; error?: string }> {
+  console.log(`[cleanupBrokenImages] Starting cleanup for story ${storyId}, user ${userId}`);
+  console.log(`[cleanupBrokenImages] dbAdmin status:`, !!dbAdmin);
+  
+  if (!dbAdmin) {
+    console.error(`[cleanupBrokenImages] Database connection not available`);
+    return { success: false, error: "Database connection not available" };
+  }
+
+  try {
+    const storyRef = dbAdmin.collection('stories').doc(storyId);
+    const storyDoc = await storyRef.get();
+    
+    if (!storyDoc.exists) {
+      return { success: false, error: "Story not found" };
+    }
+
+    const storyData = storyDoc.data() as any; // Use any to handle extra properties
+    let updated = false;
+    const updateData: any = {};
+
+    // Clean up generated images
+    if (storyData.generatedImages && Array.isArray(storyData.generatedImages)) {
+      const cleanGeneratedImages = storyData.generatedImages.filter((img: any) => {
+        // Remove PicsArt URLs that might be broken
+        if (img.imageUrl && img.imageUrl.includes('aicdn.picsart.com')) {
+          console.log(`[cleanupBrokenImages] Removing broken PicsArt URL: ${img.imageUrl}`);
+          return false;
+        }
+        // Remove audio files that got corrupted as image URLs
+        if (img.imageUrl && img.imageUrl.includes('.mp3')) {
+          console.log(`[cleanupBrokenImages] Removing corrupted audio file as image: ${img.imageUrl}`);
+          return false;
+        }
+        return true;
+      });
+      
+      if (cleanGeneratedImages.length !== storyData.generatedImages.length) {
+        updateData.generatedImages = cleanGeneratedImages;
+        updated = true;
+      }
+    }
+
+    // Clean up detail images (if they exist as a custom property)
+    if (storyData.detailImages && Array.isArray(storyData.detailImages)) {
+      const cleanDetailImages = storyData.detailImages.filter((img: any) => {
+        // Remove PicsArt URLs that might be broken
+        if (img.imageUrl && img.imageUrl.includes('aicdn.picsart.com')) {
+          console.log(`[cleanupBrokenImages] Removing broken PicsArt detail URL: ${img.imageUrl}`);
+          return false;
+        }
+        return true;
+      });
+      
+      if (cleanDetailImages.length !== storyData.detailImages.length) {
+        updateData.detailImages = cleanDetailImages;
+        updated = true;
+      }
+    }
+
+    if (updated) {
+      updateData.updatedAt = firebaseAdmin.firestore.FieldValue.serverTimestamp();
+      await storyRef.update(updateData);
+      console.log(`[cleanupBrokenImages] Successfully cleaned up broken images for story ${storyId}`);
+    } else {
+      console.log(`[cleanupBrokenImages] No broken images found for story ${storyId}`);
+    }
+
+    return { success: true };
+  } catch (error) {
+    console.error(`[cleanupBrokenImages] Error cleaning up story ${storyId}:`, error);
+    return { success: false, error: `Failed to cleanup broken images: ${error}` };
+  }
+}
 
 export async function saveStory(storyData: Story, userId: string): Promise<{ success: boolean; storyId?: string; error?: string, data?: { narrationAudioUrl?: string} }> {
   console.log('---------------------------------------------------------------------');
