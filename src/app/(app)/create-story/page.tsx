@@ -17,6 +17,8 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { splitScriptIntoChunks } from '@/utils/scriptSplitter'; // Keep for manual edit fallback
 import { prepareScriptChunksAI, prepareScriptChunksSimple, calculateTotalNarrationDuration } from '@/utils/narrationUtils';
 import { v4 as uuidv4 } from 'uuid';
+
+import { ConvertibleAudioPlayer } from '@/components/ConvertibleAudioPlayer';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -36,7 +38,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { generateTitle, generateScript, generateCharacterPrompts, generateNarrationAudio, generateImagePrompts, saveStory, getStory, generateImageFromPrompt } from '@/actions/storyActions';
-import { Bot, Clapperboard, ImageIcon, Loader2, Mic, Save, Sparkles, FileText, Image as LucideImage, AlertCircle, CheckCircle, Info, Pencil, ListMusic, Upload, Film, Edit2, Users } from 'lucide-react';
+import { Bot, Clapperboard, ImageIcon, Loader2, Mic, Save, Sparkles, FileText, Image as LucideImage, AlertCircle, CheckCircle, Info, Pencil, ListMusic, Upload, Film, Edit2, Users, Settings } from 'lucide-react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -90,6 +92,40 @@ const initialStoryState: Story = {
   narrationChunks: [], // Initialize
 };
 
+const googleTtsVoices = [
+  { id: 'Zephyr', name: 'Zephyr (Bright)' }, { id: 'Puck', name: 'Puck (Upbeat)' }, { id: 'Charon', name: 'Charon (Informative)' },
+  { id: 'Kore', name: 'Kore (Firm)' }, { id: 'Fenrir', name: 'Fenrir (Excitable)' }, { id: 'Leda', name: 'Leda (Youthful)' },
+  { id: 'Orus', name: 'Orus (Firm)' }, { id: 'Aoede', name: 'Aoede (Breezy)' }, { id: 'Callirhoe', name: 'Callirhoe (Easy-going)' },
+  { id: 'Autonoe', name: 'Autonoe (Bright)' }, { id: 'Enceladus', name: 'Enceladus (Breathy)' }, { id: 'Iapetus', name: 'Iapetus (Clear)' },
+  { id: 'Umbriel', name: 'Umbriel (Easy-going)' }, { id: 'Algieba', name: 'Algieba (Smooth)' }, { id: 'Despina', name: 'Despina (Smooth)' },
+  { id: 'Erinome', name: 'Erinome (Clear)' }, { id: 'Algenib', name: 'Algenib (Gravelly)' }, { id: 'Rasalgethi', name: 'Rasalgethi (Informative)' },
+  { id: 'Laomedeia', name: 'Laomedeia (Upbeat)' }, { id: 'Achernar', name: 'Achernar (Soft)' }, { id: 'Alnilam', name: 'Alnilam (Firm)' },
+  { id: 'Schedar', name: 'Schedar (Even)' }, { id: 'Gacrux', name: 'Gacrux (Mature)' }, { id: 'Pulcherrima', name: 'Pulcherrima (Forward)' },
+  { id: 'Achird', name: 'Achird (Friendly)' }, { id: 'Zubenelgenubi', name: 'Zubenelgenubi (Casual)' }, { id: 'Vindemiatrix', name: 'Vindemiatrix (Gentle)' },
+  { id: 'Sadachbia', name: 'Sadachbia (Lively)' }, { id: 'Sadaltager', name: 'Sadaltager (Knowledgeable)' }, { id: 'Sulafar', name: 'Sulafar (Warm)' }
+];
+
+const googleTtsApiModels = [
+  { id: 'gemini-2.5-flash-preview-tts', name: 'Gemini 2.5 Flash TTS' },
+  { id: 'gemini-2.5-pro-preview-tts', name: 'Gemini 2.5 Pro TTS' }
+];
+
+const googleTtsLanguages = [
+  { id: 'ar-EG', name: 'Arabic (Egyptian)' }, { id: 'de-DE', name: 'German (Germany)' },
+  { id: 'en-US', name: 'English (US)' }, { id: 'es-US', name: 'Spanish (US)' },
+  { id: 'fr-FR', name: 'French (France)' }, { id: 'hi-IN', name: 'Hindi (India)' },
+  { id: 'id-ID', name: 'Indonesian (Indonesia)' }, { id: 'it-IT', name: 'Italian (Italy)' },
+  { id: 'ja-JP', name: 'Japanese (Japan)' }, { id: 'ko-KR', name: 'Korean (Korea)' },
+  { id: 'pt-BR', name: 'Portuguese (Brazil)' }, { id: 'ru-RU', name: 'Russian (Russia)' },
+  { id: 'nl-NL', name: 'Dutch (Netherlands)' }, { id: 'pl-PL', name: 'Polish (Poland)' },
+  { id: 'th-TH', name: 'Thai (Thailand)' }, { id: 'tr-TR', name: 'Turkish (Turkey)' },
+  { id: 'vi-VN', name: 'Vietnamese (Vietnam)' }, { id: 'ro-RO', name: 'Romanian (Romania)' },
+  { id: 'uk-UA', name: 'Ukrainian (Ukraine)' }, { id: 'bn-BD', name: 'Bengali (Bangladesh)' },
+  { id: 'en-IN', name: 'English (India)' }, { id: 'mr-IN', name: 'Marathi (India)' },
+  { id: 'ta-IN', name: 'Tamil (India)' }, { id: 'te-IN', name: 'Telugu (India)' }
+];
+
+
 export default function CreateStoryPage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
@@ -107,6 +143,10 @@ export default function CreateStoryPage() {
   const [elevenLabsVoices, setElevenLabsVoices] = useState<ElevenLabsVoice[]>([]);
   const [selectedVoiceId, setSelectedVoiceId] = useState<string | undefined>(undefined);
   const [narrationSource, setNarrationSource] = useState<'generate' | 'upload'>('generate');
+  const [selectedTtsModel, setSelectedTtsModel] = useState<'elevenlabs' | 'google'>('elevenlabs'); // New state for TTS model
+  const [selectedGoogleApiModel, setSelectedGoogleApiModel] = useState<string>(googleTtsApiModels[0].id);
+  const [selectedGoogleLanguage, setSelectedGoogleLanguage] = useState<string>(googleTtsLanguages.find(l => l.id === 'en-US')?.id || googleTtsLanguages[0].id);
+  const [selectedGoogleVoiceId, setSelectedGoogleVoiceId] = useState<string>(googleTtsVoices[0].id); // New state for Google Voice
   const [uploadedAudioFileName, setUploadedAudioFileName] = useState<string | null>(null);
   const [isScriptManuallyEditing, setIsScriptManuallyEditing] = useState(false);
   const [isCharacterPromptsEditing, setIsCharacterPromptsEditing] = useState(false);
@@ -328,26 +368,6 @@ const parseNamedPrompts = (rawPrompts: string | undefined, type: 'Character' | '
   useEffect(() => {
     setActiveAccordionItem(`step-${currentStep}`);
   }, [currentStep]);
-
-  // Effect to automatically process the next narration chunk WHEN IN "PROCESSING ALL" MODE
-  useEffect(() => {
-    if (processingAllMode && currentNarrationChunkIndex >= 0 && storyData.narrationChunks && currentNarrationChunkIndex < storyData.narrationChunks.length && (selectedVoiceId || storyData.elevenLabsVoiceId) && narrationSource === 'generate') {
-      // Call handleGenerateNarration without an index to process the currentNarrationChunkIndex in sequence
-      // The isLoading.narration check might be tricky here; handleGenerateNarration itself manages this.
-      // We rely on handleGenerateNarration to advance currentNarrationChunkIndex or set it to -1.
-      console.log(`useEffect detected processingAllMode for chunk index: ${currentNarrationChunkIndex}`);
-      handleGenerateNarration();
-    } else if (processingAllMode && currentNarrationChunkIndex === -1) {
-      // This means the "Generate All" sequence has finished or was interrupted.
-      console.log("useEffect detected end of processingAllMode sequence.");
-      setProcessingAllMode(false); // Turn off "generate all" mode
-      // isLoading.narration should have been set to false by handleGenerateNarration
-      if (isLoading.narration) { // Safety check
-          handleSetLoading('narration', false);
-      }
-    }
-  }, [currentNarrationChunkIndex, processingAllMode, storyData.narrationChunks, storyData.elevenLabsVoiceId, selectedVoiceId, narrationSource]); // Removed isLoading.narration from deps, let handleGenerateNarration manage it.
-
 
   const handleGenerateScript = async () => {
     if (!storyData.userPrompt.trim()) {
@@ -575,7 +595,7 @@ const parseNamedPrompts = (rawPrompts: string | undefined, type: 'Character' | '
     );
   };
 
-  const handleGenerateNarration = async (specificChunkIndexToProcess?: number) => {
+  const handleGenerateNarration = useCallback(async (specificChunkIndexToProcess?: number) => {
     if (narrationSource !== 'generate') return;
     // If a specific chunk is requested, ensure script and chunks exist for that index.
     // If "generate all" is implied (no specific index), ensure script exists.
@@ -591,22 +611,24 @@ const parseNamedPrompts = (rawPrompts: string | undefined, type: 'Character' | '
     
     handleSetLoading('narration', true); // General loading state
 
-    // 1. Voice Loading/Selection (remains the same)
-    if (!selectedVoiceId && !storyData.elevenLabsVoiceId) {
-      const result = await generateNarrationAudio({ script: "Loading voices" }); // Script content doesn't matter here
-      if (result.success && result.data && result.data.voices) {
-        setElevenLabsVoices(result.data.voices);
-        toast({ title: 'Voices Loaded', description: 'Please select a voice to generate narration.', className: 'bg-primary text-primary-foreground' });
-      } else {
-        toast({ title: 'Error Loading Voices', description: result.error || 'Failed to load voices.', variant: 'destructive' });
-      }
-      handleSetLoading('narration', false);
-      return;
-    }
+    let voiceIdToUse: string | undefined = undefined;
 
-    const voiceIdToUse = selectedVoiceId || storyData.elevenLabsVoiceId;
-    if (!voiceIdToUse) {
-      toast({ title: 'Voice Not Selected', description: 'Please select a voice first.', variant: 'destructive' });
+    if (selectedTtsModel === 'elevenlabs') {
+      voiceIdToUse = selectedVoiceId || storyData.elevenLabsVoiceId;
+      if (!voiceIdToUse) {
+        toast({ title: 'ElevenLabs Voice Not Selected', description: 'Please select an ElevenLabs voice.', variant: 'destructive' });
+        handleSetLoading('narration', false);
+        return;
+      }
+    } else if (selectedTtsModel === 'google') {
+      voiceIdToUse = selectedGoogleVoiceId;
+      if (!voiceIdToUse) {
+        toast({ title: 'Google Voice Not Selected', description: 'Please select a Google voice.', variant: 'destructive' });
+        handleSetLoading('narration', false);
+        return;
+      }
+    } else {
+      toast({ title: 'TTS Model Error', description: 'No TTS model selected.', variant: 'destructive' });
       handleSetLoading('narration', false);
       return;
     }
@@ -697,9 +719,12 @@ const parseNamedPrompts = (rawPrompts: string | undefined, type: 'Character' | '
     const chunk = storyData.narrationChunks![chunkToProcessIndex]; // Assert narrationChunks is not null/undefined
     const result = await generateNarrationAudio({
       script: chunk.text,
-      voiceId: voiceIdToUse,
+      voiceId: selectedTtsModel === 'elevenlabs' ? voiceIdToUse : selectedGoogleVoiceId,
+      ttsModel: selectedTtsModel,
+      googleApiModel: selectedTtsModel === 'google' ? selectedGoogleApiModel : undefined,
+      languageCode: selectedTtsModel === 'google' ? selectedGoogleLanguage : undefined,
       userId: storyData.userId,
-      storyId: storyData.id, // Ensure storyData.id is available (it should be if saving is possible)
+      storyId: storyData.id,
       chunkId: chunk.id
     });
     
@@ -753,7 +778,75 @@ const parseNamedPrompts = (rawPrompts: string | undefined, type: 'Character' | '
       setProcessingAllMode(false); // Stop "all" mode on error
       handleSetLoading('narration', false);
     }
-  };
+  }, [
+    narrationSource,
+    storyData.generatedScript,
+    storyData.narrationChunks,
+    storyData.elevenLabsVoiceId,
+    storyData.userId,
+    storyData.id,
+    selectedVoiceId,
+    selectedTtsModel,
+    isLoading.voices, // To prevent re-triggering voice loading if already in progress
+    elevenLabsVoices.length, // To re-evaluate if voices need loading
+    currentNarrationChunkIndex, // For "Generate All" logic
+    processingAllMode, // For "Generate All" logic
+    toast,
+    updateStoryData,
+    handleSetLoading,
+    setElevenLabsVoices,
+    setCurrentNarrationChunkIndex,
+    setProcessingAllMode,
+    setCurrentStep
+  ]);
+
+  // Effect to load ElevenLabs voices when the model is selected and voices aren't loaded
+  useEffect(() => {
+    if (narrationSource === 'generate' && selectedTtsModel === 'elevenlabs' && elevenLabsVoices.length === 0 && !isLoading.voices) {
+      handleSetLoading('voices', true);
+      console.log("[useEffect] Attempting to load ElevenLabs voices...");
+      generateNarrationAudio({ script: "placeholder_for_voice_listing", ttsModel: 'elevenlabs' })
+        .then(response => {
+          if (response.success && response.data?.voices) {
+            setElevenLabsVoices(response.data.voices);
+            console.log(`[useEffect] Loaded ${response.data.voices.length} ElevenLabs voices.`);
+            if (storyData.elevenLabsVoiceId && response.data.voices.some(v => v.voice_id === storyData.elevenLabsVoiceId)) {
+              setSelectedVoiceId(storyData.elevenLabsVoiceId);
+            }
+            // toast({ title: "ElevenLabs Voices Loaded", description: `${response.data.voices.length} voices available.`, className: "bg-primary text-primary-foreground" });
+          } else {
+            console.error("[useEffect] Error loading ElevenLabs voices:", response.error);
+            toast({ title: "Error Loading ElevenLabs Voices", description: response.error || "Could not fetch voices.", variant: "destructive" });
+          }
+        })
+        .catch(error => {
+          console.error("[useEffect] Failed to fetch ElevenLabs voices:", error);
+          toast({ title: "Voice Loading Exception", description: "An unexpected error occurred while fetching voices.", variant: "destructive" });
+        })
+        .finally(() => handleSetLoading('voices', false));
+    }
+  }, [narrationSource, selectedTtsModel, elevenLabsVoices.length, isLoading.voices, storyData.elevenLabsVoiceId, toast, handleSetLoading, setElevenLabsVoices, setSelectedVoiceId]);
+
+  // Effect to automatically process the next narration chunk WHEN IN "PROCESSING ALL" MODE
+  useEffect(() => {
+    if (
+      processingAllMode &&
+      currentNarrationChunkIndex >= 0 &&
+      storyData.narrationChunks &&
+      currentNarrationChunkIndex < storyData.narrationChunks.length &&
+      narrationSource === 'generate' &&
+      (selectedTtsModel === 'elevenlabs' ? (selectedVoiceId || storyData.elevenLabsVoiceId) : true) // Check voiceId only for elevenlabs
+    ) {
+      console.log(`useEffect detected processingAllMode for chunk index: ${currentNarrationChunkIndex} with model ${selectedTtsModel}`);
+      handleGenerateNarration();
+    } else if (processingAllMode && currentNarrationChunkIndex === -1) {
+      console.log("useEffect detected end of processingAllMode sequence.");
+      setProcessingAllMode(false);
+      if (isLoading.narration) {
+          handleSetLoading('narration', false);
+      }
+    }
+  }, [currentNarrationChunkIndex, processingAllMode, storyData.narrationChunks, storyData.elevenLabsVoiceId, selectedVoiceId, narrationSource, selectedTtsModel, handleGenerateNarration]);
 
   const handleAudioFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -1071,21 +1164,19 @@ const parseNamedPrompts = (rawPrompts: string | undefined, type: 'Character' | '
 
   const isIndividualChunkButtonDisabled = (chunk: NarrationChunk, index: number): boolean => {
     if (narrationSource === 'upload') return true;
-    if (!selectedVoiceId && !storyData.elevenLabsVoiceId) return true; // No voice selected
-    if (processingAllMode) return true; // "Generate All" sequence is active, disable individual buttons to prevent interference
+    // Disable if any "generate all" sequence is active or a different chunk is being processed individually
+    if (processingAllMode || (isLoading.narration && currentNarrationChunkIndex !== index && currentNarrationChunkIndex !== -1)) return true;
     
-    // Disable if global loading is on for a *different* chunk or for the main "generate all" button (before sequence starts)
-    if (isLoading.narration && currentNarrationChunkIndex !== index && currentNarrationChunkIndex !== -1) return true;
-    // Disable if this specific chunk is currently being processed via the main "generate all" flow
-    if (isLoading.narration && currentNarrationChunkIndex === index && processingAllMode) return true;
+    // Disable if this specific chunk is currently being processed (either by "all" or individually)
+    if (isLoading[`narration-${index}`] || (isLoading.narration && currentNarrationChunkIndex === index) ) return true;
 
-
-    // The button text changes to "Re-generate" if chunk.audioUrl exists, so we don't disable based on that.
-    // Allow clicking if this specific chunk is loading via its own button.
-    if (isLoading.narration && currentNarrationChunkIndex === index && !processingAllMode) return false;
-
-
-    return false; // Otherwise, enable
+    if (selectedTtsModel === 'elevenlabs') {
+      return !selectedVoiceId && !storyData.elevenLabsVoiceId;
+    }
+    if (selectedTtsModel === 'google') {
+      return !selectedGoogleVoiceId;
+    }
+    return true; // Should not happen if model is always one of the two
   };
 
 
@@ -1361,56 +1452,126 @@ const parseNamedPrompts = (rawPrompts: string | undefined, type: 'Character' | '
                         <RadioGroup value={narrationSource} onValueChange={(value) => setNarrationSource(value as 'generate' | 'upload')} className="flex space-x-4">
                             <div className="flex items-center space-x-2">
                                 <RadioGroupItem value="generate" id="rGenerate" />
-                                <Label htmlFor="rGenerate">Generate with AI (ElevenLabs)</Label>
+                                <Label htmlFor="rGenerate">Generate with AI</Label>
                             </div>
                             <div className="flex items-center space-x-2">
                                 <RadioGroupItem value="upload" id="rUpload" />
                                 <Label htmlFor="rUpload">Upload my own MP3</Label>
                             </div>
                         </RadioGroup>
+
+                        {narrationSource === 'generate' && (
+                          <div className="mt-4 pl-6 space-y-3">
+                            <Label className="font-semibold text-sm">Select TTS Model:</Label>
+                            <RadioGroup value={selectedTtsModel} onValueChange={(value) => setSelectedTtsModel(value as 'elevenlabs' | 'google')} className="flex space-x-4">
+                              <div className="flex items-center space-x-2">
+                                <RadioGroupItem value="elevenlabs" id="rElevenLabs" />
+                                <Label htmlFor="rElevenLabs" className="cursor-pointer">ElevenLabs</Label>
+                              </div>
+                              <div className="flex items-center space-x-2">
+                                <RadioGroupItem value="google" id="rGoogle" />
+                                <Label htmlFor="rGoogle" className="cursor-pointer">Google Gemini</Label>
+                              </div>
+                            </RadioGroup>
+                          </div>
+                        )}
                     </div>
                     
                     {narrationSource === 'generate' && (
                       <div className="mt-4 pl-2 border-l-2 border-primary">
-                        {elevenLabsVoices.length > 0 && !storyData.elevenLabsVoiceId && ( 
-                          <div className="mb-4">
-                            <Label htmlFor="elevenLabsVoice" className="block text-md font-medium">Select AI Voice</Label>
-                            <Select value={selectedVoiceId} onValueChange={setSelectedVoiceId}>
-                              <SelectTrigger className="w-full mt-1">
-                                <SelectValue placeholder="Choose a voice..." />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {elevenLabsVoices.map(voice => (
-                                  <SelectItem key={voice.voice_id} value={voice.voice_id}>
-                                    {voice.name} ({voice.category || 'Standard'})
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
-                        )}
+                        {selectedTtsModel === 'elevenlabs' && (
+                            <div className="mb-4">
+                              <Label htmlFor="elevenLabsVoice" className="block text-sm font-medium text-foreground mb-1">Select Voice (ElevenLabs)</Label>
+                              <Select value={selectedVoiceId} onValueChange={setSelectedVoiceId} disabled={elevenLabsVoices.length === 0}>
+                                <SelectTrigger id="elevenLabsVoice" className="w-full">
+                                  <SelectValue placeholder={elevenLabsVoices.length > 0 ? "Choose an ElevenLabs voice..." : "Loading ElevenLabs voices..."} />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {elevenLabsVoices.map(voice => (
+                                    <SelectItem key={voice.voice_id} value={voice.voice_id}>
+                                      {voice.name} {voice.category ? `(${voice.category})` : ''}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          )}
+                          {selectedTtsModel === 'google' && (
+                            <div className="mb-4 space-y-3">
+                              <div>
+                                <Label htmlFor="googleApiModel" className="block text-sm font-medium text-foreground mb-1">Google API Model</Label>
+                                <Select value={selectedGoogleApiModel} onValueChange={setSelectedGoogleApiModel}>
+                                  <SelectTrigger id="googleApiModel" className="w-full">
+                                    <SelectValue placeholder="Choose a Google API model..." />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {googleTtsApiModels.map(model => (
+                                      <SelectItem key={model.id} value={model.id}>
+                                        {model.name}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                              
+                              <div>
+                                <Label htmlFor="googleLanguage" className="block text-sm font-medium text-foreground mb-1">Language</Label>
+                                <Select value={selectedGoogleLanguage} onValueChange={setSelectedGoogleLanguage}>
+                                  <SelectTrigger id="googleLanguage" className="w-full">
+                                    <SelectValue placeholder="Choose a language..." />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {googleTtsLanguages.map(lang => (
+                                      <SelectItem key={lang.id} value={lang.id}>
+                                        {lang.name}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                              
+                              <div>
+                                <Label htmlFor="googleTtsVoice" className="block text-sm font-medium text-foreground mb-1">Voice</Label>
+                                <Select value={selectedGoogleVoiceId} onValueChange={setSelectedGoogleVoiceId}>
+                                  <SelectTrigger id="googleTtsVoice" className="w-full">
+                                    <SelectValue placeholder="Choose a Google voice..." />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {googleTtsVoices.map(voice => (
+                                      <SelectItem key={voice.id} value={voice.id}>
+                                        {voice.name}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                            </div>
+                          )}
                         <Button
                           onClick={() => {
-                            // Determine if we should enter "processing all" mode
-                            // This mode is for sequential generation of all unprocessed chunks.
                             if (storyData.generatedScript && (!storyData.narrationChunks || storyData.narrationChunks.length === 0)) {
-                                // Case: Script exists, but chunks haven't been prepared yet.
-                                // handleGenerateNarration will prepare them first. Then user might need to click again.
-                                // Or, we can set processingAllMode to true if voice is selected, to auto-start after chunk prep.
-                                if (selectedVoiceId || storyData.elevenLabsVoiceId) {
+                                if (selectedTtsModel === 'elevenlabs' && (selectedVoiceId || storyData.elevenLabsVoiceId)) {
+                                   setProcessingAllMode(true);
+                                } else if (selectedTtsModel === 'google' && selectedGoogleVoiceId) {
                                    setProcessingAllMode(true);
                                 }
                             } else if (storyData.narrationChunks && storyData.narrationChunks.some(c => !c.audioUrl)) {
-                                // Case: Chunks exist, and some are unprocessed.
                                 setProcessingAllMode(true);
                             } else if (storyData.narrationChunks && storyData.narrationChunks.every(c => c.audioUrl)) {
-                                // Case: All chunks have audio; this implies re-generate all.
                                 setProcessingAllMode(true);
                             }
-                            handleGenerateNarration(); // Call without index for "Generate All" / preparation logic
+                            handleGenerateNarration();
                           }}
-                          disabled={isNarrationButtonDisabled || (isLoading.narration && processingAllMode)} // Disable if already processing all via this button
-                          className="bg-accent hover:bg-accent/90 text-accent-foreground"
+                          disabled={
+                            isLoading.narration || // General narration loading
+                            processingAllMode || // "Generate All" is active
+                            (narrationSource === 'generate' && selectedTtsModel === 'elevenlabs' && !selectedVoiceId && !storyData.elevenLabsVoiceId && elevenLabsVoices.length > 0) || // EL selected, voices loaded, but none chosen
+                            (narrationSource === 'generate' && selectedTtsModel === 'google' && !selectedGoogleVoiceId) || // Google selected, but no voice chosen
+                            !storyData.narrationChunks ||
+                            storyData.narrationChunks.length === 0 ||
+                            (storyData.narrationChunks.every(chunk => chunk.audioUrl) && !processingAllMode) // All done and not in re-gen mode (processingAllMode becomes true on click if all done)
+                          }
+                          className="w-full bg-accent hover:bg-accent/80 text-accent-foreground"
                         >
                             {/* Show loader if "processing all" mode is active and narration is loading */}
                             {isLoading.narration && processingAllMode ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ListMusic className="mr-2 h-4 w-4" />}
@@ -1452,9 +1613,18 @@ const parseNamedPrompts = (rawPrompts: string | undefined, type: 'Character' | '
                               {/* Individual Chunk Audio Player */}
                               {chunk.audioUrl && (
                                 <div className="mt-2 mb-2">
-                                  <audio controls src={chunk.audioUrl} className="w-full h-8" style={{ height: '32px' }}>
-                                    Your browser does not support the audio element.
-                                  </audio>
+                                  <ConvertibleAudioPlayer 
+                                    src={chunk.audioUrl}
+                                    className="w-full h-8"
+                                    style={{ height: '32px' }}
+                                    chunkId={chunk.id}
+                                    onError={(error) => {
+                                      console.error('ConvertibleAudioPlayer error for chunk:', chunk.id, error);
+                                    }}
+                                    onCanPlay={() => {
+                                      console.log('ConvertibleAudioPlayer can play for chunk:', chunk.id);
+                                    }}
+                                  />
                                   {chunk.duration && (
                                     <p className="text-xs text-muted-foreground mt-1">Duration: {chunk.duration.toFixed(1)}s</p>
                                   )}
@@ -1468,11 +1638,10 @@ const parseNamedPrompts = (rawPrompts: string | undefined, type: 'Character' | '
                                   variant="outline"
                                   onClick={() => handleGenerateNarration(index)} // Pass the specific chunk index
                                   disabled={isIndividualChunkButtonDisabled(chunk, index)}
-                                  className="text-xs py-1 h-auto"
+                                  className={cn("text-xs py-1 h-auto transition-all duration-200 ease-in-out", chunk.audioUrl ? "border-green-500 hover:bg-green-500/10" : "border-destructive hover:bg-destructive/10")}
                                 >
-                                  {/* Show loader if this specific chunk is processing (currentNarrationChunkIndex === index && isLoading.narration) */}
-                                  {currentNarrationChunkIndex === index && isLoading.narration ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Mic className="mr-1 h-3 w-3" />}
-                                  {chunk.audioUrl ? 'Re-generate Audio' : 'Generate Audio'}
+                                  {isLoading[`narration-${index}`] || (currentNarrationChunkIndex === index && isLoading.narration) ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : chunk.audioUrl ? <CheckCircle className="mr-1 h-3 w-3 text-green-500" /> : <Mic className="mr-1 h-3 w-3 text-destructive" />}
+                                  <span className="ml-1">{chunk.audioUrl ? `Re-generate (${selectedTtsModel === 'elevenlabs' ? 'EL' : 'GG'})` : `Generate (${selectedTtsModel === 'elevenlabs' ? 'EL' : 'GG'})`}</span>
                                 </Button>
                               )}
                             </div>

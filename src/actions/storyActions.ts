@@ -59,26 +59,35 @@ export async function generateCharacterPrompts(input: GenerateCharacterPromptsIn
   }
 }
 
-// Helper function to estimate duration from MP3 data URI
+// Helper function to estimate duration from audio data URI (MP3 or WAV)
 // This is a very rough estimation and might not be accurate.
-// A proper solution would involve an audio library to parse MP3 metadata.
+// A proper solution would involve an audio library to parse audio metadata.
 function getMp3DurationFromDataUri(dataUri: string): number {
   try {
-    if (!dataUri.startsWith('data:audio/mpeg;base64,')) {
-      console.warn('Cannot estimate duration: Not an MP3 data URI.');
+    let base64Data: string;
+    let estimatedBytesPerSecond: number;
+
+    if (dataUri.startsWith('data:audio/mpeg;base64,')) {
+      // MP3 format
+      base64Data = dataUri.substring('data:audio/mpeg;base64,'.length);
+      // Extremely rough estimate: 128 kbps CBR would be 16000 bytes per second.
+      const estimatedBitrateKbps = 128;
+      estimatedBytesPerSecond = (estimatedBitrateKbps * 1000) / 8;
+    } else if (dataUri.startsWith('data:audio/wav;base64,')) {
+      // WAV format (uncompressed PCM, typically from Google TTS)
+      base64Data = dataUri.substring('data:audio/wav;base64,'.length);
+      // WAV PCM at 24kHz, 16-bit, mono = 24000 * 2 = 48000 bytes per second
+      estimatedBytesPerSecond = 48000; // Assuming Google TTS 24kHz 16-bit mono
+    } else {
+      console.warn('Cannot estimate duration: Unsupported audio format in data URI.');
       return 30; // Default duration
     }
-    const base64Data = dataUri.substring('data:audio/mpeg;base64,'.length);
+
     const binaryData = Buffer.from(base64Data, 'base64');
-    
-    // Extremely rough estimate: 128 kbps CBR would be 16000 bytes per second.
-    // This is highly inaccurate for VBR or different bitrates.
-    const estimatedBitrateKbps = 128;
-    const bytesPerSecond = (estimatedBitrateKbps * 1000) / 8;
-    const durationSeconds = binaryData.length / bytesPerSecond;
+    const durationSeconds = binaryData.length / estimatedBytesPerSecond;
 
     // If it's the placeholder silent audio, set duration to 1 sec to avoid issues.
-    if (base64Data === 'UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAAA') { // This is a WAV placeholder, not MP3
+    if (base64Data === 'UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAAA') { // This is a WAV placeholder
         console.warn('Placeholder WAV audio detected, setting duration to 1s.');
         return 1;
     }
@@ -100,14 +109,20 @@ export interface GenerateNarrationAudioActionInput extends GenerateNarrationAudi
   userId?: string;
   storyId?: string;
   chunkId?: string; // Or chunkIndex: number
+  ttsModel?: 'elevenlabs' | 'google';
+  googleApiModel?: string;
+  languageCode?: string;
 }
 
 export async function generateNarrationAudio(actionInput: GenerateNarrationAudioActionInput): Promise<{ success: boolean; data?: { audioStorageUrl?: string; voices?: ElevenLabsVoice[]; duration?: number }; error?: string }> {
   try {
-    // Prepare input for the AI flow (only script and voiceId)
+    // Prepare input for the AI flow
     const aiFlowInput: GenerateNarrationAudioInput = {
       script: actionInput.script,
       voiceId: actionInput.voiceId,
+      ttsModel: actionInput.ttsModel || 'elevenlabs',
+      googleApiModel: actionInput.googleApiModel,
+      languageCode: actionInput.languageCode,
     };
     const result: GenerateNarrationAudioOutput = await aiGenerateNarrationAudio(aiFlowInput);
 
@@ -120,7 +135,9 @@ export async function generateNarrationAudio(actionInput: GenerateNarrationAudio
       // If userId, storyId, and chunkId are provided, upload to storage
       if (actionInput.userId && actionInput.storyId && actionInput.chunkId) {
         try {
-          const filename = `narration_chunk_${actionInput.chunkId}.mp3`;
+          // Determine file extension based on the data URI format
+          const fileExtension = result.audioDataUri.startsWith('data:audio/wav;base64,') ? 'wav' : 'mp3';
+          const filename = `narration_chunk_${actionInput.chunkId}.${fileExtension}`;
           const storageUrl = await uploadAudioToFirebaseStorage(result.audioDataUri, actionInput.userId, actionInput.storyId, filename);
           console.log(`Uploaded narration chunk ${actionInput.chunkId} to: ${storageUrl}`);
           return { success: true, data: { audioStorageUrl: storageUrl, duration } };
@@ -664,12 +681,19 @@ async function uploadAudioToFirebaseStorage(audioDataUri: string, userId: string
 
   const bucket = storage.bucket(bucketName);
 
-  if (!audioDataUri.startsWith('data:audio/mpeg;base64,')) {
-    console.error('[uploadAudioToFirebaseStorage] ERROR: Invalid audio data URI format.');
-    throw new Error('Invalid audio data URI format. Expected data:audio/mpeg;base64,...');
-  }
+  let base64Data: string;
+  let contentType: string;
 
-  const base64Data = audioDataUri.substring('data:audio/mpeg;base64,'.length);
+  if (audioDataUri.startsWith('data:audio/mpeg;base64,')) {
+    base64Data = audioDataUri.substring('data:audio/mpeg;base64,'.length);
+    contentType = 'audio/mpeg';
+  } else if (audioDataUri.startsWith('data:audio/wav;base64,')) {
+    base64Data = audioDataUri.substring('data:audio/wav;base64,'.length);
+    contentType = 'audio/wav';
+  } else {
+    console.error('[uploadAudioToFirebaseStorage] ERROR: Invalid audio data URI format.');
+    throw new Error('Invalid audio data URI format. Expected data:audio/mpeg;base64,... or data:audio/wav;base64,...');
+  }
   const audioBuffer = Buffer.from(base64Data, 'base64');
   
   // Use the provided filename and store chunks in a dedicated subfolder
@@ -680,7 +704,7 @@ async function uploadAudioToFirebaseStorage(audioDataUri: string, userId: string
 
   await file.save(audioBuffer, {
     metadata: {
-      contentType: 'audio/mpeg',
+      contentType: contentType,
     },
   });
 
