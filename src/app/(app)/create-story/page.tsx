@@ -15,13 +15,13 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from '@/components/ui/button';
-import { cleanupBrokenImages, getStory } from '@/actions/storyActions';
+import { cleanupBrokenImages, getStory, deleteStory } from '@/actions/storyActions';
 import { prepareScriptChunksAI } from '@/utils/narrationUtils';
 import { determineCurrentStep } from '@/utils/storyHelpers';
 import { Loader2, RefreshCw, Trash2, Save, Film, Download } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 // Hooks
 import { useStoryState } from '@/hooks/useStoryState';
@@ -61,6 +61,8 @@ export default function CreateStoryPage() {
     setIsImagePromptEditing,
     handleSetLoading
   } = storyState;
+
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
 
   // Handle authentication and story loading
   useEffect(() => {
@@ -231,6 +233,42 @@ export default function CreateStoryPage() {
     setIsSaveConfirmOpen(false);
   };
 
+  const handleDeleteStory = async () => {
+    if (!storyData.id || !storyData.userId) {
+      toast({ title: 'Error', description: 'Story ID or user ID is missing.', variant: 'destructive' });
+      return;
+    }
+    
+    handleSetLoading('delete', true);
+    try {
+      const result = await deleteStory(storyData.id, storyData.userId);
+      if (result.success) {
+        toast({ 
+          title: 'Story Deleted!', 
+          description: 'Your story has been permanently deleted.', 
+          className: 'bg-green-500 text-white' 
+        });
+        // Redirect to dashboard after successful deletion
+        router.push('/dashboard');
+      } else {
+        toast({ 
+          title: 'Delete Failed', 
+          description: result.error || 'Failed to delete story.', 
+          variant: 'destructive' 
+        });
+      }
+    } catch (error) {
+      console.error('Error deleting story:', error);
+      toast({ 
+        title: 'Delete Error', 
+        description: 'An unexpected error occurred during deletion.', 
+        variant: 'destructive' 
+      });
+    }
+    handleSetLoading('delete', false);
+    setIsDeleteConfirmOpen(false);
+  };
+
   if (authLoading || pageLoading) {
     return (
       <div className="container mx-auto px-4 py-8">
@@ -359,7 +397,7 @@ export default function CreateStoryPage() {
         </Accordion>
 
         {/* Persistent Action Buttons */}
-        <div className="flex gap-3 pt-4 border-t">
+        <div className="flex gap-3 pt-4 border-t flex-wrap">
           <Button 
             onClick={async () => {
               if (!storyData.userId) {
@@ -464,6 +502,26 @@ export default function CreateStoryPage() {
               </Link>
             </Button>
           )}
+          
+          {storyData.id && (
+            <Button 
+              variant="destructive" 
+              onClick={() => setIsDeleteConfirmOpen(true)}
+              disabled={storyState.isLoading.delete}
+            >
+              {storyState.isLoading.delete ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Delete Story
+                </>
+              )}
+            </Button>
+          )}
         </div>
 
         {/* Cleanup Dialog */}
@@ -480,6 +538,28 @@ export default function CreateStoryPage() {
               <AlertDialogAction onClick={handleCleanupImages}>
                 <Trash2 className="mr-2 h-4 w-4" />
                 Clean Up Images
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        {/* Delete Story Dialog */}
+        <AlertDialog open={isDeleteConfirmOpen} onOpenChange={setIsDeleteConfirmOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete Story Permanently</AlertDialogTitle>
+              <AlertDialogDescription>
+                Are you sure you want to delete "<strong>{storyData.title}</strong>"? This action cannot be undone and will permanently delete the story and all its associated files (images, audio, etc.).
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction 
+                onClick={handleDeleteStory}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                <Trash2 className="mr-2 h-4 w-4" />
+                Delete Permanently
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

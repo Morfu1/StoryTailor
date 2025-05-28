@@ -1319,3 +1319,113 @@ export async function updateStoryTimeline(
     console.log('---------------------------------------------------------------------');
   }
 }
+
+export async function deleteStory(
+  storyId: string,
+  userId: string
+): Promise<{ success: boolean; error?: string }> {
+  console.log('---------------------------------------------------------------------');
+  console.log("[deleteStory Action] Initiated. User ID:", userId, "Story ID:", storyId);
+
+  if (!dbAdmin) {
+    const errorMessage = "Server configuration error: Database connection (dbAdmin) is not available. Firebase Admin SDK might not be initialized. Check server logs for firebaseAdmin.ts output.";
+    console.error("[deleteStory Action] CRITICAL ERROR:", errorMessage);
+    return { success: false, error: errorMessage };
+  }
+  console.log("[deleteStory Action] INFO: dbAdmin is DEFINED.");
+
+  if (!userId || typeof userId !== 'string' || userId.trim() === '') {
+    console.error("[deleteStory Action] Error: Authenticated User ID is invalid or missing:", userId);
+    return { success: false, error: "User not authenticated or user ID is invalid." };
+  }
+
+  if (!storyId) {
+    console.error("[deleteStory Action] Error: Story ID is missing.");
+    return { success: false, error: "Story ID is required to delete the story." };
+  }
+
+  try {
+    // Get story data first to verify ownership
+    const storyRef = dbAdmin.collection("stories").doc(storyId);
+    const docSnap = await storyRef.get();
+
+    if (!docSnap.exists) {
+      console.error(`[deleteStory Action] ERROR: Story with ID ${storyId} not found for deletion.`);
+      return { success: false, error: "Story not found." };
+    }
+
+    const existingStoryData = docSnap.data();
+    if (existingStoryData?.userId !== userId) {
+      console.error(`[deleteStory Action] ERROR: User ${userId} attempting to delete story ${storyId} owned by ${existingStoryData?.userId}.`);
+      return { success: false, error: "Unauthorized: You can only delete your own stories." };
+    }
+
+    console.log(`[deleteStory Action] INFO: Starting deletion process for story ${storyId}`);
+
+    // Delete all files in Firebase Storage for this story
+    const bucketName = getStorageBucket();
+    if (!bucketName || bucketName.trim() === "") {
+      console.error("[deleteStory Action] CRITICAL: NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET environment variable is not set or is empty. Cannot determine storage bucket.");
+      return { success: false, error: "Firebase Storage bucket name is not configured." };
+    }
+
+    const adminAppInstance = firebaseAdmin.app();
+    const storage = getAdminStorage(adminAppInstance);
+    const bucket = storage.bucket(bucketName);
+    const storageBasePath = `users/${userId}/stories/${storyId}`;
+
+    try {
+      const [files] = await bucket.getFiles({ prefix: storageBasePath });
+      console.log(`[deleteStory Action] Found ${files.length} files to delete in storage path: ${storageBasePath}`);
+      
+      if (files.length > 0) {
+        const deletePromises = files.map(file => {
+          console.log(`[deleteStory Action] Deleting file: ${file.name}`);
+          return file.delete().catch(error => {
+            console.error(`[deleteStory Action] Failed to delete file ${file.name}:`, error);
+            // Don't fail the entire operation if individual file deletion fails
+          });
+        });
+        
+        await Promise.all(deletePromises);
+        console.log(`[deleteStory Action] Successfully deleted ${files.length} storage files for story ${storyId}`);
+      } else {
+        console.log(`[deleteStory Action] No storage files found for story ${storyId}`);
+      }
+    } catch (storageError) {
+      console.error(`[deleteStory Action] Error deleting storage files for story ${storyId}:`, storageError);
+      // Continue with Firestore deletion even if storage deletion fails
+    }
+
+    // Delete the story document from Firestore
+    console.log(`[deleteStory Action] INFO: Attempting to DELETE document 'stories/${storyId}'`);
+    await storyRef.delete();
+    console.log(`[deleteStory Action] SUCCESS: Document 'stories/${storyId}' deleted.`);
+
+    // Revalidate relevant pages
+    revalidatePath('/dashboard');
+    revalidatePath(`/create-story?storyId=${storyId}`);
+
+    return { success: true };
+
+  } catch (error) {
+    console.error("[deleteStory Action] ERROR: Error during deletion operation:", error);
+    let errorMessage = "Failed to delete story.";
+    const firebaseError = error as FirebaseErrorWithCode;
+
+    if (firebaseError && firebaseError.code) {
+      errorMessage = `Failed to delete story (Firestore Error): ${firebaseError.message} (Code: ${firebaseError.code})`;
+      if (firebaseError.code === 'permission-denied' || (typeof firebaseError.code === 'number' && firebaseError.code === 7)) {
+        console.error("[deleteStory Action] PERMISSION DENIED. Check IAM for the service account and Firestore rules.");
+      }
+    } else if (error instanceof Error) {
+      errorMessage = `Failed to delete story: ${error.message}`;
+    }
+    console.error("[deleteStory Action] Full error object during deletion operation:", JSON.stringify(error, null, 2));
+    return { success: false, error: errorMessage };
+  } finally {
+    console.log('---------------------------------------------------------------------');
+    console.log("[deleteStory Action] Completed.");
+    console.log('---------------------------------------------------------------------');
+  }
+}

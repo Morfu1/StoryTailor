@@ -5,13 +5,25 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAuth } from '@/components/auth-provider';
 import type { Story } from '@/types/story';
-import { PlusCircle, FileText, Loader2, AlertTriangle, Film, Edit } from 'lucide-react';
+import { PlusCircle, FileText, Loader2, AlertTriangle, Film, Edit, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useEffect, useState } from 'react';
 import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import {formatDistanceToNow} from 'date-fns';
+import { useToast } from '@/hooks/use-toast';
+import { 
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 
 export default function DashboardPage() {
@@ -19,6 +31,8 @@ export default function DashboardPage() {
   const [stories, setStories] = useState<Story[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [deletingStoryId, setDeletingStoryId] = useState<string | null>(null);
+  const { toast } = useToast();
 
   useEffect(() => {
     if (user) {
@@ -41,6 +55,46 @@ export default function DashboardPage() {
       fetchStories();
     }
   }, [user]);
+
+  const handleDeleteStory = async (storyId: string, storyTitle: string) => {
+    if (!user) {
+      toast({ title: 'Error', description: 'User not authenticated.', variant: 'destructive' });
+      return;
+    }
+
+    setDeletingStoryId(storyId);
+    
+    try {
+      const { deleteStory } = await import('@/actions/storyActions');
+      const result = await deleteStory(storyId, user.uid);
+      
+      if (result.success) {
+        toast({ 
+          title: 'Story Deleted!', 
+          description: `"${storyTitle}" has been permanently deleted.`, 
+          className: 'bg-green-500 text-white' 
+        });
+        
+        // Remove the story from the local state
+        setStories(prevStories => prevStories.filter(story => story.id !== storyId));
+      } else {
+        toast({ 
+          title: 'Delete Failed', 
+          description: result.error || 'Failed to delete story.', 
+          variant: 'destructive' 
+        });
+      }
+    } catch (error) {
+      console.error('Error deleting story:', error);
+      toast({ 
+        title: 'Delete Error', 
+        description: 'An unexpected error occurred while deleting the story.', 
+        variant: 'destructive' 
+      });
+    } finally {
+      setDeletingStoryId(null);
+    }
+  };
 
   if (isLoading) {
     return (
@@ -121,19 +175,61 @@ export default function DashboardPage() {
                   Last updated: {story.updatedAt ? formatDistanceToNow(new Date( (story.updatedAt as any).seconds * 1000), { addSuffix: true }) : 'N/A'}
                 </p>
               </CardContent>
-              <CardFooter className="flex flex-col sm:flex-row gap-2">
-                <Button asChild variant="outline" className="w-full">
-                  <Link href={`/create-story?storyId=${story.id}`}>
-                    <Edit className="mr-2 h-4 w-4" />
-                    Edit Story
-                  </Link>
-                </Button>
-                <Button asChild variant="default" className="w-full bg-primary hover:bg-primary/90 text-primary-foreground">
-                  <Link href={`/assemble-video?storyId=${story.id}`}>
-                    <Film className="mr-2 h-4 w-4" />
-                    Edit Video
-                  </Link>
-                </Button>
+              <CardFooter className="flex flex-col gap-2">
+                <div className="flex flex-col sm:flex-row gap-2 w-full">
+                  <Button asChild variant="outline" className="flex-1">
+                    <Link href={`/create-story?storyId=${story.id}`}>
+                      <Edit className="mr-2 h-4 w-4" />
+                      Edit Story
+                    </Link>
+                  </Button>
+                  <Button asChild variant="default" className="flex-1 bg-primary hover:bg-primary/90 text-primary-foreground">
+                    <Link href={`/assemble-video?storyId=${story.id}`}>
+                      <Film className="mr-2 h-4 w-4" />
+                      Edit Video
+                    </Link>
+                  </Button>
+                </div>
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button 
+                      variant="destructive" 
+                      size="sm" 
+                      className="w-full"
+                      disabled={deletingStoryId === story.id}
+                    >
+                      {deletingStoryId === story.id ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Deleting...
+                        </>
+                      ) : (
+                        <>
+                          <Trash2 className="mr-2 h-4 w-4" />
+                          Delete Story
+                        </>
+                      )}
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Delete Story</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        Are you sure you want to delete "<strong>{story.title}</strong>"? This action cannot be undone and will permanently delete the story and all its associated files (images, audio, etc.).
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction 
+                        onClick={() => handleDeleteStory(story.id!, story.title)}
+                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                      >
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        Delete Permanently
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
               </CardFooter>
             </Card>
           ))}
