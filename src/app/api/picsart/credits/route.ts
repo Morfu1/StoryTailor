@@ -13,54 +13,79 @@ export async function GET(request: NextRequest) {
 
     console.log('Attempting to fetch Picsart credits...');
 
+    const response: any = {};
+    const errors: string[] = [];
+
     // Fetch video credits balance
-    const videoResponse = await fetch('https://video-api.picsart.io/v1/balance', {
-      method: 'GET',
-      headers: {
-        'X-Picsart-API-Key': apiKey,
-        'Accept': 'application/json',
-      },
-    });
-
-    console.log('Response status:', videoResponse.status);
-    console.log('Response headers:', Object.fromEntries(videoResponse.headers.entries()));
-
-    if (!videoResponse.ok) {
-      const errorText = await videoResponse.text();
-      console.error('Picsart API error response:', errorText);
-      console.error('Request headers sent:', {
-        'X-Picsart-API-Key': apiKey ? `${apiKey.substring(0, 8)}...` : 'undefined',
-        'Accept': 'application/json'
-      });
-      
-      let errorMessage = 'Failed to fetch video credits from Picsart API';
-      
-      if (videoResponse.status === 401) {
-        errorMessage = 'Invalid API key or insufficient permissions. Your API key may not have access to the Video API.';
-      } else if (videoResponse.status === 403) {
-        errorMessage = 'API key does not have permission to access video credits. Contact Picsart support to enable Video API access.';
-      }
-      
-      return NextResponse.json(
-        { 
-          error: errorMessage, 
-          details: errorText,
-          status: videoResponse.status,
-          hint: 'Make sure your API key has Video API permissions enabled in your Picsart account.'
+    try {
+      const videoResponse = await fetch('https://video-api.picsart.io/v1/balance', {
+        method: 'GET',
+        headers: {
+          'X-Picsart-API-Key': apiKey,
+          'Accept': 'application/json',
         },
-        { status: videoResponse.status }
-      );
+      });
+
+      console.log('Video API response status:', videoResponse.status);
+
+      if (videoResponse.ok) {
+        const videoData = await videoResponse.json();
+        response.video_credits = videoData.credits || 0;
+        console.log('Video credits fetched successfully:', videoData.credits);
+      } else {
+        const errorText = await videoResponse.text();
+        console.error('Video API error:', errorText);
+        errors.push(`Video API: ${videoResponse.status} - ${errorText}`);
+      }
+    } catch (error) {
+      console.error('Video API fetch error:', error);
+      errors.push(`Video API: Network error - ${error}`);
     }
 
-    const videoData = await videoResponse.json();
-    console.log('Picsart API response:', videoData);
-    
-    // The API returns { "credits": number } according to the YAML spec
-    const response = {
-      video_credits: videoData.credits || 0,
-    };
+    // Fetch GenAI credits balance  
+    try {
+      const genaiResponse = await fetch('https://genai-api.picsart.io/v1/balance', {
+        method: 'GET',
+        headers: {
+          'X-Picsart-API-Key': apiKey,
+          'Accept': 'application/json',
+        },
+      });
 
-    return NextResponse.json(response);
+      console.log('GenAI API response status:', genaiResponse.status);
+
+      if (genaiResponse.ok) {
+        const genaiData = await genaiResponse.json();
+        response.genai_credits = genaiData.credits || 0;
+        console.log('GenAI credits fetched successfully:', genaiData.credits);
+      } else {
+        const errorText = await genaiResponse.text();
+        console.error('GenAI API error:', errorText);
+        errors.push(`GenAI API: ${genaiResponse.status} - ${errorText}`);
+      }
+    } catch (error) {
+      console.error('GenAI API fetch error:', error);
+      errors.push(`GenAI API: Network error - ${error}`);
+    }
+
+    // If we got at least one successful response, return the data with any errors
+    if (Object.keys(response).length > 0) {
+      if (errors.length > 0) {
+        response.partial_errors = errors;
+      }
+      return NextResponse.json(response);
+    }
+
+    // If no APIs worked, return an error
+    return NextResponse.json(
+      { 
+        error: 'Unable to fetch credits from any Picsart API', 
+        details: errors,
+        hint: 'Check your API key permissions for Video and GenAI APIs in your Picsart account.'
+      },
+      { status: 401 }
+    );
+
   } catch (error) {
     console.error('Error fetching Picsart credits:', error);
     return NextResponse.json(

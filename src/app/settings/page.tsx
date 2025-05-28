@@ -10,9 +10,9 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Header } from '@/components/header';
 
 interface CreditBalance {
-  video_credits: number;
-  image_credits?: number;
+  video_credits?: number;
   genai_credits?: number;
+  partial_errors?: string[];
 }
 
 export default function SettingsPage() {
@@ -85,7 +85,7 @@ export default function SettingsPage() {
                 API Credits Balance
               </CardTitle>
               <CardDescription>
-                Your current Picsart API credit balance for video processing
+                Your current Picsart API credit balance for Video and GenAI processing
               </CardDescription>
             </div>
             <Button 
@@ -137,36 +137,62 @@ export default function SettingsPage() {
                 </div>
               </div>
             ) : credits ? (
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                <div className="bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-950 dark:to-blue-900 p-4 rounded-lg border">
-                  <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">
-                    {credits.video_credits.toLocaleString()}
+              <div className="space-y-4">
+                {/* Credits Display */}
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-2">
+                  {/* Video Credits */}
+                  <div className={`p-4 rounded-lg border ${
+                    credits.video_credits !== undefined 
+                      ? 'bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-950 dark:to-blue-900' 
+                      : 'bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 border-dashed'
+                  }`}>
+                    <div className={`text-2xl font-bold ${
+                      credits.video_credits !== undefined 
+                        ? 'text-blue-600 dark:text-blue-400' 
+                        : 'text-gray-400 dark:text-gray-600'
+                    }`}>
+                      {credits.video_credits !== undefined ? credits.video_credits.toLocaleString() : 'N/A'}
+                    </div>
+                    <div className={`text-sm ${
+                      credits.video_credits !== undefined 
+                        ? 'text-blue-600/80 dark:text-blue-400/80' 
+                        : 'text-gray-500 dark:text-gray-400'
+                    }`}>
+                      Video Credits {credits.video_credits === undefined ? '(Unavailable)' : ''}
+                    </div>
                   </div>
-                  <div className="text-sm text-blue-600/80 dark:text-blue-400/80">
-                    Video Credits
+                  
+                  {/* GenAI Credits */}
+                  <div className={`p-4 rounded-lg border ${
+                    credits.genai_credits !== undefined 
+                      ? 'bg-gradient-to-br from-purple-50 to-purple-100 dark:from-purple-950 dark:to-purple-900' 
+                      : 'bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 border-dashed'
+                  }`}>
+                    <div className={`text-2xl font-bold ${
+                      credits.genai_credits !== undefined 
+                        ? 'text-purple-600 dark:text-purple-400' 
+                        : 'text-gray-400 dark:text-gray-600'
+                    }`}>
+                      {credits.genai_credits !== undefined ? credits.genai_credits.toLocaleString() : 'N/A'}
+                    </div>
+                    <div className={`text-sm ${
+                      credits.genai_credits !== undefined 
+                        ? 'text-purple-600/80 dark:text-purple-400/80' 
+                        : 'text-gray-500 dark:text-gray-400'
+                    }`}>
+                      GenAI Credits {credits.genai_credits === undefined ? '(Unavailable)' : ''}
+                    </div>
                   </div>
                 </div>
-                
-                {credits.image_credits !== undefined && (
-                  <div className="bg-gradient-to-br from-green-50 to-green-100 dark:from-green-950 dark:to-green-900 p-4 rounded-lg border">
-                    <div className="text-2xl font-bold text-green-600 dark:text-green-400">
-                      {credits.image_credits.toLocaleString()}
-                    </div>
-                    <div className="text-sm text-green-600/80 dark:text-green-400/80">
-                      Image Credits
-                    </div>
-                  </div>
-                )}
-                
-                {credits.genai_credits !== undefined && (
-                  <div className="bg-gradient-to-br from-purple-50 to-purple-100 dark:from-purple-950 dark:to-purple-900 p-4 rounded-lg border">
-                    <div className="text-2xl font-bold text-purple-600 dark:text-purple-400">
-                      {credits.genai_credits.toLocaleString()}
-                    </div>
-                    <div className="text-sm text-purple-600/80 dark:text-purple-400/80">
-                      GenAI Credits
-                    </div>
-                  </div>
+
+                {/* Partial Errors Warning */}
+                {credits.partial_errors && credits.partial_errors.length > 0 && (
+                  <Alert variant="destructive">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertDescription>
+                      Some API endpoints failed: {credits.partial_errors.join(', ')}
+                    </AlertDescription>
+                  </Alert>
                 )}
               </div>
             ) : null}
