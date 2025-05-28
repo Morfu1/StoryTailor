@@ -641,9 +641,24 @@ export async function generateImageFromPrompt(
     return { success: false, error: "PicsArt API key is not configured." };
   }
 
+  // Replace placeholders with actual descriptions for character consistency
+  let processedPrompt = originalPrompt;
+  if (userId && storyId) {
+    try {
+      const storyResult = await getStory(storyId, userId);
+      if (storyResult.success && storyResult.data) {
+        const { parseEntityReferences } = await import('@/app/(app)/assemble-video/utils');
+        processedPrompt = parseEntityReferences(originalPrompt, storyResult.data);
+        console.log(`Replaced placeholders in prompt. Original: "${originalPrompt}" -> Processed: "${processedPrompt}"`);
+      }
+    } catch (error) {
+      console.warn("Failed to replace placeholders, using original prompt:", error);
+    }
+  }
+
   const styles = "3D, Cartoon, High Quality";
-  // Ensure originalPrompt is not empty before adding styles
-  const requestPrompt = originalPrompt ? `${originalPrompt}, ${styles}` : styles;
+  // Ensure processedPrompt is not empty before adding styles
+  const requestPrompt = processedPrompt ? `${processedPrompt}, ${styles}` : styles;
   
   // A more concise negative prompt, focusing on common issues.
   // The SDK example used: Yup.string().min(7).max(100).required() for negativePrompt,
