@@ -38,7 +38,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { generateTitle, generateScript, generateCharacterPrompts, generateNarrationAudio, generateImagePrompts, saveStory, getStory, generateImageFromPrompt, cleanupBrokenImages } from '@/actions/storyActions';
-import { Bot, Clapperboard, ImageIcon, Loader2, Mic, Save, Sparkles, FileText, Image as LucideImage, AlertCircle, CheckCircle, Info, Pencil, ListMusic, Upload, Film, Edit2, Users, Settings } from 'lucide-react';
+import { Bot, Clapperboard, ImageIcon, Loader2, Mic, Save, Sparkles, FileText, Image as LucideImage, AlertCircle, CheckCircle, Info, Pencil, ListMusic, Upload, Film, Edit2, Users, Settings, RefreshCw, Trash2 } from 'lucide-react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -125,6 +125,36 @@ const googleTtsLanguages = [
   { id: 'ta-IN', name: 'Tamil (India)' }, { id: 'te-IN', name: 'Telugu (India)' }
 ];
 
+// Helper function to determine the appropriate step based on story completion
+const determineCurrentStep = (storyData: Story): number => {
+  if (storyData.generatedImages && storyData.generatedImages.length > 0 && 
+      storyData.imagePrompts && storyData.generatedImages.length === storyData.imagePrompts.length) {
+    // All images generated - show step 5 (last completed step)
+    return 5; 
+  } else if (storyData.imagePrompts && storyData.imagePrompts.length > 0) {
+    // Image prompts exist but not all images generated - show step 5 (next step to work on)
+    return 5; 
+  } else if (storyData.narrationChunks && storyData.narrationChunks.length > 0 && storyData.narrationChunks.every(c => c.audioUrl)) {
+    // All narration chunks completed - show step 4 (next step to work on)
+    return 4; 
+  } else if (storyData.narrationAudioUrl) {
+    // Legacy audio exists - show step 4 (next step to work on)
+    return 4; 
+  } else if (storyData.narrationChunks && storyData.narrationChunks.length > 0) {
+    // Chunks exist but not all narrated - show step 3 (current step to work on)
+    return 3; 
+  } else if (storyData.detailsPrompts && (storyData.detailsPrompts.characterPrompts || storyData.detailsPrompts.itemPrompts || storyData.detailsPrompts.locationPrompts)) {
+    // Details prompts exist - show step 3 (next step to work on)
+    return 3; 
+  } else if (storyData.generatedScript) {
+    // Script exists - show step 2 (next step to work on)
+    return 2; 
+  } else {
+    // No progress - show step 1
+    return 1;
+  }
+};
+
 
 export default function CreateStoryPage() {
   const { user, loading: authLoading } = useAuth();
@@ -158,6 +188,11 @@ export default function CreateStoryPage() {
   const [currentNarrationChunkIndex, setCurrentNarrationChunkIndex] = useState<number>(-1);
   const [processingAllMode, setProcessingAllMode] = useState<boolean>(false); // New state for "Generate All"
   const [imageProvider, setImageProvider] = useState<'picsart' | 'gemini' | 'imagen3'>('picsart'); // AI provider selection for image generation
+  const [imageGenerationProgress, setImageGenerationProgress] = useState<{
+    total: number;
+    completed: number;
+    generating: number[];
+  }>({ total: 0, completed: 0, generating: [] });
 
 interface ParsedPrompt {
   name?: string;
@@ -213,6 +248,77 @@ const parseNamedPrompts = (rawPrompts: string | undefined, type: 'Character' | '
       return { name, description, originalIndex: index };
     })
     .filter(p => p !== null) as ParsedPrompt[];
+};
+
+// Helper function to categorize images based on their source
+const categorizeImages = (storyData: Story) => {
+  const characters: GeneratedImage[] = [];
+  const locations: GeneratedImage[] = [];
+  const items: GeneratedImage[] = [];
+  const scenes: GeneratedImage[] = [];
+
+  if (!storyData.generatedImages) {
+    return { characters, locations, items, scenes };
+  }
+
+  console.log('=== CATEGORIZE IMAGES DEBUG ===');
+  console.log('Total generatedImages:', storyData.generatedImages.length);
+
+  // Get parsed prompts from step 2
+  const characterPrompts = parseNamedPrompts(storyData.detailsPrompts?.characterPrompts, 'Character');
+  const locationPrompts = parseNamedPrompts(storyData.detailsPrompts?.locationPrompts, 'Location');
+  const itemPrompts = parseNamedPrompts(storyData.detailsPrompts?.itemPrompts, 'Item');
+
+  console.log('Character prompts:', characterPrompts.map(p => p.description));
+  console.log('Location prompts:', locationPrompts.map(p => p.description));
+  console.log('Item prompts:', itemPrompts.map(p => p.description));
+  console.log('Scene prompts:', storyData.imagePrompts || []);
+
+  // Create sets for quick lookup
+  const characterDescriptions = new Set(characterPrompts.map(p => p.description));
+  const locationDescriptions = new Set(locationPrompts.map(p => p.description));
+  const itemDescriptions = new Set(itemPrompts.map(p => p.description));
+  const scenePrompts = new Set(storyData.imagePrompts || []);
+
+  // Track processed images to avoid duplicates by both URL and prompt
+  const processedUrls = new Set<string>();
+  const processedPrompts = new Set<string>();
+  
+  storyData.generatedImages.forEach((image, index) => {
+    console.log(`Processing image ${index}: URL=${image.imageUrl}, Prompt="${image.originalPrompt}"`);
+    
+    // Skip if we've already processed this image URL or this prompt
+    if (processedUrls.has(image.imageUrl) || processedPrompts.has(image.originalPrompt)) {
+      console.log(`  ⚠️ Skipping duplicate - URL: ${processedUrls.has(image.imageUrl)}, Prompt: ${processedPrompts.has(image.originalPrompt)}`);
+      return;
+    }
+    processedUrls.add(image.imageUrl);
+    processedPrompts.add(image.originalPrompt);
+    
+    if (characterDescriptions.has(image.originalPrompt)) {
+      console.log(`  ✅ Added to characters: "${image.originalPrompt}"`);
+      characters.push(image);
+    } else if (locationDescriptions.has(image.originalPrompt)) {
+      console.log(`  ✅ Added to locations: "${image.originalPrompt}"`);
+      locations.push(image);
+    } else if (itemDescriptions.has(image.originalPrompt)) {
+      console.log(`  ✅ Added to items: "${image.originalPrompt}"`);
+      items.push(image);
+    } else if (scenePrompts.has(image.originalPrompt)) {
+      console.log(`  ✅ Added to scenes: "${image.originalPrompt}"`);
+      scenes.push(image);
+    } else {
+      console.log(`  ❌ No category match for: "${image.originalPrompt}"`);
+    }
+  });
+
+  console.log('Final counts - Characters:', characters.length, 'Locations:', locations.length, 'Items:', items.length, 'Scenes:', scenes.length);
+  return { characters, locations, items, scenes };
+};
+
+// Helper function to get scene name for a prompt
+const getSceneName = (prompt: string, index: number): string => {
+  return `Scene ${index + 1}`;
 };
 
 
@@ -343,14 +449,8 @@ const parseNamedPrompts = (rawPrompts: string | undefined, type: 'Character' | '
                     // });
 
 
-                    // Determine initial step based on chunked narration primarily
-                    if (loadedStory.imagePrompts && loadedStory.imagePrompts.length > 0) initialStep = 4; // Assuming images depend on prompts from chunks
-                    else if (loadedStory.narrationChunks && loadedStory.narrationChunks.length > 0 && loadedStory.narrationChunks.every(c => c.audioUrl)) initialStep = 4; // All chunks narrated
-                    else if (loadedStory.narrationChunks && loadedStory.narrationChunks.length > 0) initialStep = 3; // Chunks exist (text or partial audio)
-                    else if (loadedStory.narrationAudioUrl) initialStep = 3; // Legacy audio
-                    else if (loadedStory.detailsPrompts && (loadedStory.detailsPrompts.characterPrompts || loadedStory.detailsPrompts.itemPrompts || loadedStory.detailsPrompts.locationPrompts)) initialStep = 2;
-                    else if (loadedStory.generatedScript) initialStep = 2; // Script exists, implies chunks can be made
-                    else initialStep = 1;
+                    // Determine initial step based on completion status
+                    initialStep = determineCurrentStep(loadedStory);
             
             setCurrentStep(initialStep);
             setActiveAccordionItem(`step-${initialStep}`);
@@ -399,6 +499,9 @@ const parseNamedPrompts = (rawPrompts: string | undefined, type: 'Character' | '
     
     return () => clearTimeout(timeoutId);
   }, [currentStep]);
+
+  // Note: Removed auto-advance useEffect to allow manual navigation to previous steps
+  // The initial step is set correctly on page load, and users can navigate freely after that
 
   const handleGenerateScript = async () => {
     if (!storyData.userPrompt.trim()) {
@@ -1069,17 +1172,8 @@ const parseNamedPrompts = (rawPrompts: string | undefined, type: 'Character' | '
       if (existingImageIndexForPrompt > -1) {
         updatedImages[existingImageIndexForPrompt] = newImage;
       } else {
-         const newImagesArray = Array(storyData.imagePrompts?.length || 0).fill(null);
-         currentGeneratedImages.forEach((img) => {
-            if (img) { 
-              const originalPromptIndex = storyData.imagePrompts?.indexOf(img.originalPrompt);
-              if(originalPromptIndex !== undefined && originalPromptIndex > -1) {
-                  newImagesArray[originalPromptIndex] = img;
-              }
-            }
-         });
-         newImagesArray[index] = newImage;
-         updatedImages = newImagesArray.filter(Boolean) as GeneratedImage[]; 
+        // Simply add the new image to existing images - don't reorganize the array
+        updatedImages.push(newImage);
       }
 
       updateStoryData({ generatedImages: updatedImages });
@@ -1092,26 +1186,43 @@ const parseNamedPrompts = (rawPrompts: string | undefined, type: 'Character' | '
 
   const handleGenerateAllImages = async () => {
     if (!storyData.imagePrompts || storyData.imagePrompts.length === 0) return;
-    handleSetLoading('allImages', true);
+    handleSetLoading('generateImages', true);
     
     const currentGeneratedImages = Array.isArray(storyData.generatedImages) ? storyData.generatedImages : [];
-    const imagesToGenerate = storyData.imagePrompts.map((prompt, index) => ({ prompt, index })).filter(
-      p => !currentGeneratedImages.some(img => img && img.originalPrompt === p.prompt)
-    );
+    const imagesToGenerate = storyData.imagePrompts.map((prompt, index) => ({ prompt, index }));
 
-    const results = await Promise.all(
-      imagesToGenerate.map(async ({prompt, index}) => {
-        handleSetLoading(`image-${index}`, true);
-        // Pass userId and storyId to store images in Firebase Storage
-        const result = await generateImageFromPrompt(prompt, storyData.userId, storyData.id, imageProvider);
-        handleSetLoading(`image-${index}`, false);
-        if (result.success && result.imageUrl) {
-          return { prompt, imageUrl: result.imageUrl, requestPrompt: result.requestPrompt, success: true, index };
-        }
+    // Initialize progress tracking
+    setImageGenerationProgress({
+      total: imagesToGenerate.length,
+      completed: 0,
+      generating: []
+    });
+
+    const results = [];
+    for (const {prompt, index} of imagesToGenerate) {
+      // Mark this index as generating
+      setImageGenerationProgress(prev => ({
+        ...prev,
+        generating: [...prev.generating, index]
+      }));
+
+      // Pass userId and storyId to store images in Firebase Storage
+      const result = await generateImageFromPrompt(prompt, storyData.userId, storyData.id, imageProvider);
+      
+      // Update progress
+      setImageGenerationProgress(prev => ({
+        ...prev,
+        completed: prev.completed + 1,
+        generating: prev.generating.filter(i => i !== index)
+      }));
+
+      if (result.success && result.imageUrl) {
+        results.push({ prompt, imageUrl: result.imageUrl, requestPrompt: result.requestPrompt, success: true, index });
+      } else {
         toast({ title: 'Image Generation Error', description: result.error || `Failed for prompt: \"${prompt.substring(0,30)}...\"`, variant: 'destructive' });
-        return { prompt, success: false, index, error: result.error, requestPrompt: result.requestPrompt };
-      })
-    );
+        results.push({ prompt, success: false, index, error: result.error, requestPrompt: result.requestPrompt });
+      }
+    }
 
     const successfulNewImages = results.filter(r => r.success).map(r => ({
       originalPrompt: r.prompt,
@@ -1125,20 +1236,271 @@ const parseNamedPrompts = (rawPrompts: string | undefined, type: 'Character' | '
         const combined = [...existingImages, ...successfulNewImages];
         const uniqueImagesByPrompt = Array.from(new Map(combined.map(img => [img.originalPrompt, img])).values());
         
-        const orderedImages = prev.imagePrompts?.map(p => uniqueImagesByPrompt.find(img => img.originalPrompt === p)).filter(Boolean) as GeneratedImage[] || uniqueImagesByPrompt;
-        return { ...prev, generatedImages: orderedImages };
+        // Keep ALL unique images, don't filter to only imagePrompts
+        return { ...prev, generatedImages: uniqueImagesByPrompt };
       });
     }
     
     if (successfulNewImages.length === imagesToGenerate.length && imagesToGenerate.length > 0) {
-      toast({ title: 'All Remaining Images Generated!', description: 'All visuals are ready for your story.', className: 'bg-primary text-primary-foreground' });
+      toast({ title: 'All Images Generated!', description: 'All visuals are ready for your story.', className: 'bg-primary text-primary-foreground' });
     } else if (successfulNewImages.length > 0) {
       toast({ title: 'Image Generation Partially Completed', description: 'Some images were generated. Check individual prompts for failures.', variant: 'default' });
     } else if (imagesToGenerate.length > 0) { 
        toast({ title: 'Image Generation Failed', description: `Could not generate new images. Errors: ${results.filter(r=>!r.success).map(r => r.error).join(', ')}`, variant: 'destructive' });
     }
 
-    handleSetLoading('allImages', false);
+    // Reset progress
+    setImageGenerationProgress({ total: 0, completed: 0, generating: [] });
+    handleSetLoading('generateImages', false);
+  };
+
+  const handleRegenerateImage = async (index: number) => {
+    if (!storyData.imagePrompts || !storyData.imagePrompts[index]) return;
+    const prompt = storyData.imagePrompts[index];
+    await handleGenerateSingleImage(prompt, index);
+  };
+
+  // Utility function to clean duplicate images
+  const cleanDuplicateImages = () => {
+    if (!storyData.generatedImages || storyData.generatedImages.length === 0) {
+      console.log('No images to clean');
+      toast({ title: 'No Images', description: 'No images found to clean.', variant: 'destructive' });
+      return;
+    }
+    
+    console.log('=== CLEAN DUPLICATES DEBUG ===');
+    console.log('Total images before cleaning:', storyData.generatedImages.length);
+    console.log('Images:', storyData.generatedImages.map(img => ({ url: img.imageUrl, prompt: img.originalPrompt })));
+    
+    const cleanedImages = Array.from(
+      new Map(storyData.generatedImages.map(img => [`${img.imageUrl}|${img.originalPrompt}`, img])).values()
+    );
+    
+    console.log('Total images after cleaning:', cleanedImages.length);
+    console.log('Cleaned images:', cleanedImages.map(img => ({ url: img.imageUrl, prompt: img.originalPrompt })));
+    
+    if (cleanedImages.length !== storyData.generatedImages.length) {
+      console.log(`Cleaned up ${storyData.generatedImages.length - cleanedImages.length} duplicate images`);
+      updateStoryData({ generatedImages: cleanedImages });
+      toast({ 
+        title: 'Duplicates Removed', 
+        description: `Removed ${storyData.generatedImages.length - cleanedImages.length} duplicate images.`,
+        className: 'bg-blue-600 text-white'
+      });
+    } else {
+      console.log('No duplicates found to clean');
+      toast({ 
+        title: 'No Duplicates', 
+        description: 'No duplicate images found to clean.',
+        className: 'bg-yellow-600 text-white'
+      });
+    }
+  };
+
+  // Function to recover images from Firebase Storage
+  const handleRecoverStorageImages = async () => {
+    if (!storyData.id || !storyData.userId) {
+      toast({ title: 'Error', description: 'Story ID or User ID missing', variant: 'destructive' });
+      return;
+    }
+
+    handleSetLoading('recoveringImages', true);
+    toast({ title: 'Recovering Images', description: 'Scanning Firebase Storage for existing images...', className: 'bg-primary text-primary-foreground' });
+
+    // First, clean up any existing duplicates in generatedImages
+    if (storyData.generatedImages && storyData.generatedImages.length > 0) {
+      const cleanedImages = Array.from(
+        new Map(storyData.generatedImages.map(img => [`${img.imageUrl}|${img.originalPrompt}`, img])).values()
+      );
+      if (cleanedImages.length !== storyData.generatedImages.length) {
+        console.log(`Cleaned up ${storyData.generatedImages.length - cleanedImages.length} duplicate images`);
+        updateStoryData({ generatedImages: cleanedImages });
+      }
+    }
+
+    try {
+      // Import Firebase storage functions
+      const { storage } = await import('@/lib/firebase');
+      const { ref, listAll, getDownloadURL } = await import('firebase/storage');
+      
+      // List all files in the story's images folder
+      const storagePath = `users/${storyData.userId}/stories/${storyData.id}/images`;
+      console.log('=== FIREBASE STORAGE RECOVERY DEBUG ===');
+      console.log('User ID:', storyData.userId);
+      console.log('Story ID:', storyData.id);
+      console.log('Storage path:', storagePath);
+      
+      const storageRef = ref(storage, storagePath);
+      console.log('Storage ref created:', storageRef);
+      
+      const result = await listAll(storageRef);
+      console.log('listAll result:', result);
+      console.log('Number of items found:', result.items.length);
+      console.log('Items:', result.items.map(item => ({ name: item.name, fullPath: item.fullPath })));
+      
+      let allItems = result.items;
+      
+      // If no items found in /images subfolder, try the story root folder
+      if (allItems.length === 0) {
+        console.log('No items in /images folder, trying story root folder...');
+        const rootStorageRef = ref(storage, `stories/${storyData.id}`);
+        const rootResult = await listAll(rootStorageRef);
+        console.log('Root folder items:', rootResult.items.length);
+        console.log('Root items:', rootResult.items.map(item => ({ name: item.name, fullPath: item.fullPath })));
+        allItems = rootResult.items.filter(item => 
+          item.name.toLowerCase().includes('.jpg') || 
+          item.name.toLowerCase().includes('.jpeg') || 
+          item.name.toLowerCase().includes('.png')
+        );
+        console.log('Filtered image files:', allItems.length);
+      }
+      
+      const recoveredImages: GeneratedImage[] = [];
+      
+      // Get all possible prompts for matching
+      const characterPrompts = parseNamedPrompts(storyData.detailsPrompts?.characterPrompts, 'Character');
+      const locationPrompts = parseNamedPrompts(storyData.detailsPrompts?.locationPrompts, 'Location');
+      const itemPrompts = parseNamedPrompts(storyData.detailsPrompts?.itemPrompts, 'Item');
+      
+      const allPrompts = [
+        ...characterPrompts.map(p => ({ type: 'character', description: p.description })),
+        ...locationPrompts.map(p => ({ type: 'location', description: p.description })),
+        ...itemPrompts.map(p => ({ type: 'item', description: p.description })),
+        ...(storyData.imagePrompts || []).map(p => ({ type: 'scene', description: p }))
+      ];
+      
+      console.log('All available prompts for matching:', allPrompts);
+
+      // Process each file
+      for (const item of allItems) {
+        const imageUrl = await getDownloadURL(item);
+        const fileName = item.name;
+        
+        console.log(`\nProcessing file: ${fileName}`);
+        
+        // Extract the original prompt from filename
+        // Filename format: timestamp_description.jpg
+        const parts = fileName.split('_');
+        if (parts.length >= 2) {
+          const description = parts.slice(1).join('_').replace(/\.(jpg|jpeg|png)$/i, '');
+          // Convert underscores back to spaces
+          const extractedPrompt = description.replace(/_/g, ' ');
+          
+          console.log(`Extracted prompt: "${extractedPrompt}"`);
+          
+          // Try multiple matching strategies
+          let bestMatch = null;
+          let matchScore = 0;
+          
+          for (const prompt of allPrompts) {
+            const promptLower = prompt.description.toLowerCase();
+            const extractedLower = extractedPrompt.toLowerCase();
+            
+            // Strategy 1: Exact match
+            if (promptLower === extractedLower) {
+              bestMatch = prompt.description;
+              matchScore = 100;
+              console.log(`✅ Exact match found: "${prompt.description}"`);
+              break;
+            }
+            
+            // Strategy 2: One contains the other (with minimum length)
+            if ((promptLower.includes(extractedLower) && extractedLower.length > 5) ||
+                (extractedLower.includes(promptLower) && promptLower.length > 5)) {
+              if (matchScore < 90) {
+                bestMatch = prompt.description;
+                matchScore = 90;
+                console.log(`✅ Contains match found: "${prompt.description}" (score: 90)`);
+              }
+            }
+            
+            // Strategy 3: Fuzzy match - check if first 30 characters match
+            const prompt30 = promptLower.substring(0, 30);
+            const extracted30 = extractedLower.substring(0, 30);
+            if (prompt30 === extracted30 && prompt30.length > 15) {
+              if (matchScore < 80) {
+                bestMatch = prompt.description;
+                matchScore = 80;
+                console.log(`✅ Prefix match found: "${prompt.description}" (score: 80)`);
+              }
+            }
+            
+            // Strategy 3.5: Check if prompt starts with extracted text (for truncated filenames)
+            if (promptLower.startsWith(extractedLower) && extractedLower.length > 10) {
+              if (matchScore < 85) {
+                bestMatch = prompt.description;
+                matchScore = 85;
+                console.log(`✅ Starts-with match found: "${prompt.description}" (score: 85, truncated filename)`);
+              }
+            }
+            
+            // Strategy 4: Word overlap (at least 50% of words match)
+            const promptWords = promptLower.split(/\s+/).filter(w => w.length > 2);
+            const extractedWords = extractedLower.split(/\s+/).filter(w => w.length > 2);
+            const commonWords = promptWords.filter(w => extractedWords.includes(w));
+            const overlapRatio = commonWords.length / Math.min(promptWords.length, extractedWords.length);
+            
+            if (overlapRatio >= 0.5 && commonWords.length >= 2) {
+              const score = Math.floor(overlapRatio * 70);
+              if (matchScore < score) {
+                bestMatch = prompt.description;
+                matchScore = score;
+                console.log(`✅ Word overlap match found: "${prompt.description}" (score: ${score}, overlap: ${overlapRatio.toFixed(2)})`);
+              }
+            }
+          }
+          
+          if (!bestMatch) {
+            // If no match found, use the extracted prompt as-is
+            bestMatch = extractedPrompt;
+            console.log(`❌ No match found, using extracted prompt: "${extractedPrompt}"`);
+          }
+          
+          recoveredImages.push({
+            originalPrompt: bestMatch,
+            requestPrompt: bestMatch,
+            imageUrl: imageUrl
+          });
+          
+          console.log(`Added image with prompt: "${bestMatch}"`);
+        } else {
+          console.log(`❌ Could not parse filename: ${fileName}`);
+        }
+      }
+      
+      if (recoveredImages.length > 0) {
+        // Merge with existing images (deduplicating by URL and prompt)
+        const currentImages = storyData.generatedImages || [];
+        const combined = [...currentImages, ...recoveredImages];
+        const uniqueImages = Array.from(
+          new Map(combined.map(img => [`${img.imageUrl}|${img.originalPrompt}`, img])).values()
+        );
+        
+        updateStoryData({ generatedImages: uniqueImages });
+        
+        toast({ 
+          title: 'Images Recovered!', 
+          description: `Found and recovered ${recoveredImages.length} images from storage.`,
+          className: 'bg-green-600 text-white'
+        });
+      } else {
+        toast({ 
+          title: 'No Images Found', 
+          description: 'No additional images found in Firebase Storage.',
+          variant: 'default'
+        });
+      }
+      
+    } catch (error) {
+      console.error('Error recovering images:', error);
+      toast({ 
+        title: 'Recovery Failed', 
+        description: 'Failed to scan Firebase Storage. Please try again.',
+        variant: 'destructive'
+      });
+    }
+    
+    handleSetLoading('recoveringImages', false);
   };
 
 
@@ -1510,11 +1872,30 @@ const parseNamedPrompts = (rawPrompts: string | undefined, type: 'Character' | '
                       {storyData.detailsPrompts && (storyData.detailsPrompts.characterPrompts || storyData.detailsPrompts.itemPrompts || storyData.detailsPrompts.locationPrompts) ? 'Re-generate Details' : 'Generate Details'}
                     </Button>
                   {storyData.detailsPrompts && (storyData.detailsPrompts.characterPrompts || storyData.detailsPrompts.itemPrompts || storyData.detailsPrompts.locationPrompts) && (
-                  <Button onClick={handleGenerateAllDetailImages} disabled={isLoading.allDetailImages || isLoading.details} variant="outline">
-                    {isLoading.allDetailImages ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ImageIcon className="mr-2 h-4 w-4" />}
-                      Generate All Detail Images
-                      </Button>
-                      )}
+                  <>
+                    <Button onClick={handleGenerateAllDetailImages} disabled={isLoading.allDetailImages || isLoading.details} variant="outline">
+                      {isLoading.allDetailImages ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ImageIcon className="mr-2 h-4 w-4" />}
+                        Generate All Detail Images
+                    </Button>
+                    <Button
+                      onClick={handleRecoverStorageImages}
+                      disabled={isLoading.recoveringImages}
+                      variant="outline"
+                      className="border-green-600 text-green-600 hover:bg-green-50"
+                    >
+                      {isLoading.recoveringImages ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+                      Recover Missing Images
+                    </Button>
+                    <Button
+                      onClick={cleanDuplicateImages}
+                      variant="outline"
+                      className="border-blue-600 text-blue-600 hover:bg-blue-50"
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      Clean Duplicates
+                    </Button>
+                  </>
+                  )}
                     </div>
                     
                     {/* AI Provider Selection for Image Generation */}
@@ -2011,6 +2392,356 @@ const parseNamedPrompts = (rawPrompts: string | undefined, type: 'Character' | '
                   </div>
                 ): (
                      <p className="text-muted-foreground">Please generate or upload narration audio in Step 3 first.</p>
+                )}
+              </AccordionContent>
+            </AccordionItem>
+
+            {/* Step 5: Generate Images */}
+            <AccordionItem value="step-5" disabled={!storyData.imagePrompts || storyData.imagePrompts.length === 0}>
+              <AccordionTrigger className="text-xl font-semibold hover:no-underline data-[state=open]:text-primary">
+                <div className="flex items-center">
+                  <LucideImage className="w-6 h-6 mr-3" /> Step 5: Generate Images from Prompts
+                </div>
+              </AccordionTrigger>
+              <AccordionContent className="pt-4 space-y-4">
+                {storyData.imagePrompts && storyData.imagePrompts.length > 0 ? (
+                  <div>
+                    <p className="text-sm text-muted-foreground mb-4">
+                      Generate high-quality images from your prompts using AI. Choose your preferred provider for best results.
+                    </p>
+                    
+                    {/* Provider Selection */}
+                    <div className="mb-4">
+                      <Label className="block text-md font-medium mb-2">AI Provider</Label>
+                      <div className="flex gap-2">
+                        <Button
+                          variant={imageProvider === 'picsart' ? 'default' : 'outline'}
+                          size="sm"
+                          onClick={() => setImageProvider('picsart')}
+                        >
+                          PicsArt (Fastest)
+                        </Button>
+                        <Button
+                          variant={imageProvider === 'imagen3' ? 'default' : 'outline'}
+                          size="sm"
+                          onClick={() => setImageProvider('imagen3')}
+                        >
+                          Google Imagen3 (Highest Quality)
+                        </Button>
+                        <Button
+                          variant={imageProvider === 'gemini' ? 'default' : 'outline'}
+                          size="sm"
+                          onClick={() => setImageProvider('gemini')}
+                        >
+                          Gemini (Balanced)
+                        </Button>
+                      </div>
+                    </div>
+
+                    {/* Generate All Images Button */}
+                    <div className="flex items-center gap-4 mb-4">
+                      <Button
+                        onClick={handleGenerateAllImages}
+                        disabled={isLoading.generateImages || imageGenerationProgress.total > 0}
+                        className="bg-accent hover:bg-accent/90 text-accent-foreground"
+                      >
+                        {isLoading.generateImages ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                          <LucideImage className="mr-2 h-4 w-4" />
+                        )}
+                        Generate All Images ({storyData.imagePrompts.length})
+                      </Button>
+
+                      <Button
+                        onClick={handleRecoverStorageImages}
+                        disabled={isLoading.recoveringImages}
+                        variant="outline"
+                        className="border-green-600 text-green-600 hover:bg-green-50"
+                      >
+                        {isLoading.recoveringImages ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                          <RefreshCw className="mr-2 h-4 w-4" />
+                        )}
+                        Recover Missing Images
+                      </Button>
+                      
+                      {/* Progress Indicator */}
+                      {imageGenerationProgress.total > 0 && (
+                        <div className="flex items-center gap-2">
+                          <div className="text-sm text-muted-foreground">
+                            {imageGenerationProgress.completed}/{imageGenerationProgress.total} completed
+                          </div>
+                          <div className="w-32 bg-muted rounded-full h-2">
+                            <div 
+                              className="bg-primary h-2 rounded-full transition-all duration-300"
+                              style={{ width: `${(imageGenerationProgress.completed / imageGenerationProgress.total) * 100}%` }}
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Generated Images by Category */}
+                    {storyData.generatedImages && storyData.generatedImages.length > 0 && (
+                      <div className="mt-6">
+                        <Label className="block text-md font-medium mb-3">Generated Images by Category</Label>
+                        {(() => {
+                          const categorizedImages = categorizeImages(storyData);
+                          const hasAnyImages = categorizedImages.characters.length > 0 || 
+                                              categorizedImages.locations.length > 0 || 
+                                              categorizedImages.items.length > 0 || 
+                                              categorizedImages.scenes.length > 0;
+                          
+                          if (!hasAnyImages) {
+                            return (
+                              <div className="p-4 rounded-md border bg-muted/20">
+                                <p className="text-sm text-muted-foreground">No categorized images found. Generate some images first.</p>
+                              </div>
+                            );
+                          }
+
+                          return (
+                            <Accordion type="multiple" className="w-full space-y-2" defaultValue={['scenes']}>
+                              {/* Scene Images */}
+                              <AccordionItem value="scenes" className="border rounded-md">
+                                <AccordionTrigger className="px-4 py-2 hover:no-underline">
+                                  <div className="flex items-center gap-2">
+                                    <LucideImage className="w-4 h-4" />
+                                    <span>Scene Images ({categorizedImages.scenes.length})</span>
+                                  </div>
+                                </AccordionTrigger>
+                                <AccordionContent className="px-4 pb-4">
+                                  {categorizedImages.scenes.length > 0 ? (
+                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                      {categorizedImages.scenes.map((image, index) => {
+                                        const sceneIndex = storyData.imagePrompts?.indexOf(image.originalPrompt) ?? index;
+                                        const sceneName = getSceneName(image.originalPrompt, sceneIndex);
+                                        return (
+                                          <div key={`scene-${index}`} className="relative group">
+                                            <div className="aspect-video rounded-md overflow-hidden bg-muted">
+                                              <img
+                                                src={image.imageUrl}
+                                                alt={sceneName}
+                                                className="w-full h-full object-cover"
+                                                onError={(e) => {
+                                                  e.currentTarget.src = '/placeholder-image.png';
+                                                }}
+                                              />
+                                            </div>
+                                            <div className="mt-2">
+                                              <p className="text-sm font-medium">{sceneName}</p>
+                                              <p className="text-xs text-muted-foreground truncate" title={image.originalPrompt}>
+                                                {image.originalPrompt}
+                                              </p>
+                                            </div>
+                                            <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                              <Button
+                                                variant="secondary"
+                                                size="icon"
+                                                className="h-6 w-6 bg-background/80 hover:bg-background"
+                                                onClick={() => handleRegenerateImage(sceneIndex)}
+                                                disabled={isLoading.generateImages}
+                                              >
+                                                <RefreshCw className="h-3 w-3" />
+                                              </Button>
+                                            </div>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  ) : (
+                                    <p className="text-sm text-muted-foreground">No scene images generated yet. Generate some images from your prompts!</p>
+                                  )}
+                                </AccordionContent>
+                              </AccordionItem>
+
+                              {/* Character Images */}
+                              <AccordionItem value="characters" className="border rounded-md">
+                                <AccordionTrigger className="px-4 py-2 hover:no-underline">
+                                  <div className="flex items-center gap-2">
+                                    <Users className="w-4 h-4" />
+                                    <span>Characters ({categorizedImages.characters.length})</span>
+                                  </div>
+                                </AccordionTrigger>
+                                <AccordionContent className="px-4 pb-4">
+                                  {categorizedImages.characters.length > 0 ? (
+                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                      {categorizedImages.characters.map((image, index) => {
+                                        const characterPrompts = parseNamedPrompts(storyData.detailsPrompts?.characterPrompts, 'Character');
+                                        const characterDetail = characterPrompts.find(p => p.description === image.originalPrompt);
+                                        return (
+                                          <div key={`character-${index}`} className="relative group">
+                                            <div className="aspect-video rounded-md overflow-hidden bg-muted">
+                                              <img
+                                                src={image.imageUrl}
+                                                alt={characterDetail?.name || `Character ${index + 1}`}
+                                                className="w-full h-full object-cover"
+                                                onError={(e) => {
+                                                  e.currentTarget.src = '/placeholder-image.png';
+                                                }}
+                                              />
+                                            </div>
+                                            <div className="mt-2">
+                                              <p className="text-sm font-medium">
+                                                {characterDetail?.name || `Character ${index + 1}`}
+                                              </p>
+                                              <p className="text-xs text-muted-foreground truncate" title={image.originalPrompt}>
+                                                {image.originalPrompt}
+                                              </p>
+                                            </div>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  ) : (
+                                    <p className="text-sm text-muted-foreground">No character images generated yet. Generate character images from Step 2!</p>
+                                  )}
+                                </AccordionContent>
+                              </AccordionItem>
+
+                              {/* Location Images */}
+                              <AccordionItem value="locations" className="border rounded-md">
+                                <AccordionTrigger className="px-4 py-2 hover:no-underline">
+                                  <div className="flex items-center gap-2">
+                                    <Settings className="w-4 h-4" />
+                                    <span>Locations ({categorizedImages.locations.length})</span>
+                                  </div>
+                                </AccordionTrigger>
+                                <AccordionContent className="px-4 pb-4">
+                                  {categorizedImages.locations.length > 0 ? (
+                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                      {categorizedImages.locations.map((image, index) => {
+                                        const locationPrompts = parseNamedPrompts(storyData.detailsPrompts?.locationPrompts, 'Location');
+                                        const locationDetail = locationPrompts.find(p => p.description === image.originalPrompt);
+                                        return (
+                                          <div key={`location-${index}`} className="relative group">
+                                            <div className="aspect-video rounded-md overflow-hidden bg-muted">
+                                              <img
+                                                src={image.imageUrl}
+                                                alt={locationDetail?.name || `Location ${index + 1}`}
+                                                className="w-full h-full object-cover"
+                                                onError={(e) => {
+                                                  e.currentTarget.src = '/placeholder-image.png';
+                                                }}
+                                              />
+                                            </div>
+                                            <div className="mt-2">
+                                              <p className="text-sm font-medium">
+                                                {locationDetail?.name || `Location ${index + 1}`}
+                                              </p>
+                                              <p className="text-xs text-muted-foreground truncate" title={image.originalPrompt}>
+                                                {image.originalPrompt}
+                                              </p>
+                                            </div>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  ) : (
+                                    <p className="text-sm text-muted-foreground">No location images generated yet. Generate location images from Step 2!</p>
+                                  )}
+                                </AccordionContent>
+                              </AccordionItem>
+
+                              {/* Item Images */}
+                              <AccordionItem value="items" className="border rounded-md">
+                                <AccordionTrigger className="px-4 py-2 hover:no-underline">
+                                  <div className="flex items-center gap-2">
+                                    <Clapperboard className="w-4 h-4" />
+                                    <span>Items ({categorizedImages.items.length})</span>
+                                  </div>
+                                </AccordionTrigger>
+                                <AccordionContent className="px-4 pb-4">
+                                  {categorizedImages.items.length > 0 ? (
+                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                      {categorizedImages.items.map((image, index) => {
+                                        const itemPrompts = parseNamedPrompts(storyData.detailsPrompts?.itemPrompts, 'Item');
+                                        const itemDetail = itemPrompts.find(p => p.description === image.originalPrompt);
+                                        return (
+                                          <div key={`item-${index}`} className="relative group">
+                                            <div className="aspect-video rounded-md overflow-hidden bg-muted">
+                                              <img
+                                                src={image.imageUrl}
+                                                alt={itemDetail?.name || `Item ${index + 1}`}
+                                                className="w-full h-full object-cover"
+                                                onError={(e) => {
+                                                  e.currentTarget.src = '/placeholder-image.png';
+                                                }}
+                                              />
+                                            </div>
+                                            <div className="mt-2">
+                                              <p className="text-sm font-medium">
+                                                {itemDetail?.name || `Item ${index + 1}`}
+                                              </p>
+                                              <p className="text-xs text-muted-foreground truncate" title={image.originalPrompt}>
+                                                {image.originalPrompt}
+                                              </p>
+                                            </div>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  ) : (
+                                    <p className="text-sm text-muted-foreground">No item images generated yet. Generate item images from Step 2!</p>
+                                  )}
+                                </AccordionContent>
+                              </AccordionItem>
+                            </Accordion>
+                          );
+                        })()}
+                      </div>
+                    )}
+
+                    {/* Individual Prompt Generation */}
+                    <div className="mt-6">
+                      <Label className="block text-md font-medium mb-3">Generate Individual Images</Label>
+                      <div className="space-y-3 max-h-64 overflow-y-auto p-3 rounded-md border bg-muted/20">
+                        {storyData.imagePrompts.map((prompt, index) => {
+                          const existingImage = storyData.generatedImages?.find(img => img.originalPrompt === prompt);
+                          const isGenerating = imageGenerationProgress.generating.includes(index);
+                          const sceneName = getSceneName(prompt, index);
+                          
+                          return (
+                            <div key={index} className="flex items-start gap-3 p-3 bg-background rounded-md">
+                              <div className="flex-1">
+                                <p className="text-sm font-medium mb-1">{sceneName}</p>
+                                <p className="text-xs text-muted-foreground">{prompt}</p>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                {existingImage && (
+                                  <div className="w-12 h-12 rounded-md overflow-hidden bg-muted">
+                                    <img
+                                      src={existingImage.imageUrl}
+                                      alt={`${sceneName} preview`}
+                                      className="w-full h-full object-cover"
+                                    />
+                                  </div>
+                                )}
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleGenerateSingleImage(prompt, index)}
+                                  disabled={isLoading.generateImages || isGenerating}
+                                >
+                                  {isGenerating ? (
+                                    <Loader2 className="h-3 w-3 animate-spin" />
+                                  ) : existingImage ? (
+                                    <RefreshCw className="h-3 w-3" />
+                                  ) : (
+                                    <LucideImage className="h-3 w-3" />
+                                  )}
+                                </Button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-muted-foreground">Please generate image prompts in Step 4 first.</p>
                 )}
               </AccordionContent>
             </AccordionItem>
