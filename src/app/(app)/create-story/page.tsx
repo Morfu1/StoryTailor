@@ -18,7 +18,7 @@ import { Button } from '@/components/ui/button';
 import { cleanupBrokenImages, getStory } from '@/actions/storyActions';
 import { prepareScriptChunksAI } from '@/utils/narrationUtils';
 import { determineCurrentStep } from '@/utils/storyHelpers';
-import { Loader2, RefreshCw, Trash2, Save, Film } from 'lucide-react';
+import { Loader2, RefreshCw, Trash2, Save, Film, Download } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useRef } from 'react';
@@ -408,6 +408,50 @@ export default function CreateStoryPage() {
               <>
                 <Save className="mr-2 h-4 w-4" />
                 Save Story
+              </>
+            )}
+          </Button>
+
+          <Button 
+            variant="outline"
+            onClick={async () => {
+              if (!storyData.title) {
+                toast({ title: 'Error', description: 'Story must have a title to download.', variant: 'destructive' });
+                return;
+              }
+
+              handleSetLoading('download', true);
+              
+              try {
+                const { downloadStoryAsZip } = await import('@/utils/downloadStoryUtils');
+                await downloadStoryAsZip(storyData);
+                toast({ 
+                  title: 'Download Started!', 
+                  description: 'Your story zip file is being prepared for download.', 
+                  className: 'bg-green-500 text-white' 
+                });
+              } catch (error) {
+                console.error('Error downloading story:', error);
+                toast({ 
+                  title: 'Download Error', 
+                  description: 'An unexpected error occurred while preparing the download.', 
+                  variant: 'destructive' 
+                });
+              }
+              
+              handleSetLoading('download', false);
+            }}
+            disabled={storyState.isLoading.download || !storyData.title}
+          >
+            {storyState.isLoading.download ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Downloading...
+              </>
+            ) : (
+              <>
+                <Download className="mr-2 h-4 w-4" />
+                Download Story
               </>
             )}
           </Button>
