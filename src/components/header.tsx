@@ -1,7 +1,7 @@
 "use client";
 
 import { signOut } from 'firebase/auth';
-import { LogOut, UserCircle, Settings, Loader2, LayoutDashboard, PlusCircle } from 'lucide-react';
+import { LogOut, UserCircle, Settings, Loader2, LayoutDashboard, PlusCircle, CreditCard } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
@@ -49,14 +49,14 @@ export function Header() {
   return (
     <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="container flex h-16 max-w-screen-2xl items-center">
-        <Link href="/dashboard" className="mr-6 flex items-center space-x-2">
+        <Link href="/dashboard" className="flex items-center space-x-2 mr-6">
           <StoryTailorLogo />
           <span className="font-bold text-xl text-foreground sm:inline-block">
             StoryTailor
           </span>
         </Link>
         
-        <nav className="flex flex-1 items-center space-x-4">
+        <nav className="hidden md:flex items-center space-x-4 flex-1">
            <Button variant="ghost" asChild>
              <Link href="/dashboard">
                <LayoutDashboard className="mr-2 h-4 w-4" /> Dashboard
@@ -69,7 +69,7 @@ export function Header() {
            </Button>
         </nav>
 
-        <div className="flex items-center space-x-4">
+        <div className="flex items-center space-x-4 ml-auto">
           {loading ? (
             <Loader2 className="h-6 w-6 animate-spin text-primary" />
           ) : user ? (
@@ -96,11 +96,16 @@ export function Header() {
                   </div>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => router.push('/dashboard')}>
+                <DropdownMenuItem onClick={() => router.push('/dashboard')} className="md:hidden">
                   <LayoutDashboard className="mr-2 h-4 w-4" />
                   <span>Dashboard</span>
                 </DropdownMenuItem>
-                <DropdownMenuItem disabled>
+                <DropdownMenuItem onClick={() => router.push('/create-story')} className="md:hidden">
+                  <PlusCircle className="mr-2 h-4 w-4" />
+                  <span>Create Story</span>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator className="md:hidden" />
+                <DropdownMenuItem onClick={() => router.push('/settings')}>
                   <Settings className="mr-2 h-4 w-4" />
                   <span>Settings</span>
                 </DropdownMenuItem>
