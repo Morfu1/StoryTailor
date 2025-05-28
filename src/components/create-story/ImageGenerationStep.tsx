@@ -4,11 +4,13 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Progress } from '@/components/ui/progress';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Clapperboard, Loader2, Edit2, ImageIcon, RefreshCw } from 'lucide-react';
+import { ImagePopup } from '@/components/ui/image-popup';
+import { Clapperboard, Loader2, Edit2, ImageIcon, RefreshCw, Download } from 'lucide-react';
 import { generateImagePrompts, generateImageFromPrompt, saveStory } from '@/actions/storyActions';
 import { useToast } from '@/hooks/use-toast';
 import { extractKeywordsFromText, countSceneImages } from '@/utils/storyHelpers';
 import Image from 'next/image';
+import { useState } from 'react';
 import type { UseStoryStateReturn } from '@/hooks/useStoryState';
 import type { GeneratedImage } from '@/types/story';
 
@@ -18,6 +20,8 @@ interface ImageGenerationStepProps {
 
 export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
   const { toast } = useToast();
+  const [popupImage, setPopupImage] = useState<{ src: string; alt: string } | null>(null);
+  
   const {
     storyData,
     updateStoryData,
@@ -265,6 +269,34 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
     setIsImagePromptEditing(newEditing);
   };
 
+  const handleDownloadImage = async (imageUrl: string, alt: string) => {
+    try {
+      const response = await fetch(imageUrl);
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${alt.replace(/\s+/g, '_')}.jpg`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      
+      toast({
+        title: 'Image Downloaded',
+        description: 'The image has been saved to your device.',
+        className: 'bg-green-500 text-white'
+      });
+    } catch (error) {
+      console.error('Error downloading image:', error);
+      toast({
+        title: 'Download Failed',
+        description: 'Failed to download the image.',
+        variant: 'destructive'
+      });
+    }
+  };
+
   if (!storyData.narrationChunks || !storyData.narrationChunks.every(c => c.audioUrl)) {
     return (
       <Card>
@@ -414,17 +446,31 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
                         )}
                         
                         {existingImage?.imageUrl && (
-                          <div className="relative aspect-video w-full max-w-sm overflow-hidden rounded-md border">
+                          <div className="relative aspect-video w-full max-w-sm overflow-hidden rounded-md border group">
                             <Image
                               src={existingImage.imageUrl}
                               alt={`Scene ${index + 1}`}
                               fill
                               sizes="(max-width: 768px) 100vw, 400px"
                               style={{ objectFit: "contain" }}
-                              className="bg-muted"
+                              className="bg-muted cursor-pointer transition-transform hover:scale-105"
                               priority
                               unoptimized
+                              onClick={() => setPopupImage({ src: existingImage.imageUrl, alt: `Scene ${index + 1}` })}
                             />
+                            <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDownloadImage(existingImage.imageUrl, `Scene_${index + 1}`);
+                                }}
+                                className="bg-white/90 hover:bg-white text-black"
+                              >
+                                <Download className="h-3 w-3" />
+                              </Button>
+                            </div>
                           </div>
                         )}
                         
@@ -442,6 +488,13 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
           </div>
         )}
       </CardContent>
+      
+      <ImagePopup
+        src={popupImage?.src || ''}
+        alt={popupImage?.alt || ''}
+        isOpen={!!popupImage}
+        onClose={() => setPopupImage(null)}
+      />
     </Card>
   );
 }

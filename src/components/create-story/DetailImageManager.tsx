@@ -1,7 +1,9 @@
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
-import { ImageIcon, Loader2 } from 'lucide-react';
+import { ImageIcon, Loader2, Download } from 'lucide-react';
 import Image from 'next/image';
+import { useState } from 'react';
+import { ImagePopup } from '@/components/ui/image-popup';
 import { parseNamedPrompts } from '@/utils/storyHelpers';
 import { generateImageFromPrompt, saveStory } from '@/actions/storyActions';
 import { useToast } from '@/hooks/use-toast';
@@ -17,6 +19,8 @@ interface DetailImageManagerProps {
 
 export function DetailImageManager({ storyState, promptType, promptsString, showGenerateAllButton = false }: DetailImageManagerProps) {
   const { toast } = useToast();
+  const [popupImage, setPopupImage] = useState<{ src: string; alt: string } | null>(null);
+  
   const {
     storyData,
     setStoryData,
@@ -140,6 +144,34 @@ export function DetailImageManager({ storyState, promptType, promptsString, show
     handleSetLoading('allDetailImages', false);
   };
 
+  const handleDownloadImage = async (imageUrl: string, alt: string) => {
+    try {
+      const response = await fetch(imageUrl);
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${alt.replace(/\s+/g, '_')}.jpg`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      
+      toast({
+        title: 'Image Downloaded',
+        description: 'The image has been saved to your device.',
+        className: 'bg-green-500 text-white'
+      });
+    } catch (error) {
+      console.error('Error downloading image:', error);
+      toast({
+        title: 'Download Failed',
+        description: 'Failed to download the image.',
+        variant: 'destructive'
+      });
+    }
+  };
+
   // Handle "Generate All" button case
   if (showGenerateAllButton && promptType === 'All') {
     return (
@@ -215,17 +247,35 @@ export function DetailImageManager({ storyState, promptType, promptsString, show
             {existingImage?.imageUrl && (
               <div className="mt-2">
                 <Label className="text-xs font-medium">Generated Image{promptDetail.name ? ` for ${promptDetail.name}` : ''}:</Label>
-                <div className="relative aspect-video w-full max-w-sm overflow-hidden rounded-md border mt-1">
+                <div className="relative aspect-video w-full max-w-sm overflow-hidden rounded-md border mt-1 group">
                   <Image
                     src={existingImage.imageUrl}
                     alt={`Generated image for ${promptType}: ${promptDetail.description.substring(0, 30)}...`}
                     fill
                     sizes="(max-width: 768px) 100vw, 400px"
                     style={{ objectFit: "contain" }}
-                    className="bg-muted"
+                    className="bg-muted cursor-pointer transition-transform hover:scale-105"
                     priority
                     unoptimized
+                    onClick={() => setPopupImage({ 
+                      src: existingImage.imageUrl, 
+                      alt: `${promptType}: ${promptDetail.name || promptDetail.description.substring(0, 30)}` 
+                    })}
                   />
+                  <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const altText = `${promptType}_${promptDetail.name || `Prompt_${promptDetail.originalIndex + 1}`}`;
+                        handleDownloadImage(existingImage.imageUrl, altText);
+                      }}
+                      className="bg-white/90 hover:bg-white text-black"
+                    >
+                      <Download className="h-3 w-3" />
+                    </Button>
+                  </div>
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">Full prompt: "{existingImage.requestPrompt}"</p>
               </div>
@@ -233,6 +283,13 @@ export function DetailImageManager({ storyState, promptType, promptsString, show
           </div>
         );
       })}
+      
+      <ImagePopup
+        src={popupImage?.src || ''}
+        alt={popupImage?.alt || ''}
+        isOpen={!!popupImage}
+        onClose={() => setPopupImage(null)}
+      />
     </div>
   );
 }

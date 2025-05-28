@@ -1,7 +1,11 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
-import { Users, MapPin, Package, Clapperboard } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Users, MapPin, Package, Clapperboard, Download } from 'lucide-react';
 import Image from 'next/image';
+import { useState } from 'react';
+import { ImagePopup } from '@/components/ui/image-popup';
+import { useToast } from '@/hooks/use-toast';
 import { categorizeImages, getSceneName } from '@/utils/storyHelpers';
 import type { UseStoryStateReturn } from '@/hooks/useStoryState';
 
@@ -11,8 +15,38 @@ interface ImageCategorizerProps {
 
 export function ImageCategorizer({ storyState }: ImageCategorizerProps) {
   const { storyData } = storyState;
+  const { toast } = useToast();
+  const [popupImage, setPopupImage] = useState<{ src: string; alt: string } | null>(null);
   
   const { characters, locations, items, scenes } = categorizeImages(storyData);
+
+  const handleDownloadImage = async (imageUrl: string, alt: string) => {
+    try {
+      const response = await fetch(imageUrl);
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${alt.replace(/\s+/g, '_')}.jpg`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      
+      toast({
+        title: 'Image Downloaded',
+        description: 'The image has been saved to your device.',
+        className: 'bg-green-500 text-white'
+      });
+    } catch (error) {
+      console.error('Error downloading image:', error);
+      toast({
+        title: 'Download Failed',
+        description: 'Failed to download the image.',
+        variant: 'destructive'
+      });
+    }
+  };
 
   const renderImageGrid = (images: any[], title: string, icon: React.ReactNode) => {
     if (images.length === 0) {
@@ -40,22 +74,40 @@ export function ImageCategorizer({ storyState }: ImageCategorizerProps) {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-            {images.map((image, index) => (
-              <div key={`${title}-${index}`} className="space-y-2">
-                <div className="relative aspect-square overflow-hidden rounded-md border bg-muted">
-                  <Image
-                    src={image.imageUrl}
-                    alt={title === 'Scenes' ? getSceneName(image.originalPrompt, index) : image.originalPrompt.substring(0, 30)}
-                    fill
-                    sizes="(max-width: 768px) 50vw, (max-width: 1200px) 33vw, 25vw"
-                    style={{ objectFit: "cover" }}
-                    className="transition-transform hover:scale-105"
-                    unoptimized
-                  />
-                </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {images.map((image, index) => {
+              const imageAlt = title === 'Scenes' ? getSceneName(image.originalPrompt, index) : image.originalPrompt.substring(0, 30);
+              
+              return (
+                <div key={`${title}-${index}`} className="space-y-3">
+                  <div className="relative aspect-square overflow-hidden rounded-lg border bg-muted group shadow-sm">
+                    <Image
+                      src={image.imageUrl}
+                      alt={imageAlt}
+                      fill
+                      sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                      style={{ objectFit: "cover" }}
+                      className="transition-transform hover:scale-105 cursor-pointer"
+                      unoptimized
+                      onClick={() => setPopupImage({ src: image.imageUrl, alt: imageAlt })}
+                    />
+                    <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const downloadAlt = `${title.slice(0, -1)}_${index + 1}`;
+                          handleDownloadImage(image.imageUrl, downloadAlt);
+                        }}
+                        className="bg-white/90 hover:bg-white text-black"
+                      >
+                        <Download className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  </div>
                 <div className="space-y-1">
-                  <p className="text-xs font-medium line-clamp-2">
+                <p className="text-sm font-medium line-clamp-2">
                     {title === 'Scenes' ? getSceneName(image.originalPrompt, index) : 
                      image.originalPrompt.substring(0, 40) + (image.originalPrompt.length > 40 ? '...' : '')}
                   </p>
@@ -66,7 +118,8 @@ export function ImageCategorizer({ storyState }: ImageCategorizerProps) {
                   )}
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         </CardContent>
       </Card>
@@ -111,6 +164,13 @@ export function ImageCategorizer({ storyState }: ImageCategorizerProps) {
           </CardContent>
         </Card>
       )}
+      
+      <ImagePopup
+        src={popupImage?.src || ''}
+        alt={popupImage?.alt || ''}
+        isOpen={!!popupImage}
+        onClose={() => setPopupImage(null)}
+      />
     </div>
   );
 }
