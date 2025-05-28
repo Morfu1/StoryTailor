@@ -263,7 +263,7 @@ export default function CreateStoryPage() {
       <div className="space-y-6">
         {/* Header */}
         <div className="text-center space-y-2">
-          <h1 className="text-3xl font-bold">Create Your Story</h1>
+          <h1 className="text-3xl font-bold">{storyData.title || "Create Your Story"}</h1>
           <p className="text-muted-foreground">
             Follow the steps below to create your personalized story with AI-generated narration and images.
           </p>
