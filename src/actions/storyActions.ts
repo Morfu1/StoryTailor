@@ -245,14 +245,14 @@ async function refreshFirebaseStorageUrl(url: string, userId: string, storyId: s
           filePath = decodeURIComponent(pathMatch[1]);
           console.log(`[refreshFirebaseStorageUrl] Extracted file path from URL: ${filePath}`);
         } else {
-          // Default to narration.mp3 if path extraction fails
-          filePath = `users/${userId}/stories/${storyId}/narration.mp3`;
-          console.log(`[refreshFirebaseStorageUrl] Using default narration path: ${filePath}`);
+          // Cannot extract path and no default available
+          console.warn(`[refreshFirebaseStorageUrl] Unable to extract file path from URL: ${url}`);
+          return null;
         }
       } catch (error) {
-        // If URL parsing fails, use default path
-        filePath = `users/${userId}/stories/${storyId}/narration.mp3`;
-        console.log(`[refreshFirebaseStorageUrl] URL parsing failed, using default path: ${filePath}`);
+        // If URL parsing fails, return null instead of using a default
+        console.warn(`[refreshFirebaseStorageUrl] URL parsing failed for: ${url}`, error);
+        return null;
       }
     }
     
@@ -321,7 +321,7 @@ export async function getStory(storyId: string, userId: string): Promise<{ succe
         story.updatedAt = (story.updatedAt as AdminTimestamp).toDate();
       }
       
-      // Refresh the narration audio URL if it's a Firebase Storage URL
+      // Refresh the narration audio URL if it's a Firebase Storage URL (legacy single file)
       if (story.narrationAudioUrl) {
         const refreshedUrl = await refreshFirebaseStorageUrl(story.narrationAudioUrl, userId, storyId);
         if (refreshedUrl) {
@@ -330,6 +330,32 @@ export async function getStory(storyId: string, userId: string): Promise<{ succe
           
           // Update the story in Firestore with the new URL
           await storyRef.update({ narrationAudioUrl: refreshedUrl });
+        }
+      }
+      
+      // Refresh narration chunk audio URLs if they exist
+      if (story.narrationChunks && Array.isArray(story.narrationChunks) && story.narrationChunks.length > 0) {
+        let hasUpdatedChunks = false;
+        
+        // Create a new array with refreshed chunk audio URLs
+        const refreshedChunks = await Promise.all(story.narrationChunks.map(async (chunk) => {
+          if (chunk && chunk.audioUrl) {
+            const refreshedUrl = await refreshFirebaseStorageUrl(chunk.audioUrl, userId, storyId);
+            if (refreshedUrl) {
+              console.log(`[getStory Action] Refreshed chunk audio URL from: ${chunk.audioUrl} to: ${refreshedUrl}`);
+              hasUpdatedChunks = true;
+              return { ...chunk, audioUrl: refreshedUrl };
+            }
+          }
+          return chunk;
+        }));
+        
+        // Update the story data with refreshed chunk URLs
+        if (hasUpdatedChunks) {
+          story.narrationChunks = refreshedChunks;
+          
+          // Update the story in Firestore with the new chunk URLs
+          await storyRef.update({ narrationChunks: refreshedChunks });
         }
       }
       

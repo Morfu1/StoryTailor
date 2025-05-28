@@ -386,7 +386,18 @@ const parseNamedPrompts = (rawPrompts: string | undefined, type: 'Character' | '
   }, [storyId, user, router, toast, authLoading]);
 
   useEffect(() => {
-    setActiveAccordionItem(`step-${currentStep}`);
+    const newValue = `step-${currentStep}`;
+    // Use setTimeout to avoid race conditions with accordion onValueChange
+    const timeoutId = setTimeout(() => {
+      setActiveAccordionItem(prev => {
+        if (prev !== newValue) {
+          return newValue;
+        }
+        return prev;
+      });
+    }, 0);
+    
+    return () => clearTimeout(timeoutId);
   }, [currentStep]);
 
   const handleGenerateScript = async () => {
@@ -1363,6 +1374,7 @@ const parseNamedPrompts = (rawPrompts: string | undefined, type: 'Character' | '
             value={activeAccordionItem} 
             className="w-full" 
             onValueChange={(value) => {
+              // Handle editing state cleanup
               if (isScriptManuallyEditing && activeAccordionItem === 'step-1' && value !== 'step-1') {
                 setIsScriptManuallyEditing(false);
               }
@@ -1374,9 +1386,16 @@ const parseNamedPrompts = (rawPrompts: string | undefined, type: 'Character' | '
               if (activeAccordionItem === 'step-4' && value !== 'step-4' && isImagePromptEditing.some(Boolean)) {
                 setIsImagePromptEditing(Array(storyData.imagePrompts?.length || 0).fill(false));
               }
+              
+              // Update accordion state immediately for user feedback
               setActiveAccordionItem(value); 
+              
+              // Update current step if value is provided and different
               if (value) {
-                setCurrentStep(parseInt(value.split('-')[1]));
+                const newStep = parseInt(value.split('-')[1]);
+                if (!isNaN(newStep) && newStep !== currentStep) {
+                  setCurrentStep(newStep);
+                }
               }
             }}
           >
@@ -1929,7 +1948,7 @@ const parseNamedPrompts = (rawPrompts: string | undefined, type: 'Character' | '
             </AccordionItem>
 
             {/* Step 4: Image Prompts */}
-            <AccordionItem value="step-4" disabled={!storyData.narrationAudioUrl}>
+            <AccordionItem value="step-4" disabled={!storyData.narrationAudioUrl && !(storyData.narrationChunks && storyData.narrationChunks.length > 0 && storyData.narrationChunks.every(c => c.audioUrl))}>
               <AccordionTrigger className="text-xl font-semibold hover:no-underline data-[state=open]:text-primary">
                 <div className="flex items-center">
                   <LucideImage className="w-6 h-6 mr-3" /> Step 4: Generate Image Prompts
