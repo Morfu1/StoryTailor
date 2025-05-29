@@ -5,9 +5,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card, CardContent } from '@/components/ui/card';
 import { Loader2, Upload } from 'lucide-react';
 import { googleTtsVoices, googleTtsApiModels, googleTtsLanguages } from '@/constants/voices';
-import { generateNarrationAudio } from '@/actions/storyActions';
+import { generateNarrationAudio, generateVoicePreview } from '@/actions/storyActions';
 import { useToast } from '@/hooks/use-toast';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { VoicePreviewPlayer } from '@/components/ui/voice-preview-player';
 import type { UseStoryStateReturn } from '@/hooks/useStoryState';
 
 interface VoiceSelectorProps {
@@ -37,6 +38,10 @@ export function VoiceSelector({ storyState }: VoiceSelectorProps) {
     handleSetLoading,
     storyData
   } = storyState;
+
+  // Voice preview state
+  const [voicePreviews, setVoicePreviews] = useState<Record<string, string>>({});
+  const [loadingPreviews, setLoadingPreviews] = useState<Record<string, boolean>>({});
 
   // Effect to load ElevenLabs voices when the model is selected and voices aren't loaded
   useEffect(() => {
@@ -77,6 +82,41 @@ export function VoiceSelector({ storyState }: VoiceSelectorProps) {
 
     setUploadedAudioFileName(file.name);
     toast({ title: 'Audio Uploaded', description: `File "${file.name}" is ready.`, className: 'bg-primary text-primary-foreground' });
+  };
+
+  const handleVoicePreview = async (voiceId: string, ttsModel: 'elevenlabs' | 'google') => {
+    // If preview already exists, don't regenerate
+    if (voicePreviews[voiceId]) return;
+
+    setLoadingPreviews(prev => ({ ...prev, [voiceId]: true }));
+
+    try {
+      const result = await generateVoicePreview({
+        voiceId,
+        ttsModel,
+        googleApiModel: selectedGoogleApiModel,
+        languageCode: selectedGoogleLanguage,
+      });
+
+      if (result.success && result.audioDataUri) {
+        setVoicePreviews(prev => ({ ...prev, [voiceId]: result.audioDataUri! }));
+      } else {
+        toast({
+          title: 'Preview Failed',
+          description: result.error || 'Failed to generate voice preview.',
+          variant: 'destructive'
+        });
+      }
+    } catch (error) {
+      console.error('Error generating voice preview:', error);
+      toast({
+        title: 'Preview Error',
+        description: 'An error occurred while generating the voice preview.',
+        variant: 'destructive'
+      });
+    } finally {
+      setLoadingPreviews(prev => ({ ...prev, [voiceId]: false }));
+    }
   };
 
   return (
@@ -129,18 +169,40 @@ export function VoiceSelector({ storyState }: VoiceSelectorProps) {
                     <span>Loading voices...</span>
                   </div>
                 ) : (
-                  <Select value={selectedVoiceId} onValueChange={setSelectedVoiceId}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select a voice" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {elevenLabsVoices.map((voice) => (
-                        <SelectItem key={voice.voice_id} value={voice.voice_id}>
-                          {voice.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <div className="space-y-3">
+                    <Select value={selectedVoiceId} onValueChange={setSelectedVoiceId}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select a voice" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {elevenLabsVoices.map((voice) => (
+                          <SelectItem key={voice.voice_id} value={voice.voice_id}>
+                            {voice.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    
+                    {/* Voice previews for ElevenLabs */}
+                    {elevenLabsVoices.length > 0 && (
+                      <div className="space-y-2">
+                        <Label className="text-xs text-muted-foreground">Voice Previews</Label>
+                        <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto">
+                          {elevenLabsVoices.map((voice) => (
+                            <div key={voice.voice_id} className="flex items-center justify-between p-2 border rounded-md">
+                              <span className="text-sm font-medium truncate flex-1 mr-2">{voice.name}</span>
+                              <VoicePreviewPlayer
+                                audioDataUri={voicePreviews[voice.voice_id]}
+                                isLoading={loadingPreviews[voice.voice_id]}
+                                onPlay={() => handleVoicePreview(voice.voice_id, 'elevenlabs')}
+                                size="sm"
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
             )}
@@ -181,18 +243,40 @@ export function VoiceSelector({ storyState }: VoiceSelectorProps) {
 
                 <div className="space-y-2">
                   <Label className="text-sm font-medium">Google Voice</Label>
-                  <Select value={selectedGoogleVoiceId} onValueChange={setSelectedGoogleVoiceId}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {googleTtsVoices.map((voice) => (
-                        <SelectItem key={voice.id} value={voice.id}>
-                          {voice.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <div className="space-y-3">
+                    <Select value={selectedGoogleVoiceId} onValueChange={setSelectedGoogleVoiceId}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {googleTtsVoices.map((voice) => (
+                          <SelectItem key={voice.id} value={voice.id}>
+                            {voice.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    
+                    {/* Voice previews for Google TTS */}
+                    {googleTtsVoices.length > 0 && selectedGoogleApiModel && selectedGoogleLanguage && (
+                      <div className="space-y-2">
+                        <Label className="text-xs text-muted-foreground">Voice Previews</Label>
+                        <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto">
+                          {googleTtsVoices.map((voice) => (
+                            <div key={voice.id} className="flex items-center justify-between p-2 border rounded-md">
+                              <span className="text-sm font-medium truncate flex-1 mr-2">{voice.name}</span>
+                              <VoicePreviewPlayer
+                                audioDataUri={voicePreviews[voice.id]}
+                                isLoading={loadingPreviews[voice.id]}
+                                onPlay={() => handleVoicePreview(voice.id, 'google')}
+                                size="sm"
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             )}

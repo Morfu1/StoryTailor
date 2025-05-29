@@ -20,7 +20,7 @@ export const parseNamedPrompts = (
   if (!rawPrompts) return [];
 
   // Normalize escaped newlines to actual newlines
-  let normalizedPrompts = rawPrompts.replace(/\\n/g, "\n");
+  const normalizedPrompts = rawPrompts.replace(/\\n/g, "\n");
 
   const cleanPrompts = normalizedPrompts
     .replace(/^(Character Prompts:|Item Prompts:|Location Prompts:)\s*\n*/i, "")

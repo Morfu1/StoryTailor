@@ -184,6 +184,46 @@ export async function generateNarrationAudio(actionInput: GenerateNarrationAudio
   }
 }
 
+// Voice preview functionality
+export interface VoicePreviewInput {
+  voiceId: string;
+  ttsModel: 'elevenlabs' | 'google';
+  googleApiModel?: string;
+  languageCode?: string;
+  demoText?: string;
+}
+
+export async function generateVoicePreview(input: VoicePreviewInput): Promise<{ success: boolean; audioDataUri?: string; error?: string }> {
+  try {
+    // Use a short demo text for voice preview
+    const demoText = input.demoText || "Hello! This is a preview of how this voice sounds. I hope you like it!";
+    
+    // Create input for the narration audio flow
+    const aiFlowInput: GenerateNarrationAudioInput = {
+      script: demoText,
+      voiceId: input.voiceId,
+      ttsModel: input.ttsModel,
+      googleApiModel: input.googleApiModel,
+      languageCode: input.languageCode,
+    };
+
+    const result: GenerateNarrationAudioOutput = await aiGenerateNarrationAudio(aiFlowInput);
+
+    if (result.error) {
+      return { success: false, error: result.error };
+    }
+
+    if (result.audioDataUri) {
+      return { success: true, audioDataUri: result.audioDataUri };
+    }
+
+    return { success: false, error: "No audio data returned from voice preview generation." };
+  } catch (error) {
+    console.error("Error in generateVoicePreview action:", error);
+    return { success: false, error: "Failed to generate voice preview." };
+  }
+}
+
 
 export async function generateImagePrompts(input: GenerateImagePromptsInput) {
   try {
@@ -1114,7 +1154,7 @@ export async function saveStory(storyData: Story, userId: string): Promise<{ suc
 
   const storyIdForPath = storyData.id || dbAdmin.collection("stories").doc().id; 
 
-  let processedStoryData = { ...storyData };
+  const processedStoryData = { ...storyData };
   let newNarrationUrl: string | undefined = undefined;
 
   if (processedStoryData.narrationAudioUrl && processedStoryData.narrationAudioUrl.startsWith('data:audio/mpeg;base64,')) {

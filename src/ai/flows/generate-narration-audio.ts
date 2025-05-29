@@ -136,7 +136,7 @@ const generateNarrationAudioFlow = ai.defineFlow(
         });
 
         if (!response.ok) {
-          let errorBodyText = await response.text();
+          const errorBodyText = await response.text();
           let errorDetail = errorBodyText;
           try {
             const errorJson = JSON.parse(errorBodyText);
@@ -161,7 +161,7 @@ const generateNarrationAudioFlow = ai.defineFlow(
             console.log('[generateNarrationAudioFlow] Attempting content sanitization for potential safety filter issue');
             
             // Replace "Unit XXX" with more generic terms
-            let sanitizedScript = input.script
+            const sanitizedScript = input.script
               .replace(/Unit\s+\d+/gi, 'our team')
               .replace(/unit\s+\d+/gi, 'our team');
             
