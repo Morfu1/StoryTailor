@@ -15,12 +15,12 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Clapperboard, Loader2, Edit2, ImageIcon, RefreshCw, Download, RotateCcw } from 'lucide-react';
+import { Clapperboard, Loader2, Edit2, ImageIcon, RefreshCw, Download, RotateCcw, Square } from 'lucide-react';
 import { generateImagePrompts, generateImageFromPrompt, saveStory } from '@/actions/storyActions';
 import { useToast } from '@/hooks/use-toast';
 import { countSceneImages } from '@/utils/storyHelpers';
 import Image from 'next/image';
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import type { UseStoryStateReturn } from '@/hooks/useStoryState';
 import type { GeneratedImage, ActionPrompt } from '@/types/story';
 import { IMAGE_STYLES, DEFAULT_STYLE_ID, type ImageStyleId } from '@/types/imageStyles';
@@ -286,40 +286,57 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
     handleSetLoading(loadingKey, false);
   };
 
+  const isGenerationStoppedRef = useRef(false);
+
   const handleGenerateAllImages = async () => {
     if (!storyData.imagePrompts || storyData.imagePrompts.length === 0) return;
     
+    isGenerationStoppedRef.current = false;
     handleSetLoading('allImages', true);
+    
+    // Count already generated images
+    const alreadyGenerated = storyData.imagePrompts.filter(prompt => 
+      storyData.generatedImages?.find(img => img.originalPrompt === prompt)
+    ).length;
+    
     setImageGenerationProgress({
       total: storyData.imagePrompts.length,
-      completed: 0,
+      completed: alreadyGenerated,
       generating: []
     });
     
     toast({ 
       title: 'Generating All Scene Images...', 
-      description: 'This may take several minutes.' 
+      description: `${alreadyGenerated > 0 ? `Resuming from ${alreadyGenerated} already generated. ` : ''}This may take several minutes.` 
     });
     
     let successCount = 0;
     let errorCount = 0;
+    let currentStoryData = storyData;
     
     for (let i = 0; i < storyData.imagePrompts.length; i++) {
+      // Check if user stopped generation
+      if (isGenerationStoppedRef.current) {
+        toast({
+          title: 'Generation Stopped',
+          description: `Stopped after generating ${successCount} new images. Progress saved.`,
+          className: 'bg-yellow-500 text-black'
+        });
+        handleSetLoading('allImages', false);
+        return; // Exit the function completely
+      }
+      
       const prompt = storyData.imagePrompts[i];
       
       // Skip if already generated
-      if (storyData.generatedImages?.find(img => img.originalPrompt === prompt)) {
-        setImageGenerationProgress({
-          ...imageGenerationProgress,
-          completed: imageGenerationProgress.completed + 1
-        });
+      if (currentStoryData.generatedImages?.find(img => img.originalPrompt === prompt)) {
         continue;
       }
       
-      setImageGenerationProgress({
-        ...imageGenerationProgress,
+      setImageGenerationProgress(prev => ({
+        ...prev,
         generating: [i]
-      });
+      }));
       
       const styleId = storyData.imageStyleId || DEFAULT_STYLE_ID;
       const result = await generateImageFromPrompt(prompt, storyData.userId, storyData.id, imageProvider, styleId);
@@ -332,52 +349,118 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
         };
         
         const updatedImages = [
-          ...(storyData.generatedImages || []).filter(img => img.originalPrompt !== prompt),
+          ...(currentStoryData.generatedImages || []).filter(img => img.originalPrompt !== prompt),
           newImage,
         ];
         
-        setStoryData({
-          ...storyData,
+        currentStoryData = {
+          ...currentStoryData,
           generatedImages: updatedImages
-        });
+        };
+        
+        setStoryData(currentStoryData);
+        
+        // Auto-save after each successful generation
+        if (storyData.id && storyData.userId) {
+          try {
+            await saveStory(currentStoryData, storyData.userId);
+            console.log(`Auto-saved story with new scene image ${i + 1}`);
+          } catch (error) {
+            console.error('Failed to auto-save story:', error);
+          }
+        }
         
         successCount++;
       } else {
         errorCount++;
+        
+        // Log the error for debugging
+        console.warn(`Image generation failed for scene ${i + 1}:`, result.error);
+        
+        // Show immediate error toast
+        toast({
+          title: `Scene ${i + 1} Generation Failed`,
+          description: result.error || 'Unknown error occurred',
+          variant: 'destructive'
+        });
+        
+        // Check for critical errors that should stop generation
+        const errorMessage = result.error?.toLowerCase() || '';
+        const criticalErrors = [
+          'insufficient credit',
+          'insufficient_credits',  // API format with underscore
+          'no credit',
+          'credit exhausted',
+          'credits exhausted',
+          'quota exceeded',
+          'rate limit exceeded',
+          'insufficient fund',
+          'insufficient balance',
+          'payment required',
+          'subscription expired',
+          'api quota exceeded',
+          'balance insufficient',
+          'not enough credit',
+          'credit limit',
+          'usage limit',
+          'billing',
+          'payment failed',
+          'account suspended'
+        ];
+        
+        const isCriticalError = criticalErrors.some(error => errorMessage.includes(error));
+        
+        if (isCriticalError) {
+          console.warn('Critical error detected, stopping generation:', result.error);
+          toast({
+            title: 'Generation Stopped - Critical Error',
+            description: `Stopped due to: ${result.error}. Generated ${successCount} images before stopping.`,
+            variant: 'destructive'
+          });
+          handleSetLoading('allImages', false);
+          return; // Exit the function completely
+        }
       }
       
-      setImageGenerationProgress({
-        ...imageGenerationProgress,
-        completed: imageGenerationProgress.completed + 1,
+      setImageGenerationProgress(prev => ({
+        ...prev,
+        completed: prev.completed + 1,
         generating: []
-      });
+      }));
     }
     
-    // Auto-save final state
-    if (storyData.id && storyData.userId && successCount > 0) {
-      try {
-        await saveStory(storyData, storyData.userId);
-        console.log(`Auto-saved story with ${successCount} new scene images`);
-      } catch (error) {
-        console.error('Failed to auto-save story:', error);
+    if (!isGenerationStoppedRef.current) {
+      if (successCount > 0) {
+        toast({ 
+          title: 'Scene Images Generated!', 
+          description: `${successCount} images created. ${errorCount > 0 ? `${errorCount} errors.` : ''}`, 
+          className: errorCount === 0 ? 'bg-green-500 text-white' : 'bg-yellow-500 text-black' 
+        });
+      } else if (alreadyGenerated === storyData.imagePrompts.length) {
+        toast({ 
+          title: 'All Images Already Generated!', 
+          description: 'No new images needed.', 
+          className: 'bg-blue-500 text-white' 
+        });
+      } else {
+        toast({ 
+          title: 'Image Generation Failed', 
+          description: `All ${errorCount} generations failed.`, 
+          variant: 'destructive' 
+        });
       }
-    }
-    
-    if (successCount > 0) {
-      toast({ 
-        title: 'Scene Images Generated!', 
-        description: `${successCount} images created. ${errorCount > 0 ? `${errorCount} errors.` : ''}`, 
-        className: errorCount === 0 ? 'bg-green-500 text-white' : 'bg-yellow-500 text-black' 
-      });
-    } else {
-      toast({ 
-        title: 'Image Generation Failed', 
-        description: `All ${errorCount} generations failed.`, 
-        variant: 'destructive' 
-      });
     }
     
     handleSetLoading('allImages', false);
+  };
+  
+  const handleStopGeneration = () => {
+    isGenerationStoppedRef.current = true;
+    toast({
+      title: 'Stopping Generation...',
+      description: 'Will stop after current image completes.',
+      className: 'bg-orange-500 text-white'
+    });
   };
 
   const updateImagePrompt = (index: number, newPrompt: string) => {
@@ -552,24 +635,36 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
               <Progress value={progressPercentage} className="w-full" />
             </div>
 
-            <Button 
-              onClick={handleGenerateAllImages}
-              disabled={isLoading.allImages}
-              variant="outline"
-              className="w-full"
-            >
-              {isLoading.allImages ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Generating All Images... ({imageGenerationProgress.completed}/{imageGenerationProgress.total})
-                </>
-              ) : (
-                <>
-                  <ImageIcon className="mr-2 h-4 w-4" />
-                  Generate All Scene Images
-                </>
+            <div className="flex gap-2">
+              <Button 
+                onClick={handleGenerateAllImages}
+                disabled={isLoading.allImages}
+                variant="outline"
+                className="flex-1"
+              >
+                {isLoading.allImages ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Generating All Images... ({imageGenerationProgress.completed}/{imageGenerationProgress.total})
+                  </>
+                ) : (
+                  <>
+                    <ImageIcon className="mr-2 h-4 w-4" />
+                    Generate All Scene Images
+                  </>
+                )}
+              </Button>
+              
+              {isLoading.allImages && (
+                <Button 
+                  onClick={handleStopGeneration}
+                  variant="destructive"
+                  className="px-3"
+                >
+                  <Square className="h-4 w-4" />
+                </Button>
               )}
-            </Button>
+            </div>
 
             <div className="space-y-3">
               <Label className="text-sm font-medium">Individual Scene Prompts</Label>
