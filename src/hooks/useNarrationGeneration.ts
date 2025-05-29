@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { generateNarrationAudio, saveStory } from '@/actions/storyActions';
 import { prepareScriptChunksAI, calculateTotalNarrationDuration } from '@/utils/narrationUtils';
@@ -186,14 +186,15 @@ export const useNarrationGeneration = ({ storyState }: UseNarrationGenerationPro
         elevenLabsVoiceId: voiceIdToUse
       });
       
-      // Auto-save the story with the new narration chunk
+      // Auto-save the story with the new narration chunk (non-blocking)
       if (storyData.id && storyData.userId) {
-        try {
-          await saveStory(updatedStoryData, storyData.userId);
-          console.log(`Auto-saved story with new narration chunk ${chunkToProcessIndex + 1}`);
-        } catch (error) {
-          console.error('Failed to auto-save story after narration generation:', error);
-        }
+        saveStory(updatedStoryData, storyData.userId)
+          .then(() => {
+            console.log(`Auto-saved story with new narration chunk ${chunkToProcessIndex + 1}`);
+          })
+          .catch((error) => {
+            console.error('Failed to auto-save story after narration generation:', error);
+          });
       }
       
       toast({
@@ -208,10 +209,17 @@ export const useNarrationGeneration = ({ storyState }: UseNarrationGenerationPro
         setProcessingAllMode(false); // Ensure "all" mode is off.
         handleSetLoading('narration', false);
       } else { // This was part of a "Generate All" sequence (processingAllMode should be true)
+        console.log('[useNarrationGeneration] Chunk completed, looking for next unprocessed chunk after index:', chunkToProcessIndex);
         const nextUnprocessed = updatedChunks.findIndex((c, idx) => idx > chunkToProcessIndex && !c.audioUrl);
+        console.log('[useNarrationGeneration] Next unprocessed chunk index:', nextUnprocessed);
+        
         if (nextUnprocessed !== -1) {
-          setCurrentNarrationChunkIndex(nextUnprocessed); // useEffect (with processingAllMode true) will pick this up
+          // Reset loading state first, then set next chunk index so useEffect can proceed
+          handleSetLoading('narration', false);
+          console.log('[useNarrationGeneration] Setting currentNarrationChunkIndex to:', nextUnprocessed);
+          setCurrentNarrationChunkIndex(nextUnprocessed); // useEffect will pick this up
         } else { // No more unprocessed chunks after the current one in the sequence
+          console.log('[useNarrationGeneration] All chunks completed, finishing sequence');
           setCurrentNarrationChunkIndex(-1);
           setProcessingAllMode(false); // Sequence finished
           handleSetLoading('narration', false);
@@ -252,6 +260,29 @@ export const useNarrationGeneration = ({ storyState }: UseNarrationGenerationPro
     setProcessingAllMode,
     setCurrentStep
   ]);
+
+  // Auto-continue generation when in processingAllMode and currentNarrationChunkIndex changes
+  useEffect(() => {
+    console.log('[useNarrationGeneration] useEffect triggered:', {
+      processingAllMode,
+      currentNarrationChunkIndex,
+      isLoadingNarration: isLoading.narration
+    });
+    
+    if (processingAllMode && currentNarrationChunkIndex >= 0 && !isLoading.narration) {
+      console.log('[useNarrationGeneration] Scheduling next chunk generation for index:', currentNarrationChunkIndex);
+      // Small delay to prevent infinite loops and allow state to settle
+      const timer = setTimeout(() => {
+        console.log('[useNarrationGeneration] Triggering handleGenerateNarration for chunk:', currentNarrationChunkIndex);
+        handleGenerateNarration();
+      }, 100); // Reduced back to 100ms since we fixed the loading state
+      
+      return () => {
+        console.log('[useNarrationGeneration] Clearing timer for chunk:', currentNarrationChunkIndex);
+        clearTimeout(timer);
+      };
+    }
+  }, [processingAllMode, currentNarrationChunkIndex, isLoading.narration]);
 
   const handleRegenerateChunks = async () => {
     if (!storyData.generatedScript) {
