@@ -5,14 +5,50 @@ import { Textarea } from '@/components/ui/textarea';
 import { Progress } from '@/components/ui/progress';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ImagePopup } from '@/components/ui/image-popup';
-import { Clapperboard, Loader2, Edit2, ImageIcon, RefreshCw, Download } from 'lucide-react';
+import { 
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Clapperboard, Loader2, Edit2, ImageIcon, RefreshCw, Download, RotateCcw } from 'lucide-react';
 import { generateImagePrompts, generateImageFromPrompt, saveStory } from '@/actions/storyActions';
 import { useToast } from '@/hooks/use-toast';
 import { countSceneImages } from '@/utils/storyHelpers';
 import Image from 'next/image';
 import { useState } from 'react';
 import type { UseStoryStateReturn } from '@/hooks/useStoryState';
-import type { GeneratedImage } from '@/types/story';
+import type { GeneratedImage, ActionPrompt } from '@/types/story';
+import { IMAGE_STYLES, DEFAULT_STYLE_ID, type ImageStyleId } from '@/types/imageStyles';
+
+// Helper function to highlight @ references in prompts
+const HighlightedPrompt = ({ prompt }: { prompt: string | undefined }) => {
+  // Safety check for undefined prompts
+  if (!prompt) {
+    return <span>No prompt available</span>;
+  }
+  
+  // Updated regex to match @words including those with underscores, numbers, and hyphens
+  const parts = prompt.split(/(@[\w-]+)/g);
+  return (
+    <span>
+      {parts.map((part, index) => {
+        if (part.startsWith('@')) {
+          return (
+            <span key={index} className="font-semibold text-primary bg-primary/10 px-1 rounded mr-1">
+              {part}
+            </span>
+          );
+        }
+        return part;
+      })}
+    </span>
+  );
+};
 
 interface ImageGenerationStepProps {
   storyState: UseStoryStateReturn;
@@ -21,6 +57,8 @@ interface ImageGenerationStepProps {
 export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
   const { toast } = useToast();
   const [popupImage, setPopupImage] = useState<{ src: string; alt: string } | null>(null);
+  const [isRegenerateDialogOpen, setIsRegenerateDialogOpen] = useState(false);
+
   
   const {
     storyData,
@@ -37,7 +75,7 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
     setImageGenerationProgress
   } = storyState;
 
-  const handleGenerateImagePrompts = async () => {
+  const generatePromptsWithOptions = async (isRegeneration = false) => {
     if (!storyData.generatedScript || !storyData.detailsPrompts) return;
     handleSetLoading('imagePrompts', true);
     
@@ -64,6 +102,7 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
     console.log('Script length:', storyData.generatedScript?.length);
     console.log('Narration chunks:', storyData.narrationChunks?.length);
     console.log('Details prompts available:', !!storyData.detailsPrompts);
+    console.log('Is regeneration:', isRegeneration);
     
     const result = await generateImagePrompts(imagePromptsInput);
     
@@ -73,10 +112,61 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
     if (result.success && result.data?.imagePrompts) {
       const updatedStoryData = {
         ...storyData,
-        imagePrompts: result.data.imagePrompts
+        imagePrompts: result.data.imagePrompts,
+        // Clear existing images on regeneration
+        generatedImages: isRegeneration ? [] : storyData.generatedImages,
+        // Add action prompts from AI generation with chunk text mapping
+        actionPrompts: (() => {
+          const actionPrompts: ActionPrompt[] = [];
+          let promptIndex = 0;
+          
+          if (storyData.narrationChunks && storyData.narrationChunks.length > 0) {
+            // Map prompts back to their source chunks
+            storyData.narrationChunks.forEach((chunk, chunkIndex) => {
+              const duration = chunk.duration || 0;
+              let promptCount: number;
+              if (duration <= 5) {
+                promptCount = 1;
+              } else if (duration <= 10) {
+                promptCount = chunk.text.length > 100 ? 2 : 1;
+              } else if (duration <= 15) {
+                promptCount = 2;
+              } else {
+                promptCount = 3;
+              }
+              
+              // Add prompts for this chunk
+              for (let i = 0; i < promptCount && promptIndex < result.data.imagePrompts.length; i++) {
+                actionPrompts.push({
+                  sceneIndex: promptIndex,
+                  originalPrompt: result.data.imagePrompts[promptIndex],
+                  actionDescription: result.data.actionPrompts?.[promptIndex] || `Character performs action in scene ${promptIndex + 1}.`,
+                  chunkText: chunk.text
+                });
+                promptIndex++;
+              }
+            });
+          } else {
+            // Fallback for when no chunks are available
+            result.data.imagePrompts.forEach((prompt, index) => {
+              actionPrompts.push({
+                sceneIndex: index,
+                originalPrompt: prompt,
+                actionDescription: result.data.actionPrompts?.[index] || `Character performs action in scene ${index + 1}.`,
+                chunkText: "Script chunk not available"
+              });
+            });
+          }
+          
+          return actionPrompts;
+        })()
       };
       
-      updateStoryData({ imagePrompts: result.data.imagePrompts });
+      updateStoryData({ 
+        imagePrompts: result.data.imagePrompts,
+        generatedImages: isRegeneration ? [] : storyData.generatedImages,
+        actionPrompts: updatedStoryData.actionPrompts
+      });
       setIsImagePromptEditing(Array(result.data.imagePrompts.length).fill(false));
       
       // Auto-save the story with the new image prompts
@@ -89,10 +179,13 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
         }
       }
       
-      setCurrentStep(5);
+      if (!isRegeneration) {
+        setCurrentStep(5);
+      }
+      
       toast({ 
-        title: 'Image Prompts Generated!', 
-        description: `${result.data.imagePrompts.length} scene prompts are ready.`, 
+        title: isRegeneration ? 'Image Prompts Regenerated!' : 'Image Prompts Generated!', 
+        description: `${result.data.imagePrompts.length} scene prompts are ready. ${isRegeneration ? 'Previous images cleared.' : ''}`, 
         className: 'bg-primary text-primary-foreground' 
       });
     } else {
@@ -103,7 +196,12 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
       });
     }
     handleSetLoading('imagePrompts', false);
+    setIsRegenerateDialogOpen(false);
   };
+
+  const handleGenerateImagePrompts = () => generatePromptsWithOptions(false);
+  
+  const handleRegenerateImagePrompts = () => generatePromptsWithOptions(true);
 
   const handleGenerateIndividualImage = async (prompt: string, index: number) => {
     if (!storyData.imagePrompts) return;
@@ -122,7 +220,7 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
       description: `Prompt: "${prompt.substring(0, 50)}..."` 
     });
     
-    const result = await generateImageFromPrompt(prompt, storyData.userId, storyData.id, imageProvider);
+    const result = await generateImageFromPrompt(prompt, storyData.userId, storyData.id, imageProvider, storyData.imageStyleId);
     
     if (result.success && result.imageUrl && result.requestPrompt) {
       const newImage: GeneratedImage = {
@@ -214,7 +312,7 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
         generating: [i]
       });
       
-      const result = await generateImageFromPrompt(prompt, storyData.userId, storyData.id, imageProvider);
+      const result = await generateImageFromPrompt(prompt, storyData.userId, storyData.id, imageProvider, storyData.imageStyleId);
       
       if (result.success && result.imageUrl && result.requestPrompt) {
         const newImage: GeneratedImage = {
@@ -276,7 +374,22 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
     if (!storyData.imagePrompts) return;
     const updatedPrompts = [...storyData.imagePrompts];
     updatedPrompts[index] = newPrompt;
-    updateStoryData({ imagePrompts: updatedPrompts });
+    
+    // Update corresponding action prompts - keep the existing action description and chunk text
+    const updatedActionPrompts = [...(storyData.actionPrompts || [])];
+    if (updatedActionPrompts[index]) {
+      updatedActionPrompts[index] = {
+        sceneIndex: index,
+        originalPrompt: newPrompt,
+        actionDescription: updatedActionPrompts[index].actionDescription, // Keep existing action description
+        chunkText: updatedActionPrompts[index].chunkText // Keep existing chunk text
+      };
+    }
+    
+    updateStoryData({ 
+      imagePrompts: updatedPrompts,
+      actionPrompts: updatedActionPrompts
+    });
   };
 
   const toggleImagePromptEditing = (index: number) => {
@@ -345,37 +458,75 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
-        <div className="space-y-2">
-          <Label>Image Provider</Label>
-          <Select value={imageProvider} onValueChange={(value: 'picsart' | 'gemini' | 'imagen3') => setImageProvider(value)}>
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="picsart">PicsArt AI</SelectItem>
-              <SelectItem value="gemini">Gemini</SelectItem>
-              <SelectItem value="imagen3">Imagen 3</SelectItem>
-            </SelectContent>
-          </Select>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <Label>Image Provider</Label>
+            <Select value={imageProvider} onValueChange={(value: 'picsart' | 'gemini' | 'imagen3') => setImageProvider(value)}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="picsart">PicsArt AI</SelectItem>
+                <SelectItem value="gemini">Gemini</SelectItem>
+                <SelectItem value="imagen3">Imagen 3</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Art Style</Label>
+            <Select 
+              value={storyData.imageStyleId || DEFAULT_STYLE_ID} 
+              onValueChange={(value: ImageStyleId) => updateStoryData({ imageStyleId: value })}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {Object.values(IMAGE_STYLES).map((style) => (
+                  <SelectItem key={style.id} value={style.id}>
+                    <div>
+                      <div className="font-medium">{style.name}</div>
+                      <div className="text-xs text-muted-foreground">{style.description}</div>
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
 
-        <Button 
-          onClick={handleGenerateImagePrompts}
-          disabled={isLoading.imagePrompts}
-          className="w-full"
-        >
-          {isLoading.imagePrompts ? (
-            <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Generating Scene Prompts...
-            </>
-          ) : (
-            <>
-              <Clapperboard className="mr-2 h-4 w-4" />
-              Generate Scene Image Prompts
-            </>
+        <div className="space-y-3">
+          <Button 
+            onClick={handleGenerateImagePrompts}
+            disabled={isLoading.imagePrompts}
+            className="w-full"
+          >
+            {isLoading.imagePrompts ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Generating Scene Prompts...
+              </>
+            ) : (
+              <>
+                <Clapperboard className="mr-2 h-4 w-4" />
+                Generate Scene Image Prompts
+              </>
+            )}
+          </Button>
+
+          {storyData.imagePrompts && storyData.imagePrompts.length > 0 && (
+            <Button 
+              onClick={() => setIsRegenerateDialogOpen(true)}
+              disabled={isLoading.imagePrompts}
+              variant="outline"
+              className="w-full"
+            >
+              <RotateCcw className="mr-2 h-4 w-4" />
+              Regenerate All Prompts
+            </Button>
           )}
-        </Button>
+        </div>
 
         {storyData.imagePrompts && storyData.imagePrompts.length > 0 && (
           <div className="space-y-4">
@@ -458,7 +609,29 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
                             className="text-sm"
                           />
                         ) : (
-                          <p className="text-sm text-muted-foreground">{prompt}</p>
+                          <div className="space-y-2">
+                            <div className="text-sm text-muted-foreground">
+                              <strong>Main Prompt:</strong> <HighlightedPrompt prompt={prompt} />
+                            </div>
+                            {storyData.actionPrompts?.[index]?.actionDescription && (
+                              <div className="space-y-1">
+                                <div className="text-sm">
+                                  <strong className="text-muted-foreground">Action:</strong>{" "}
+                                  <span className="text-muted-foreground/80 italic">
+                                    <HighlightedPrompt prompt={storyData.actionPrompts[index].actionDescription} />
+                                  </span>
+                                </div>
+                                {storyData.actionPrompts[index].chunkText && (
+                                  <div className="text-xs bg-muted/50 p-2 rounded border-l-2 border-muted">
+                                    <strong className="text-muted-foreground">Source Text:</strong>
+                                    <div className="text-muted-foreground/80 mt-1 leading-relaxed">
+                                      "{storyData.actionPrompts[index].chunkText}"
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
                         )}
                         
                         {existingImage?.imageUrl && (
@@ -511,6 +684,28 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
         isOpen={!!popupImage}
         onClose={() => setPopupImage(null)}
       />
+
+      {/* Regenerate Prompts Confirmation Dialog */}
+      <AlertDialog open={isRegenerateDialogOpen} onOpenChange={setIsRegenerateDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Regenerate Image Prompts</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will generate new image prompts for all scenes. <strong>All existing scene images will need to be regenerated</strong> because the prompts will change. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleRegenerateImagePrompts}
+              className="bg-primary text-primary-foreground hover:bg-primary/90"
+            >
+              <RotateCcw className="mr-2 h-4 w-4" />
+              Regenerate Prompts
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Card>
   );
 }

@@ -1,4 +1,5 @@
 import type { Timestamp } from 'firebase/firestore';
+import type { ImageStyleId } from './imageStyles';
 
 export interface StoryCharacterLocationItemPrompts {
   characterPrompts?: string;
@@ -59,6 +60,13 @@ export interface PageTimelineTrack {
 }
 
 
+export interface ActionPrompt {
+  sceneIndex: number;
+  originalPrompt: string;
+  actionDescription: string; // Simple action description for animation
+  chunkText: string; // Original narration chunk text that generated this scene
+}
+
 export interface Story {
   id?: string; // Firestore document ID
   userId: string;
@@ -73,6 +81,8 @@ export interface Story {
   narrationVoiceId?: string; // Voice ID from ElevenLabs (alias for elevenLabsVoiceId)
   imagePrompts?: string[];
   generatedImages?: GeneratedImage[];
+  actionPrompts?: ActionPrompt[]; // Action prompts for future use
+  imageStyleId?: ImageStyleId; // Selected image generation style
   timelineTracks?: PageTimelineTrack[]; // To store the state of the timeline
   // videoUrl?: string; // For future video assembly
   createdAt?: Timestamp | Date; // Stored as Firestore Timestamp, hydrated as Date

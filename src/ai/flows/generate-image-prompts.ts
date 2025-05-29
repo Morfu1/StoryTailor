@@ -29,6 +29,7 @@ export type GenerateImagePromptsInput = z.infer<typeof GenerateImagePromptsInput
 
 const GenerateImagePromptsOutputSchema = z.object({
   imagePrompts: z.array(z.string()).describe('The generated image prompts as an array of strings.'),
+  actionPrompts: z.array(z.string()).describe('Simple action descriptions for character movements in each scene.'),
 });
 export type GenerateImagePromptsOutput = z.infer<typeof GenerateImagePromptsOutputSchema>;
 
@@ -49,7 +50,7 @@ const generateImagePromptsPrompt = ai.definePrompt({
     })).optional()
   })},
   output: {schema: GenerateImagePromptsOutputSchema},
-  prompt: `You are an expert at creating detailed and evocative image prompts for animation frames. Your goal is to generate prompts that correlate with narration chunks and use provider-specific techniques.
+  prompt: `You are an expert at creating detailed image prompts optimized for FLUX AI model through PicsArt API. Your goal is to generate prompts that correlate with narration chunks using FLUX-specific techniques.
 
 {{#if chunksData}}
 **SOUND CHUNK CORRELATION MODE:**
@@ -64,14 +65,36 @@ Chunk {{@index}}: "{{text}}" (Duration: {{duration}}s, Required prompts: {{promp
 {{/each}}
 
 {{#if isPicsart}}
-**PICSART PROMPTING STRUCTURE:**
-For each required prompt, use this structure:
-1. Character Prompt: @CharacterName (reference character descriptions)
-2. Background Prompt: @LocationName (reference location descriptions)  
-3. Action Prompt: @CharacterName is [simple present-tense description of action]
+**FLUX DEV OPTIMIZED PROMPTING FOR PICSART:**
+FLUX is exceptionally good at understanding natural language. Use this structure with entity references:
 
-Example format:
-"Closeup shot at eye-level of @Fuzzy's sleeping face, her long, wavy fur gently rising and falling with each breath. Sunlight begins to spill over her, illuminating her pastel pink collar. @Fuzzy is lying down, sleeping, surrounded by soft toys and blankets. It is morning."
+1. **Entity Reference System**: Use '@' prefix for all characters, locations, and items (e.g., @CharacterName, @LocationName, @ItemName)
+2. **Natural Language Approach**: Write prompts as if describing a scene to a human
+3. **Subject-Action-Environment Pattern**: Start with the main subject, describe what they're doing, then the environment
+4. **Specific Visual Details**: Include lighting, camera angles, and artistic style
+
+**Flux-Optimized Structure with Entity References:**
+"[Camera shot] of @CharacterName [action/emotion/pose] in @LocationName. [Interaction with @ItemName if relevant]. [Lighting description]. [Additional details]."
+
+**Example:**
+"Close-up shot of @Luna, a young girl with curly brown hair and bright green eyes, looking up in wonder at floating golden sparkles around her. She's standing in @EnchantedForest clearing with dappled sunlight filtering through ancient oak trees. @MagicalSparkles dance around her hands. Warm, magical lighting with soft shadows."
+
+**CRITICAL REQUIREMENTS:**
+- Always use '@' prefix before character names (e.g., @Luna, @Hero, @Villain)
+- Always use '@' prefix before location names (e.g., @Castle, @Forest, @Bedroom)
+- Always use '@' prefix before important item names (e.g., @Sword, @Crown, @Book)
+- Extract character, location, and item names from the provided reference descriptions
+- Use present tense for actions
+- Be specific about emotions and expressions
+- Include environmental context and lighting
+
+**ABSOLUTELY FORBIDDEN - DO NOT INCLUDE:**
+- Any artistic style descriptors (NO "Digital painting style", "3D rendered", "cartoon style", etc.)
+- Art medium references (NO "watercolor", "oil painting", "comic book style", etc.)
+- Software references (NO "Unreal Engine", "Blender", "Photoshop", etc.)
+- Quality descriptors (NO "highly detailed", "8K", "photorealistic", etc.)
+- The artistic style will be handled separately by the system
+
 {{else}}
 **GOOGLE/GEMINI PROMPTING STRUCTURE:**
 For Google providers, use more detailed cinematic descriptions with:
@@ -83,32 +106,52 @@ For Google providers, use more detailed cinematic descriptions with:
 
 {{else}}
 **FALLBACK MODE (when no chunks provided):**
-Analyze the script and identify {{numImages}} key scenes that need visualization.
+Analyze the script and identify {{numImages}} key scenes that need visualization using FLUX-optimized natural language descriptions.
 {{/if}}
 
-Character Descriptions:
+**CHARACTER REFERENCE:**
 {{{characterPrompts}}}
 
-Location Descriptions:
+**LOCATION REFERENCE:**
 {{{locationPrompts}}}
 
-Item Descriptions:
+**ITEM REFERENCE:**
 {{{itemPrompts}}}
 
-Script:
+**STORY SCRIPT:**
 {{{script}}}
 
 {{#if chunksData}}
-Generate prompts for each chunk according to the required count. Total expected: {{numImages}} prompts.
+**INSTRUCTIONS:**
+For each narration chunk, create {{#each chunksData}}{{promptCount}} prompt(s) for chunk {{@index}}, {{/each}} ensuring they match the narrative content and flow smoothly between scenes. Focus on key emotional moments, character interactions, and scene transitions.
+
+Total prompts needed: {{numImages}}
+
+**ALSO GENERATE ACTION PROMPTS:**
+For each image prompt, create a corresponding simple action description that describes the specific movements/actions characters perform in that scene. These are for animation purposes.
+
+Action prompts should be:
+- Simple, clear descriptions of character movements
+- Focus on physical actions (walking, jumping, blinking, tail wagging, etc.)
+- Describe what each character does in that specific scene
+- Keep them concise and animation-focused
+
+Examples:
+- "The kitten's fur gently rises and falls as it sleeps."
+- "The kitten leaps forward and waves its paws."
+- "The white kitten takes a few steps forward and wags its tail. The grey cat blinks and turns its head."
+
 {{else}}
-Generate exactly {{numImages}} image prompts based on the script.
+Generate exactly {{numImages}} FLUX-optimized image prompts based on the script's key visual moments.
 {{/if}}
 
-Return your response as a JSON object with a single key "imagePrompts". The value MUST be an array of exactly {{numImages}} strings.
-`,
+**OUTPUT FORMAT:**
+Return your response as a JSON object with two keys:
+1. "imagePrompts": An array of exactly {{numImages}} strings, each optimized for FLUX AI model
+2. "actionPrompts": An array of exactly {{numImages}} strings, each describing simple character movements for that scene`,
   config: {
     temperature: 0.7,
-    maxOutputTokens: 3072,
+    maxOutputTokens: 4096,
   },
 });
 
@@ -188,11 +231,14 @@ const generateImagePromptsFlow = ai.defineFlow(
       outputType: typeof output,
       isArray: Array.isArray(output),
       hasImagePrompts: output?.imagePrompts ? 'yes' : 'no',
+      hasActionPrompts: output?.actionPrompts ? 'yes' : 'no',
       imagePromptsType: typeof output?.imagePrompts,
-      imagePromptsLength: Array.isArray(output?.imagePrompts) ? output.imagePrompts.length : 'not array'
+      imagePromptsLength: Array.isArray(output?.imagePrompts) ? output.imagePrompts.length : 'not array',
+      actionPromptsLength: Array.isArray(output?.actionPrompts) ? output.actionPrompts.length : 'not array'
     });
     
     let imagePromptsArray: string[] = [];
+    let actionPromptsArray: string[] = [];
 
     if (output && Array.isArray(output.imagePrompts)) {
         imagePromptsArray = output.imagePrompts.map(prompt => String(prompt).trim()).filter(prompt => prompt !== '');
@@ -215,13 +261,34 @@ const generateImagePromptsFlow = ai.defineFlow(
         }
     }
 
+    // Handle action prompts
+    if (output && Array.isArray(output.actionPrompts)) {
+        actionPromptsArray = output.actionPrompts.map(prompt => String(prompt).trim()).filter(prompt => prompt !== '');
+    } else {
+        // Generate fallback action prompts if AI didn't provide them
+        actionPromptsArray = imagePromptsArray.map((_, index) => `Character performs action in scene ${index + 1}.`);
+    }
+
     // Ensure we adhere to the output schema even if parsing fails or returns unexpected structure
     if (!imagePromptsArray || imagePromptsArray.length === 0) {
         console.error("Image prompt generation resulted in an empty or unparseable list even after fallbacks.");
         console.error("AI Output:", output);
         throw new Error("Failed to generate a valid list of image prompts. The AI did not return any usable image prompts.");
     }
+
+    // Ensure action prompts match image prompts length
+    if (actionPromptsArray.length !== imagePromptsArray.length) {
+        console.warn(`Action prompts length (${actionPromptsArray.length}) doesn't match image prompts length (${imagePromptsArray.length}). Adjusting...`);
+        // Pad or trim action prompts to match
+        while (actionPromptsArray.length < imagePromptsArray.length) {
+            actionPromptsArray.push(`Character performs action in scene ${actionPromptsArray.length + 1}.`);
+        }
+        actionPromptsArray = actionPromptsArray.slice(0, imagePromptsArray.length);
+    }
     
-    return {imagePrompts: imagePromptsArray};
+    return {
+        imagePrompts: imagePromptsArray,
+        actionPrompts: actionPromptsArray
+    };
   }
 );

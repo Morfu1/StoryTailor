@@ -683,7 +683,8 @@ export async function generateImageFromPrompt(
   originalPrompt: string,
   userId?: string,
   storyId?: string,
-  provider: 'picsart' | 'gemini' | 'imagen3' = 'picsart'
+  provider: 'picsart' | 'gemini' | 'imagen3' = 'picsart',
+  styleId?: string
 ): Promise<{ success: boolean; imageUrl?: string; error?: string; requestPrompt?: string }> {
   if (provider === 'gemini') {
     return generateImageFromGemini(originalPrompt, userId, storyId);
@@ -716,7 +717,21 @@ export async function generateImageFromPrompt(
     }
   }
 
-  const styles = "3D, Cartoon, High Quality";
+  // Apply style based on styleId and provider
+  let styles = "3D, Cartoon, High Quality"; // Default fallback
+  
+  if (styleId && userId && storyId) {
+    try {
+      const storyResult = await getStory(storyId, userId);
+      if (storyResult.success && storyResult.data?.imageStyleId) {
+        const { getStylePromptForProvider } = await import('@/utils/imageStyleUtils');
+        styles = getStylePromptForProvider(storyResult.data.imageStyleId as any, provider);
+      }
+    } catch (error) {
+      console.warn("Failed to get style from story, using default:", error);
+    }
+  }
+  
   // Ensure processedPrompt is not empty before adding styles
   const requestPrompt = processedPrompt ? `${processedPrompt}, ${styles}` : styles;
   
