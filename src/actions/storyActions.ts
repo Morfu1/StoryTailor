@@ -710,30 +710,45 @@ export async function generateImageFromPrompt(
       if (storyResult.success && storyResult.data) {
         const { parseEntityReferences } = await import('@/app/(app)/assemble-video/utils');
         processedPrompt = parseEntityReferences(originalPrompt, storyResult.data);
-        console.log(`Replaced placeholders in prompt. Original: "${originalPrompt}" -> Processed: "${processedPrompt}"`);
+        console.log(`[generateImageFromPrompt] Placeholder replacement result:`);
+        console.log(`  Original: "${originalPrompt}"`);
+        console.log(`  Processed: "${processedPrompt}"`);
+        console.log(`  Story has detailsPrompts:`, !!storyResult.data.detailsPrompts);
+        if (storyResult.data.detailsPrompts) {
+          console.log(`  Character prompts preview:`, storyResult.data.detailsPrompts.characterPrompts?.substring(0, 100));
+        }
       }
     } catch (error) {
       console.warn("Failed to replace placeholders, using original prompt:", error);
     }
   }
 
-  // Apply style based on styleId and provider
-  let styles = "3D, Cartoon, High Quality"; // Default fallback
+  // Apply style configuration to the prompt
+  let finalPrompt = processedPrompt || "high quality image";
   
-  if (styleId && userId && storyId) {
+  if (styleId) {
+    try {
+      const { applyStyleToPrompt } = await import('@/utils/imageStyleUtils');
+      finalPrompt = applyStyleToPrompt(finalPrompt, styleId as any, provider);
+      console.log(`Applied style ${styleId} to prompt: "${finalPrompt}"`);
+    } catch (error) {
+      console.warn("Failed to apply style, using clean prompt:", error);
+    }
+  } else if (userId && storyId) {
+    // Fallback: get style from story if not directly provided
     try {
       const storyResult = await getStory(storyId, userId);
       if (storyResult.success && storyResult.data?.imageStyleId) {
-        const { getStylePromptForProvider } = await import('@/utils/imageStyleUtils');
-        styles = getStylePromptForProvider(storyResult.data.imageStyleId as any, provider);
+        const { applyStyleToPrompt } = await import('@/utils/imageStyleUtils');
+        finalPrompt = applyStyleToPrompt(finalPrompt, storyResult.data.imageStyleId as any, provider);
+        console.log(`Applied story style ${storyResult.data.imageStyleId} to prompt: "${finalPrompt}"`);
       }
     } catch (error) {
-      console.warn("Failed to get style from story, using default:", error);
+      console.warn("Failed to apply style from story, using clean prompt:", error);
     }
   }
   
-  // Ensure processedPrompt is not empty before adding styles
-  const requestPrompt = processedPrompt ? `${processedPrompt}, ${styles}` : styles;
+  const requestPrompt = finalPrompt;
   
   // A more concise negative prompt, focusing on common issues.
   // The SDK example used: Yup.string().min(7).max(100).required() for negativePrompt,
@@ -744,7 +759,18 @@ export async function generateImageFromPrompt(
   const count = 1; // Generate one image per prompt
 
   try {
-    console.log(`Calling PicsArt API with prompt: "${requestPrompt}"`);
+    console.log(`[generateImageFromPrompt] Called with parameters:`, {
+    originalPrompt: originalPrompt.substring(0, 50),
+    provider,
+    styleId,
+    styleIdType: typeof styleId,
+    styleIdValue: styleId,
+    userId: userId?.substring(0, 8),
+    storyId: storyId?.substring(0, 8)
+  });
+  console.log(`[generateImageFromPrompt] About to process style with finalPrompt: "${finalPrompt}"`);
+  console.log(`[generateImageFromPrompt] Final requestPrompt being sent to API: "${requestPrompt}"`);
+    
     const response = await fetch("https://genai-api.picsart.io/v1/text2image", {
       method: "POST",
       headers: {
@@ -753,12 +779,11 @@ export async function generateImageFromPrompt(
       },
       body: JSON.stringify({
         prompt: requestPrompt,
-        negativePrompt, // Ensure this is not empty if the API strictly requires it
+        negativePrompt,
         width,
         height,
         count,
-        // model: "Flux" // Model is not a direct parameter in the SDK, might be inferred or part of base URL/key config
-        // styles: ["3D", "Cartoon", "High Quality"] // Styles are often part of the prompt or separate parameters; here, appended to prompt.
+        // Style is now properly applied to the prompt via applyStyleToPrompt function
       }),
     });
 

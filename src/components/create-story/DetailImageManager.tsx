@@ -9,6 +9,7 @@ import { generateImageFromPrompt, saveStory } from '@/actions/storyActions';
 import { useToast } from '@/hooks/use-toast';
 import type { UseStoryStateReturn } from '@/hooks/useStoryState';
 import type { GeneratedImage } from '@/types/story';
+import { DEFAULT_STYLE_ID } from '@/types/imageStyles';
 
 interface DetailImageManagerProps {
   storyState: UseStoryStateReturn;
@@ -36,9 +37,22 @@ export function DetailImageManager({ storyState, promptType, promptsString, show
     const loadingKey = `${promptType}-${index}`;
     setIsGeneratingDetailImage(prev => ({ ...prev, [loadingKey]: true }));
 
+    const styleId = storyData.imageStyleId || DEFAULT_STYLE_ID;
+    console.log(`[DetailImageManager] Generating ${promptType} image with style:`, {
+      originalImageStyleId: storyData.imageStyleId,
+      resolvedStyleId: styleId,
+      imageProvider: imageProvider,
+      promptPreview: individualPrompt.substring(0, 50),
+      fullStoryData: {
+        id: storyData.id,
+        userId: storyData.userId,
+        hasImageStyleId: !!storyData.imageStyleId
+      }
+    });
+    
     toast({ title: `Generating ${promptType} Image...`, description: `Prompt: "${individualPrompt.substring(0, 50)}..."` });
     
-    const result = await generateImageFromPrompt(individualPrompt, storyData.userId, storyData.id, imageProvider);
+    const result = await generateImageFromPrompt(individualPrompt, storyData.userId, storyData.id, imageProvider, styleId);
 
     if (result.success && result.imageUrl && result.requestPrompt) {
       const newImage: GeneratedImage = {
@@ -109,7 +123,8 @@ export function DetailImageManager({ storyState, promptType, promptsString, show
       setIsGeneratingDetailImage(prev => ({ ...prev, [key]: true }));
       toast({ title: `Generating ${type} Image for ${name || `Prompt ${i+1}`}...`, description: `"${description.substring(0, 50)}..."`});
       
-      const result = await generateImageFromPrompt(description, storyData.userId, storyData.id, imageProvider);
+      const styleId = storyData.imageStyleId || DEFAULT_STYLE_ID;
+      const result = await generateImageFromPrompt(description, storyData.userId, storyData.id, imageProvider, styleId);
       if (result.success && result.imageUrl && result.requestPrompt) {
         newImages = newImages.filter(img => img.originalPrompt !== description);
         newImages.push({ originalPrompt: description, requestPrompt: result.requestPrompt, imageUrl: result.imageUrl });

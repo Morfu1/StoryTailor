@@ -15,6 +15,8 @@ import {z}from 'genkit';
 
 const GenerateCharacterPromptsInputSchema = z.object({
   script: z.string().describe('The main script of the story.'),
+  imageStyleId: z.string().optional().describe('The image style ID to apply to the visual descriptions.'),
+  imageProvider: z.enum(['picsart', 'gemini', 'imagen3']).default('picsart').describe('The AI provider for image generation to tailor style prompts.'),
 });
 export type GenerateCharacterPromptsInput = z.infer<typeof GenerateCharacterPromptsInputSchema>;
 
@@ -33,11 +35,19 @@ export async function generateCharacterPrompts(
 
 const prompt = ai.definePrompt({
   name: 'generateCharacterPromptsPrompt',
-  input: {schema: GenerateCharacterPromptsInputSchema},
+  input: {schema: GenerateCharacterPromptsInputSchema.extend({
+    stylePrompt: z.string().optional().describe('Style characteristics to incorporate into descriptions.'),
+  })},
   output: {schema: GenerateCharacterPromptsOutputSchema},
   prompt: `You are an expert prompt engineer specializing in creating descriptions for text-to-image AI models (like DALL-E, Midjourney, or Flux Dex model).
 Based on the following story script, generate detailed visual descriptions for the main characters, key items, and important locations.
 These descriptions will be used as prompts for an AI image generator to create visuals for the story.
+
+{{#if stylePrompt}}
+**ARTISTIC STYLE REQUIREMENTS:**
+Incorporate these style characteristics into all descriptions: {{{stylePrompt}}}
+Ensure that character, item, and location descriptions align with this artistic style while maintaining their unique features.
+{{/if}}
 
 Script:
 {{{script}}}
@@ -45,11 +55,17 @@ Script:
 Instructions for output:
 1.  For each category (Characters, Items, Locations), provide a heading (e.g., "Character Prompts:", "Item Prompts:", "Location Prompts:"). This heading MUST be part of the string for that category and appear at the very beginning of that category's section.
 2.  Under each heading, list the entities. For each entity:
-    *   **First line:** The name of the character, item, or location. This name MUST be on its own dedicated line.
+    *   **First line:** The name of the character, item, or location. Names should be easy to convert to @ references (e.g., "Rosie Recycle" → @RosieRecycle, "Old Man Grumbles" → @OldManGrumbles, "Magic Sword" → @MagicSword).
     *   **Subsequent lines:** Starting on the line immediately following the name, provide a detailed visual description suitable for a text-to-image model. This description MUST:
         *   Be entirely in **lowercase**.
         *   Be a **single sentence**.
         *   **Not end** with any punctuation marks like '.', '?', or '!'.
+        *   **MANDATORY for characters**: Include specific physical traits for consistency:
+            - Hair color and style (e.g., "brown hair", "blonde hair", "curly red hair", "long black hair")
+            - Eye color (e.g., "blue eyes", "green eyes", "brown eyes")
+            - Skin tone if relevant (e.g., "pale skin", "tan skin", "dark skin")
+            - Age descriptors (e.g., "young girl", "elderly man", "teenage boy")
+            - Key identifying features (clothing, accessories, distinctive marks)
         *   Focus on visual attributes: appearance, attire, textures, colors, age, mood, specific features, and any other visual details. Be descriptive and evocative.
 3.  Ensure **exactly one blank line** separates each complete entity's entry (name + description) from the next entity within the same category. Do not use more than one blank line.
 
@@ -57,13 +73,13 @@ Example of desired output format and style (the content below is an example of t
 
 Character Prompts:
 Ember
-a tiny house cat-sized dragon with scales of a dull smoky grey his eyes are large and hopeful a bright orange color his wings are small and slightly crumpled and he has a perpetually worried expression his claws are blunt and his teeth are tiny
+a tiny house cat-sized dragon with dull smoky grey scales, large hopeful bright orange eyes, small crumpled wings, a perpetually worried expression, blunt claws and tiny teeth
 
 Ignis
-an ancient wise dragon with scales the color of cooled lava cracked and weathered with age his eyes glow with inner fire and his beard is long and braided with glittering obsidian beads he carries a gnarled staff of petrified wood
+an ancient wise dragon with cooled lava-colored scales cracked and weathered with age, glowing inner fire eyes, long braided beard with glittering obsidian beads, carrying a gnarled staff of petrified wood
 
-Villagers
-a group of despondent villagers appearing pale and gaunt their clothes are drab and colorless hanging loosely on their frames their faces are etched with sadness and their eyes are dull and lifeless
+Rosie Recycle
+a young girl with curly brown hair and bright green eyes, wearing goggles made from repurposed clear soda bottles, a cape fashioned from colorful recycled newspapers, pale skin with a determined expression and her outfit adorned with recycling symbols
 
 Item Prompts:
 Gnarled Staff
@@ -79,7 +95,7 @@ a small somber village with simple run-down huts made of rough-hewn wood and det
 Volcanic Peak
 a towering jagged mountain its peak perpetually wreathed in thick dark smoke and a faint ominous red glow from within the slopes are steep and treacherous covered in loose scree sharp volcanic rock and patches of grey ash no vegetation is visible
 
-Now, generate the character, item, and location prompts based on the provided script, adhering strictly to the format, style, and level of detail exemplified above, especially the lowercase, single-sentence, no-punctuation-ending descriptions.
+Now, generate the character, item, and location prompts based on the provided script, adhering strictly to the format, style, and level of detail exemplified above. For characters, ensure you include specific physical traits (hair color/style, eye color, skin tone, age) for consistency across image generations. Use lowercase, single-sentence, no-punctuation-ending descriptions.
 `,
 });
 
@@ -90,7 +106,23 @@ const generateCharacterPromptsFlow = ai.defineFlow(
     outputSchema: GenerateCharacterPromptsOutputSchema,
   },
   async input => {
-    const {output} = await prompt(input);
+    // Get style prompt if style ID is provided
+    let stylePrompt: string | undefined;
+    if (input.imageStyleId) {
+      try {
+        const { getStylePromptForProvider } = await import('@/utils/imageStyleUtils');
+        stylePrompt = getStylePromptForProvider(input.imageStyleId as any, input.imageProvider);
+        console.log('Applied style prompt for character generation:', stylePrompt);
+      } catch (error) {
+        console.warn('Failed to get style prompt for character generation:', error);
+      }
+    }
+
+    const {output} = await prompt({
+      ...input,
+      stylePrompt,
+    });
+    
     // Ensure the output is not null and adheres to the schema.
     // The LLM should return an object with characterPrompts, itemPrompts, and locationPrompts strings.
     if (!output || typeof output.characterPrompts !== 'string' || typeof output.itemPrompts !== 'string' || typeof output.locationPrompts !== 'string') {

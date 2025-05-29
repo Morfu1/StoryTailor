@@ -4,7 +4,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Users, Loader2, Edit2 } from 'lucide-react';
+import { Users, Loader2, Edit2, RefreshCw } from 'lucide-react';
 import { generateCharacterPrompts, saveStory } from '@/actions/storyActions';
 import { useToast } from '@/hooks/use-toast';
 import type { UseStoryStateReturn } from '@/hooks/useStoryState';
@@ -42,7 +42,11 @@ export function StoryDetailsStep({ storyState }: StoryDetailsStepProps) {
     setIsItemPromptsEditing(false);
     setIsLocationPromptsEditing(false);
     
-    const result = await generateCharacterPrompts({ script: storyData.generatedScript });
+    const result = await generateCharacterPrompts({ 
+      script: storyData.generatedScript,
+      imageStyleId: storyData.imageStyleId,
+      imageProvider: imageProvider,
+    });
     if (result.success && result.data) {
       const updatedStoryData = {
         ...storyData,
@@ -65,6 +69,44 @@ export function StoryDetailsStep({ storyState }: StoryDetailsStepProps) {
       toast({ title: 'Details Generated!', description: 'Character, item, and location prompts are ready.', className: 'bg-primary text-primary-foreground' });
     } else {
       toast({ title: 'Error', description: result.error || 'Failed to generate details.', variant: 'destructive' });
+    }
+    handleSetLoading('details', false);
+  };
+
+  const handleRegeneratePrompts = async () => {
+    if (!storyData.generatedScript) return;
+    handleSetLoading('details', true);
+    
+    const result = await generateCharacterPrompts({ 
+      script: storyData.generatedScript,
+      imageStyleId: storyData.imageStyleId,
+      imageProvider: imageProvider,
+    });
+    if (result.success && result.data) {
+      const updatedStoryData = {
+        ...storyData,
+        detailsPrompts: result.data as StoryCharacterLocationItemPrompts
+      };
+      
+      updateStoryData({ detailsPrompts: result.data as StoryCharacterLocationItemPrompts });
+      
+      // Auto-save the story with the new details
+      if (storyData.id && storyData.userId) {
+        try {
+          await saveStory(updatedStoryData, storyData.userId);
+          console.log('Auto-saved story with regenerated character/location/item details');
+        } catch (error) {
+          console.error('Failed to auto-save story after details regeneration:', error);
+        }
+      }
+      
+      toast({ 
+        title: 'Prompts Regenerated!', 
+        description: 'Character, item, and location prompts updated with consistency features.', 
+        className: 'bg-primary text-primary-foreground' 
+      });
+    } else {
+      toast({ title: 'Error', description: result.error || 'Failed to regenerate details.', variant: 'destructive' });
     }
     handleSetLoading('details', false);
   };
@@ -136,23 +178,41 @@ export function StoryDetailsStep({ storyState }: StoryDetailsStepProps) {
           </div>
         </div>
 
-        <Button 
-          onClick={handleGenerateDetails}
-          disabled={isLoading.details}
-          className="w-full"
-        >
-          {isLoading.details ? (
-            <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Generating Details...
-            </>
-          ) : (
-            <>
-              <Users className="mr-2 h-4 w-4" />
-              Generate Character & Scene Details
-            </>
+        <div className="flex gap-2">
+          <Button 
+            onClick={handleGenerateDetails}
+            disabled={isLoading.details}
+            className="flex-1"
+          >
+            {isLoading.details ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Generating Details...
+              </>
+            ) : (
+              <>
+                <Users className="mr-2 h-4 w-4" />
+                Generate Character & Scene Details
+              </>
+            )}
+          </Button>
+          
+          {storyData.detailsPrompts && (
+            <Button 
+              onClick={handleRegeneratePrompts}
+              disabled={isLoading.details}
+              variant="outline"
+              className="px-3"
+              title="Regenerate prompts with updated consistency requirements"
+            >
+              {isLoading.details ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCw className="h-4 w-4" />
+              )}
+            </Button>
           )}
-        </Button>
+        </div>
 
         {storyData.detailsPrompts && (
           <div className="space-y-6 mt-6">

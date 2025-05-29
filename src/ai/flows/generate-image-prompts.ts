@@ -6,6 +6,11 @@
  * - generateImagePrompts - A function that generates image prompts for animation.
  * - GenerateImagePromptsInput - The input type for the generateImagePrompts function.
  * - GenerateImagePromptsOutput - The return type for the generateImagePrompts function.
+ * 
+ * IMPORTANT: After updating character consistency requirements, you must:
+ * 1. Re-generate character prompts with specific physical traits (hair/fur color, eye color, accessories)
+ * 2. Re-generate all character, location, and item images to ensure consistency
+ * 3. Update existing stories to use the new consistent character descriptions
  */
 
 import {ai} from '@/ai/genkit';
@@ -79,6 +84,10 @@ FLUX is exceptionally good at understanding natural language. Use this structure
 **Example:**
 "Close-up shot of @Luna, a young girl with curly brown hair and bright green eyes, looking up in wonder at floating golden sparkles around her. She's standing in @EnchantedForest clearing with dappled sunlight filtering through ancient oak trees. @MagicalSparkles dance around her hands. Warm, magical lighting with soft shadows."
 
+**Character Consistency Examples:**
+- "@whiskers, a sleek 3yo charcoal grey cat with short smooth fur and piercing green eyes wearing a navy blue collar, sits alertly"
+- "@fuzzy, a small 1yo white kitten with long wavy fur and big blue eyes wearing a pastel pink collar with a tiny bell, bounces playfully"
+
 **CRITICAL REQUIREMENTS:**
 - Always use '@' prefix before character names (e.g., @Luna, @Hero, @Villain)
 - Always use '@' prefix before location names (e.g., @Castle, @Forest, @Bedroom)
@@ -93,7 +102,10 @@ FLUX is exceptionally good at understanding natural language. Use this structure
 - Art medium references (NO "watercolor", "oil painting", "comic book style", etc.)
 - Software references (NO "Unreal Engine", "Blender", "Photoshop", etc.)
 - Quality descriptors (NO "highly detailed", "8K", "photorealistic", etc.)
-- The artistic style will be handled separately by the system
+- The artistic style will be handled separately by the system through model configuration, NOT in the prompt text
+
+**STYLE HANDLING PHILOSOPHY:**
+Style is applied systematically through the imageStyleUtils system after prompt generation. This ensures scene prompts remain clean and focused on content while style is consistently applied across all generated images.
 
 {{else}}
 **GOOGLE/GEMINI PROMPTING STRUCTURE:**
@@ -111,6 +123,38 @@ Analyze the script and identify {{numImages}} key scenes that need visualization
 
 **CHARACTER REFERENCE:**
 {{{characterPrompts}}}
+
+**CRITICAL NAMING CONSISTENCY:**
+When referencing characters, items, or locations in your image prompts, you MUST use the exact names as they appear in the reference sections above, prefixed with @. 
+
+For example, if the character reference shows:
+"Rosie Recycle
+a young girl with..."
+
+Then in your image prompts, use: @RosieRecycle (no spaces, PascalCase)
+
+If the character reference shows:
+"Old Man Grumbles  
+an elderly man with..."
+
+Then in your image prompts, use: @OldManGrumbles (no spaces, PascalCase)
+
+ALWAYS convert multi-word names to PascalCase (FirstSecondThird) when creating @ references.
+
+**CHARACTER CONSISTENCY REQUIREMENTS:**
+- Always include specific physical traits for consistency: hair/fur color, eye color, distinctive features
+- Add identifying accessories or clothing when present (collars, jewelry, clothing items)
+- Use age-appropriate descriptors (young, elderly, toddler, etc.)
+- Include unique physical characteristics that make each character recognizable
+- Keep descriptions concise but distinctive (focus on 2-3 key visual elements)
+- Examples: "a sleek charcoal grey cat with green eyes and a navy collar", "a young girl with curly brown hair and bright green eyes"
+
+**REGENERATION NOTICE:**
+⚠️ After implementing these character consistency requirements, you MUST regenerate:
+1. All character prompt descriptions to include specific physical traits
+2. All character reference images with consistent visual features
+3. All location and item images to match the updated style
+4. Existing story content to use the new consistent character descriptions
 
 **LOCATION REFERENCE:**
 {{{locationPrompts}}}

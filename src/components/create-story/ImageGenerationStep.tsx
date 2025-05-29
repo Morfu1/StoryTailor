@@ -228,7 +228,8 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
       description: `Prompt: "${prompt.substring(0, 50)}..."` 
     });
     
-    const result = await generateImageFromPrompt(prompt, storyData.userId, storyData.id, imageProvider, storyData.imageStyleId);
+    const styleId = storyData.imageStyleId || DEFAULT_STYLE_ID;
+    const result = await generateImageFromPrompt(prompt, storyData.userId, storyData.id, imageProvider, styleId);
     
     if (result.success && result.imageUrl && result.requestPrompt) {
       const newImage: GeneratedImage = {
@@ -320,7 +321,8 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
         generating: [i]
       });
       
-      const result = await generateImageFromPrompt(prompt, storyData.userId, storyData.id, imageProvider, storyData.imageStyleId);
+      const styleId = storyData.imageStyleId || DEFAULT_STYLE_ID;
+      const result = await generateImageFromPrompt(prompt, storyData.userId, storyData.id, imageProvider, styleId);
       
       if (result.success && result.imageUrl && result.requestPrompt) {
         const newImage: GeneratedImage = {
