@@ -110,11 +110,19 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
     console.log('Result:', result);
     
     if (result.success && result.data?.imagePrompts) {
+      // On regeneration, preserve character/location/item images from Step 2, only clear scene images
+      const preservedImages = isRegeneration 
+        ? (storyData.generatedImages || []).filter(img => {
+            // Preserve images that don't match any existing scene image prompts
+            return !storyData.imagePrompts?.includes(img.originalPrompt);
+          })
+        : storyData.generatedImages;
+
       const updatedStoryData = {
         ...storyData,
         imagePrompts: result.data.imagePrompts,
-        // Clear existing images on regeneration
-        generatedImages: isRegeneration ? [] : storyData.generatedImages,
+        // Preserve detail images from Step 2 during regeneration
+        generatedImages: preservedImages,
         // Add action prompts from AI generation with chunk text mapping
         actionPrompts: (() => {
           const actionPrompts: ActionPrompt[] = [];
@@ -164,7 +172,7 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
       
       updateStoryData({ 
         imagePrompts: result.data.imagePrompts,
-        generatedImages: isRegeneration ? [] : storyData.generatedImages,
+        generatedImages: preservedImages,
         actionPrompts: updatedStoryData.actionPrompts
       });
       setIsImagePromptEditing(Array(result.data.imagePrompts.length).fill(false));

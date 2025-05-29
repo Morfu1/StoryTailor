@@ -3,11 +3,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import { Users, Loader2, Edit2, ImageIcon } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Users, Loader2, Edit2 } from 'lucide-react';
 import { generateCharacterPrompts, saveStory } from '@/actions/storyActions';
 import { useToast } from '@/hooks/use-toast';
 import type { UseStoryStateReturn } from '@/hooks/useStoryState';
 import type { StoryCharacterLocationItemPrompts } from '@/types/story';
+import type { ImageStyleId } from '@/types/imageStyles';
+import { IMAGE_STYLES, DEFAULT_STYLE_ID } from '@/types/imageStyles';
 import { DetailImageManager } from './DetailImageManager';
 
 interface StoryDetailsStepProps {
@@ -27,7 +30,9 @@ export function StoryDetailsStep({ storyState }: StoryDetailsStepProps) {
     isItemPromptsEditing,
     setIsItemPromptsEditing,
     isLocationPromptsEditing,
-    setIsLocationPromptsEditing
+    setIsLocationPromptsEditing,
+    imageProvider,
+    setImageProvider
   } = storyState;
 
   const handleGenerateDetails = async () => {
@@ -92,6 +97,45 @@ export function StoryDetailsStep({ storyState }: StoryDetailsStepProps) {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
+        {/* AI Model and Art Style Selection */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 border rounded-md bg-muted/50">
+          <div className="space-y-2">
+            <Label>Image Provider for Details</Label>
+            <Select value={imageProvider} onValueChange={(value: 'picsart' | 'gemini' | 'imagen3') => setImageProvider(value)}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="picsart">PicsArt AI</SelectItem>
+                <SelectItem value="gemini">Gemini</SelectItem>
+                <SelectItem value="imagen3">Imagen 3</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Art Style</Label>
+            <Select 
+              value={storyData.imageStyleId || DEFAULT_STYLE_ID} 
+              onValueChange={(value: ImageStyleId) => updateStoryData({ imageStyleId: value })}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {Object.values(IMAGE_STYLES).map((style) => (
+                  <SelectItem key={style.id} value={style.id}>
+                    <div>
+                      <div className="font-medium">{style.name}</div>
+                      <div className="text-xs text-muted-foreground">{style.description}</div>
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
         <Button 
           onClick={handleGenerateDetails}
           disabled={isLoading.details}
