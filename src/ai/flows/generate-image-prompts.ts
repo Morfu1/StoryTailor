@@ -10,16 +10,6 @@
 
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
-import Handlebars from 'handlebars';
-
-// Register Handlebars helper at the module level (though not strictly used in the revised prompt, kept for potential future use or other prompts)
-Handlebars.registerHelper('range', function (count) {
-  const array = [];
-  for (let i = 0; i < count; i++) {
-    array.push(i);
-  }
-  return array;
-});
 
 const GenerateImagePromptsInputSchema = z.object({
   script: z.string().describe('The animation script to base the image prompts on.'),
@@ -33,6 +23,7 @@ const GenerateImagePromptsInputSchema = z.object({
     audioUrl: z.string().optional(),
   })).optional().describe('Array of narration chunks with text and duration.'),
   imageProvider: z.enum(['picsart', 'gemini', 'imagen3']).default('picsart').describe('The AI provider for image generation.'),
+  isPicsart: z.boolean().optional().describe('Whether the image provider is PicsArt.'),
 });
 export type GenerateImagePromptsInput = z.infer<typeof GenerateImagePromptsInputSchema>;
 
@@ -72,7 +63,7 @@ Chunk Details:
 Chunk {{@index}}: "{{text}}" (Duration: {{duration}}s, Required prompts: {{promptCount}})
 {{/each}}
 
-{{#if (eq imageProvider "picsart")}}
+{{#if isPicsart}}
 **PICSART PROMPTING STRUCTURE:**
 For each required prompt, use this structure:
 1. Character Prompt: @CharacterName (reference character descriptions)
@@ -128,6 +119,22 @@ const generateImagePromptsFlow = ai.defineFlow(
     outputSchema: GenerateImagePromptsOutputSchema,
   },
   async input => {
+    console.log('=== IMAGE PROMPTS AI FLOW STARTED ===');
+    console.log('Environment check:', {
+      hasGoogleApiKey: !!process.env.GOOGLE_API_KEY,
+      hasGeminiApiKey: !!process.env.GEMINI_API_KEY,
+      hasGoogleGenaiApiKey: !!process.env.GOOGLE_GENAI_API_KEY
+    });
+    console.log('Input received:', {
+      scriptLength: input.script?.length,
+      hasCharacterPrompts: !!input.characterPrompts,
+      hasLocationPrompts: !!input.locationPrompts,
+      hasItemPrompts: !!input.itemPrompts,
+      audioDurationSeconds: input.audioDurationSeconds,
+      narrationChunksCount: input.narrationChunks?.length,
+      imageProvider: input.imageProvider
+    });
+    
     let numImages: number;
     let chunksData: Array<{text: string; duration: number; promptCount: number}> | undefined;
 
@@ -160,10 +167,29 @@ const generateImagePromptsFlow = ai.defineFlow(
       console.log(`Fallback: Generating ${numImages} prompts for ${input.audioDurationSeconds}s audio`);
     }
 
+    console.log('Calling AI with:', {
+      numImages,
+      chunksDataLength: chunksData?.length,
+      inputPreview: {
+        scriptPreview: input.script.substring(0, 100) + '...',
+        characterPrompts: input.characterPrompts.substring(0, 50) + '...',
+        imageProvider: input.imageProvider
+      }
+    });
+
     const {output} = await generateImagePromptsPrompt({
       ...input,
       numImages,
       chunksData,
+      isPicsart: input.imageProvider === 'picsart',
+    });
+    
+    console.log('AI Response received:', {
+      outputType: typeof output,
+      isArray: Array.isArray(output),
+      hasImagePrompts: output?.imagePrompts ? 'yes' : 'no',
+      imagePromptsType: typeof output?.imagePrompts,
+      imagePromptsLength: Array.isArray(output?.imagePrompts) ? output.imagePrompts.length : 'not array'
     });
     
     let imagePromptsArray: string[] = [];
@@ -191,11 +217,9 @@ const generateImagePromptsFlow = ai.defineFlow(
 
     // Ensure we adhere to the output schema even if parsing fails or returns unexpected structure
     if (!imagePromptsArray || imagePromptsArray.length === 0) {
-        console.warn("Image prompt generation resulted in an empty or unparseable list even after fallbacks.");
-        // Consider throwing an error here if an empty list is unacceptable
-        // For now, returning an empty array to satisfy the schema.
-        // throw new Error("Failed to generate a valid list of image prompts.");
-        return { imagePrompts: [] }; 
+        console.error("Image prompt generation resulted in an empty or unparseable list even after fallbacks.");
+        console.error("AI Output:", output);
+        throw new Error("Failed to generate a valid list of image prompts. The AI did not return any usable image prompts.");
     }
     
     return {imagePrompts: imagePromptsArray};

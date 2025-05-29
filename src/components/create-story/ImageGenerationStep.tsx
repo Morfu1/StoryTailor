@@ -45,7 +45,7 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
       (storyData.narrationChunks?.reduce((total, chunk) => total + (chunk.duration || 0), 0)) || 
       60; // Default fallback
     
-    const result = await generateImagePrompts({ 
+    const imagePromptsInput = { 
       script: storyData.generatedScript,
       characterPrompts: storyData.detailsPrompts.characterPrompts || '',
       locationPrompts: storyData.detailsPrompts.locationPrompts || '',
@@ -57,7 +57,18 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
         audioUrl: chunk.audioUrl
       })),
       imageProvider: imageProvider
-    });
+    };
+    
+    console.log('=== GENERATING IMAGE PROMPTS ===');
+    console.log('Input data:', imagePromptsInput);
+    console.log('Script length:', storyData.generatedScript?.length);
+    console.log('Narration chunks:', storyData.narrationChunks?.length);
+    console.log('Details prompts available:', !!storyData.detailsPrompts);
+    
+    const result = await generateImagePrompts(imagePromptsInput);
+    
+    console.log('=== SERVER ACTION RESULT ===');
+    console.log('Result:', result);
     
     if (result.success && result.data?.imagePrompts) {
       const updatedStoryData = {

@@ -227,10 +227,30 @@ export async function generateVoicePreview(input: VoicePreviewInput): Promise<{ 
 
 export async function generateImagePrompts(input: GenerateImagePromptsInput) {
   try {
+    console.log('=== SERVER ACTION: generateImagePrompts ===');
+    console.log('Received input:', {
+      scriptLength: input.script?.length,
+      imageProvider: input.imageProvider,
+      narrationChunksCount: input.narrationChunks?.length,
+      audioDurationSeconds: input.audioDurationSeconds
+    });
+    
     const result = await aiGenerateImagePrompts(input);
+    
+    console.log('AI flow result:', {
+      success: !!result,
+      imagePromptsCount: result.imagePrompts?.length,
+      hasImagePrompts: !!result.imagePrompts
+    });
+    
     return { success: true, data: result };
   } catch (error) {
     console.error("Error in generateImagePrompts AI flow:", error);
+    console.error("Error details:", {
+      name: (error as Error)?.name,
+      message: (error as Error)?.message,
+      stack: (error as Error)?.stack
+    });
     return { success: false, error: "Failed to generate image prompts." };
   }
 }
