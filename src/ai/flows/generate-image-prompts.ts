@@ -27,10 +27,12 @@ const GenerateImagePromptsInputSchema = z.object({
   locationPrompts: z.string().describe('Prompts describing all locations.'),
   itemPrompts: z.string().describe('Prompts describing all items.'),
   audioDurationSeconds: z.number().describe('The duration of the narration audio in seconds.'),
-  imagesPerMinute: z
-    .number()
-    .default(5)
-    .describe('The number of images to generate per minute of audio.'),
+  narrationChunks: z.array(z.object({
+    text: z.string(),
+    duration: z.number(),
+    audioUrl: z.string().optional(),
+  })).optional().describe('Array of narration chunks with text and duration.'),
+  imageProvider: z.enum(['picsart', 'gemini', 'imagen3']).default('picsart').describe('The AI provider for image generation.'),
 });
 export type GenerateImagePromptsInput = z.infer<typeof GenerateImagePromptsInputSchema>;
 
@@ -47,18 +49,51 @@ export async function generateImagePrompts(
 
 const generateImagePromptsPrompt = ai.definePrompt({
   name: 'generateImagePromptsPrompt',
-  input: {schema: GenerateImagePromptsInputSchema.extend({ numImages: z.number() })}, // Add numImages to prompt input
+  input: {schema: GenerateImagePromptsInputSchema.extend({ 
+    numImages: z.number(),
+    chunksData: z.array(z.object({
+      text: z.string(),
+      duration: z.number(),
+      promptCount: z.number(),
+    })).optional()
+  })},
   output: {schema: GenerateImagePromptsOutputSchema},
-  prompt: `You are an expert at creating detailed and evocative image prompts for animation frames based on a given script, character descriptions, location descriptions, and item descriptions. Your goal is to generate a sequence of prompts that, when used with a text-to-image model, will produce visually coherent and engaging scenes for an animation.
+  prompt: `You are an expert at creating detailed and evocative image prompts for animation frames. Your goal is to generate prompts that correlate with narration chunks and use provider-specific techniques.
 
-Instructions:
-1.  Analyze the script and identify {{numImages}} key scenes that need to be visualized.
-2.  For each scene, create a specific image prompt.
-3.  Each image prompt should include:
-    *   A shot type (e.g., "Wide front shot", "Medium side shot", "Close-up at eye-level", "Wide panoramic high-angle shot").
-    *   A description of the subject and its action in the scene.
-    *   A description of the environment.
-    *   References to the character, location, and item descriptions using the format @characterName, @locationName, or @itemName where appropriate. Use the exact names provided in the descriptions.
+{{#if chunksData}}
+**SOUND CHUNK CORRELATION MODE:**
+You must generate prompts that correlate with the provided narration chunks. Each chunk has:
+- Text content to analyze
+- Duration in seconds
+- Required number of prompts based on duration
+
+Chunk Details:
+{{#each chunksData}}
+Chunk {{@index}}: "{{text}}" (Duration: {{duration}}s, Required prompts: {{promptCount}})
+{{/each}}
+
+{{#if (eq imageProvider "picsart")}}
+**PICSART PROMPTING STRUCTURE:**
+For each required prompt, use this structure:
+1. Character Prompt: @CharacterName (reference character descriptions)
+2. Background Prompt: @LocationName (reference location descriptions)  
+3. Action Prompt: @CharacterName is [simple present-tense description of action]
+
+Example format:
+"Closeup shot at eye-level of @Fuzzy's sleeping face, her long, wavy fur gently rising and falling with each breath. Sunlight begins to spill over her, illuminating her pastel pink collar. @Fuzzy is lying down, sleeping, surrounded by soft toys and blankets. It is morning."
+{{else}}
+**GOOGLE/GEMINI PROMPTING STRUCTURE:**
+For Google providers, use more detailed cinematic descriptions with:
+- Camera angles and shot types
+- Lighting and mood descriptions
+- Detailed scene composition
+- Character emotions and expressions
+{{/if}}
+
+{{else}}
+**FALLBACK MODE (when no chunks provided):**
+Analyze the script and identify {{numImages}} key scenes that need visualization.
+{{/if}}
 
 Character Descriptions:
 {{{characterPrompts}}}
@@ -72,13 +107,17 @@ Item Descriptions:
 Script:
 {{{script}}}
 
-Based on the script and the provided descriptions, generate exactly {{numImages}} image prompts.
-Return your response as a JSON object with a single key "imagePrompts". The value of "imagePrompts" MUST be an array of strings, where each string is one of the generated image prompts.
-Ensure the array contains exactly {{numImages}} prompt strings. Each string in the array should be a complete, detailed prompt suitable for a text-to-image model.
+{{#if chunksData}}
+Generate prompts for each chunk according to the required count. Total expected: {{numImages}} prompts.
+{{else}}
+Generate exactly {{numImages}} image prompts based on the script.
+{{/if}}
+
+Return your response as a JSON object with a single key "imagePrompts". The value MUST be an array of exactly {{numImages}} strings.
 `,
   config: {
     temperature: 0.7,
-    maxOutputTokens: 2048, // Increased slightly in case of very detailed prompts
+    maxOutputTokens: 3072,
   },
 });
 
@@ -89,11 +128,42 @@ const generateImagePromptsFlow = ai.defineFlow(
     outputSchema: GenerateImagePromptsOutputSchema,
   },
   async input => {
-    const numImages = Math.max(1, Math.ceil(input.audioDurationSeconds * (input.imagesPerMinute / 60))); // Ensure at least 1 image if duration > 0
+    let numImages: number;
+    let chunksData: Array<{text: string; duration: number; promptCount: number}> | undefined;
+
+    if (input.narrationChunks && input.narrationChunks.length > 0) {
+      // Calculate prompts based on sound chunks and their durations
+      chunksData = input.narrationChunks.map(chunk => {
+        let promptCount: number;
+        if (chunk.duration <= 5) {
+          promptCount = 1;
+        } else if (chunk.duration <= 10) {
+          // 1 or 2 prompts depending on text complexity - for now, default to 1
+          promptCount = chunk.text.length > 100 ? 2 : 1;
+        } else if (chunk.duration <= 15) {
+          promptCount = 2;
+        } else {
+          promptCount = 3;
+        }
+        return {
+          text: chunk.text,
+          duration: chunk.duration,
+          promptCount
+        };
+      });
+      
+      numImages = chunksData.reduce((total, chunk) => total + chunk.promptCount, 0);
+      console.log(`Generating ${numImages} prompts for ${chunksData.length} chunks`, chunksData);
+    } else {
+      // Fallback to original logic (5 images per minute default)
+      numImages = Math.max(1, Math.ceil(input.audioDurationSeconds * (5 / 60)));
+      console.log(`Fallback: Generating ${numImages} prompts for ${input.audioDurationSeconds}s audio`);
+    }
 
     const {output} = await generateImagePromptsPrompt({
       ...input,
       numImages,
+      chunksData,
     });
     
     let imagePromptsArray: string[] = [];
@@ -110,9 +180,9 @@ const generateImagePromptsFlow = ai.defineFlow(
             .split(/\n\d+:\s*|\n-\s*|\n\n/) // Split by newline, number and colon, or newline and dash, or double newline
             .map(prompt => prompt.trim())
             .filter(prompt => prompt.length > 0 && !/^\d+:\s*$/.test(prompt) && !/^-\s*$/.test(prompt) ); // Filter out empty or only-marker lines
-        } else if (output && typeof (output as any).imagePrompts === 'string') {
+        } else if (output && typeof (output as unknown as {imagePrompts: string}).imagePrompts === 'string') {
             // If imagePrompts field is a string with newlines
-             imagePromptsArray = ((output as any).imagePrompts as string)
+             imagePromptsArray = ((output as unknown as {imagePrompts: string}).imagePrompts as string)
             .split(/\n\d+:\s*|\n-\s*|\n\n/)
             .map(prompt => prompt.trim())
             .filter(prompt => prompt.length > 0 && !/^\d+:\s*$/.test(prompt) && !/^-\s*$/.test(prompt) );

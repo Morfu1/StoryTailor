@@ -8,7 +8,7 @@ import { ImagePopup } from '@/components/ui/image-popup';
 import { Clapperboard, Loader2, Edit2, ImageIcon, RefreshCw, Download } from 'lucide-react';
 import { generateImagePrompts, generateImageFromPrompt, saveStory } from '@/actions/storyActions';
 import { useToast } from '@/hooks/use-toast';
-import { extractKeywordsFromText, countSceneImages } from '@/utils/storyHelpers';
+import { countSceneImages } from '@/utils/storyHelpers';
 import Image from 'next/image';
 import { useState } from 'react';
 import type { UseStoryStateReturn } from '@/hooks/useStoryState';
@@ -51,7 +51,12 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
       locationPrompts: storyData.detailsPrompts.locationPrompts || '',
       itemPrompts: storyData.detailsPrompts.itemPrompts || '',
       audioDurationSeconds,
-      imagesPerMinute: 5 // Default value
+      narrationChunks: storyData.narrationChunks?.map(chunk => ({
+        text: chunk.text,
+        duration: chunk.duration || 0,
+        audioUrl: chunk.audioUrl
+      })),
+      imageProvider: imageProvider
     });
     
     if (result.success && result.data?.imagePrompts) {
