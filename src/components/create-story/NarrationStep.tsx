@@ -3,7 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
-import { Mic, Loader2, Play, Pause, RefreshCw } from 'lucide-react';
+import { Mic, Loader2, Play, Pause, RefreshCw, StopCircle } from 'lucide-react';
 import { VoiceSelector } from './VoiceSelector';
 import { NarrationChunkPlayer } from './NarrationChunkPlayer';
 import { useNarrationGeneration } from '@/hooks/useNarrationGeneration';
@@ -16,7 +16,7 @@ interface NarrationStepProps {
 
 export function NarrationStep({ storyState }: NarrationStepProps) {
   const { toast } = useToast();
-  const { handleGenerateNarration, handleRegenerateChunks } = useNarrationGeneration({ storyState });
+  const { handleGenerateNarration, handleRegenerateChunks, handleStopGeneration } = useNarrationGeneration({ storyState });
   const {
     storyData,
     isLoading,
@@ -116,25 +116,36 @@ export function NarrationStep({ storyState }: NarrationStepProps) {
 
             {narrationSource === 'generate' && (
               <div className="flex gap-2">
-                <Button 
-                  onClick={handleGenerateAllNarration}
-                  disabled={isLoading.narration || processingAllMode}
-                  className="flex-1"
-                >
-                  {isLoading.narration && processingAllMode ? (
-                    <>
+                {!processingAllMode ? (
+                  <Button 
+                    onClick={handleGenerateAllNarration}
+                    disabled={isLoading.narration}
+                    className="flex-1"
+                  >
+                    <Mic className="mr-2 h-4 w-4" />
+                    {completedChunks === 0 ? 'Generate All Narration' : 'Continue Generation'}
+                  </Button>
+                ) : (
+                  <>
+                    <Button 
+                      disabled
+                      className="flex-1"
+                    >
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                       Generating All... ({currentNarrationChunkIndex + 1}/{totalChunks})
-                    </>
-                  ) : (
-                    <>
-                      <Mic className="mr-2 h-4 w-4" />
-                      {completedChunks === 0 ? 'Generate All Narration' : 'Continue Generation'}
-                    </>
-                  )}
-                </Button>
+                    </Button>
+                    <Button 
+                      onClick={handleStopGeneration}
+                      variant="destructive"
+                      size="default"
+                    >
+                      <StopCircle className="mr-2 h-4 w-4" />
+                      Stop
+                    </Button>
+                  </>
+                )}
                 
-                {completedChunks === totalChunks && totalChunks > 0 && (
+                {completedChunks === totalChunks && totalChunks > 0 && !processingAllMode && (
                   <Button 
                     onClick={() => setCurrentStep(4)}
                     variant="outline"

@@ -284,6 +284,18 @@ export const useNarrationGeneration = ({ storyState }: UseNarrationGenerationPro
     }
   }, [processingAllMode, currentNarrationChunkIndex, isLoading.narration]);
 
+  const handleStopGeneration = useCallback(() => {
+    console.log('[useNarrationGeneration] Stopping audio generation');
+    setProcessingAllMode(false);
+    setCurrentNarrationChunkIndex(-1);
+    handleSetLoading('narration', false);
+    toast({
+      title: 'Generation Stopped',
+      description: 'Audio generation has been stopped.',
+      className: 'bg-primary text-primary-foreground'
+    });
+  }, [setProcessingAllMode, setCurrentNarrationChunkIndex, handleSetLoading, toast]);
+
   const handleRegenerateChunks = async () => {
     if (!storyData.generatedScript) {
       toast({ title: 'No Script Available', description: 'Generate a script first.', variant: 'destructive' });
@@ -329,6 +341,7 @@ export const useNarrationGeneration = ({ storyState }: UseNarrationGenerationPro
 
   return {
     handleGenerateNarration,
-    handleRegenerateChunks
+    handleRegenerateChunks,
+    handleStopGeneration
   };
 };
