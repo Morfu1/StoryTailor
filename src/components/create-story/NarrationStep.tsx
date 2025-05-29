@@ -2,7 +2,8 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
-import { Mic, Loader2, Play, Pause } from 'lucide-react';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
+import { Mic, Loader2, Play, Pause, RefreshCw } from 'lucide-react';
 import { VoiceSelector } from './VoiceSelector';
 import { NarrationChunkPlayer } from './NarrationChunkPlayer';
 import { useNarrationGeneration } from '@/hooks/useNarrationGeneration';
@@ -15,7 +16,7 @@ interface NarrationStepProps {
 
 export function NarrationStep({ storyState }: NarrationStepProps) {
   const { toast } = useToast();
-  const { handleGenerateNarration } = useNarrationGeneration({ storyState });
+  const { handleGenerateNarration, handleRegenerateChunks } = useNarrationGeneration({ storyState });
   const {
     storyData,
     isLoading,
@@ -72,9 +73,43 @@ export function NarrationStep({ storyState }: NarrationStepProps) {
                 <Label className="text-sm font-medium">
                   Narration Progress ({completedChunks}/{totalChunks} chunks completed)
                 </Label>
-                <span className="text-sm text-muted-foreground">
-                  {Math.round(progressPercentage)}%
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-muted-foreground">
+                    {Math.round(progressPercentage)}%
+                  </span>
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={isLoading.scriptChunksUpdate}
+                      >
+                        {isLoading.scriptChunksUpdate ? (
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                        ) : (
+                          <RefreshCw className="h-3 w-3" />
+                        )}
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Regenerate Story Chunks?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          This will regenerate the story chunks using improved visual scene logic. 
+                          <strong className="block mt-2 text-destructive">
+                            Warning: All existing voice generations will be cleared and need to be regenerated.
+                          </strong>
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction onClick={handleRegenerateChunks}>
+                          Regenerate Chunks
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                </div>
               </div>
               <Progress value={progressPercentage} className="w-full" />
             </div>

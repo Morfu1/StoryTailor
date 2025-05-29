@@ -29,15 +29,21 @@ const generateScriptChunksPrompt = ai.definePrompt(
     name: 'generateScriptChunksPrompt',
     input: { schema: GenerateScriptChunksInputSchema },
     output: { schema: GenerateScriptChunksOutputSchema },
-    prompt: `You are an expert script editor. Your task is to split the following story script into meaningful chunks. These chunks will be used for generating narration audio and corresponding images for an animated story.
+    prompt: `You are a movie director and script editor who thinks visually. Your task is to split the following story script into meaningful visual scenes/chunks. Each chunk will have a corresponding image generated and narration audio, so think like you're creating an animated storybook.
+
+Think like a movie director analyzing a script:
+- What would each scene look like visually?
+- Where are the natural visual transitions?
+- What moments need their own "frame" or "shot"?
+- How can you group sentences that paint the same visual picture?
 
 Instructions:
-1.  Read the entire script carefully to understand the narrative flow, scenes, and logical breaks.
-2.  Split the script into a sequence of text chunks.
-3.  Each chunk MUST represent a complete thought or a small, self-contained part of a scene. Ensure sentences are not cut off mid-way.
-4.  Prioritize splitting at natural breaks in dialogue, action, or scene changes.
-5.  Aim for chunks that are suitable for a single narration segment and a single accompanying image. This means chunks shouldn't be too long or too short. A typical chunk might be 1-3 sentences.
-6.  The example provided by the user had a story split into 14 chunks. Use this as a general guideline for the granularity of splitting, but adapt to the specific script's length and content.
+1. Read the entire script and visualize it as an animated story with scenes.
+2. Split into chunks that represent distinct visual scenes or moments - NOT sentence by sentence.
+3. Each chunk should paint a clear, cohesive visual picture that an AI can generate as a single image.
+4. Group related sentences together if they describe the same scene, character introduction, or visual moment.
+5. Aim for chunks that are suitable for a single narration segment and a single accompanying image. This means chunks shouldn't be too long or too short.
+6. Each chunk should be 1-3 sentences, but prioritize visual coherence over sentence count.
 
 Script to split:
 {{{script}}}

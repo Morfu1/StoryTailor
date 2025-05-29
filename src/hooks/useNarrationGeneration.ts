@@ -253,7 +253,51 @@ export const useNarrationGeneration = ({ storyState }: UseNarrationGenerationPro
     setCurrentStep
   ]);
 
+  const handleRegenerateChunks = async () => {
+    if (!storyData.generatedScript) {
+      toast({ title: 'No Script Available', description: 'Generate a script first.', variant: 'destructive' });
+      return;
+    }
+
+    toast({ 
+      title: 'Regenerating Chunks...', 
+      description: 'AI is re-splitting the script with improved visual scene logic. All voice generations will be reset.', 
+      className: 'bg-primary text-primary-foreground' 
+    });
+    
+    handleSetLoading('scriptChunksUpdate', true);
+    
+    try {
+      const newNarrationChunks = await prepareScriptChunksAI(storyData.generatedScript);
+      
+      // Clear any existing audio URLs since chunks are changing
+      const chunksWithoutAudio = newNarrationChunks.map(chunk => ({
+        ...chunk,
+        audioUrl: undefined,
+        duration: undefined
+      }));
+      
+      updateStoryData({ narrationChunks: chunksWithoutAudio });
+      handleSetLoading('scriptChunksUpdate', false);
+      
+      if (newNarrationChunks.length > 0) {
+        toast({ 
+          title: 'Chunks Regenerated!', 
+          description: `AI created ${newNarrationChunks.length} new visual scene-based chunks. Previous voice generations have been cleared.`, 
+          className: 'bg-primary text-primary-foreground' 
+        });
+      } else {
+        toast({ title: 'No Chunks Generated', description: 'AI could not split the script into chunks.', variant: 'destructive' });
+      }
+    } catch (error) {
+      console.error('Error regenerating chunks:', error);
+      toast({ title: 'Error', description: 'Failed to regenerate chunks. Please try again.', variant: 'destructive' });
+      handleSetLoading('scriptChunksUpdate', false);
+    }
+  };
+
   return {
-    handleGenerateNarration
+    handleGenerateNarration,
+    handleRegenerateChunks
   };
 };
