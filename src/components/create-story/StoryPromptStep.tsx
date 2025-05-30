@@ -73,11 +73,36 @@ export function StoryPromptStep({ storyState }: StoryPromptStepProps) {
       });
       
       // Auto-save the story with the new script
-      if (storyData.id && storyData.userId) {
+      if (storyData.userId) {
         try {
-          await saveStory(updatedStoryData, storyData.userId);
-          console.log('Auto-saved story with new script');
+          handleSetLoading('save', true);
+          const saveResult = await saveStory(updatedStoryData, storyData.userId);
+          handleSetLoading('save', false);
+          
+          if (saveResult.success) {
+            console.log('Auto-saved story with new script', saveResult);
+            
+            // If this was the first save, update the story ID
+            if (saveResult.storyId && !storyData.id) {
+              updateStoryData({ id: saveResult.storyId });
+              toast({
+                title: 'Story Saved!',
+                description: 'Your story has been automatically saved to your account.',
+                className: 'bg-green-500 text-white'
+              });
+            } else {
+              console.log('Story auto-updated');
+            }
+          } else {
+            console.error('Failed to auto-save story:', saveResult.error);
+            toast({
+              title: 'Auto-Save Failed',
+              description: saveResult.error || 'Could not save your story. Please use the Save button below.',
+              variant: 'destructive'
+            });
+          }
         } catch (error) {
+          handleSetLoading('save', false);
           console.error('Failed to auto-save story after script generation:', error);
         }
       }

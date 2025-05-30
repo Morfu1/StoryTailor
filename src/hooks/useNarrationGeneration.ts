@@ -153,6 +153,47 @@ export const useNarrationGeneration = ({ storyState }: UseNarrationGenerationPro
     }
     
     const chunk = storyData.narrationChunks![chunkToProcessIndex]; // Assert narrationChunks is not null/undefined
+    // Check if the story has an ID - if not, save it first to get an ID
+    let storyIdToUse = storyData.id;
+    
+    if (!storyIdToUse && storyData.userId) {
+      try {
+        console.log('Story has no ID. Saving story first before generating narration...');
+        const saveResult = await saveStory(storyData, storyData.userId);
+        
+        if (saveResult.success && saveResult.storyId) {
+          console.log('Successfully saved story to get an ID:', saveResult.storyId);
+          storyIdToUse = saveResult.storyId;
+          // Update story data with the new ID
+          updateStoryData({ id: saveResult.storyId });
+          toast({
+            title: 'Story Saved',
+            description: 'Your story has been automatically saved before generating narration.',
+            className: 'bg-green-500 text-white'
+          });
+        } else {
+          console.error('Failed to save story to get an ID:', saveResult.error);
+          toast({
+            title: 'Error',
+            description: 'Could not save story before generating narration. Please save manually first.',
+            variant: 'destructive'
+          });
+          handleSetLoading('narration', false);
+          return;
+        }
+      } catch (error) {
+        console.error('Error saving story to get ID:', error);
+        toast({
+          title: 'Error',
+          description: 'Could not save story before generating narration. Please save manually first.',
+          variant: 'destructive'
+        });
+        handleSetLoading('narration', false);
+        return;
+      }
+    }
+    
+    // Now we should have a valid story ID to use
     const result = await generateNarrationAudio({
       script: chunk.text,
       voiceId: selectedTtsModel === 'elevenlabs' ? voiceIdToUse : selectedGoogleVoiceId,
@@ -160,7 +201,7 @@ export const useNarrationGeneration = ({ storyState }: UseNarrationGenerationPro
       googleApiModel: selectedTtsModel === 'google' ? selectedGoogleApiModel : undefined,
       languageCode: selectedTtsModel === 'google' ? selectedGoogleLanguage : undefined,
       userId: storyData.userId,
-      storyId: storyData.id,
+      storyId: storyIdToUse,
       chunkId: chunk.id
     });
     
@@ -187,10 +228,24 @@ export const useNarrationGeneration = ({ storyState }: UseNarrationGenerationPro
       });
       
       // Auto-save the story with the new narration chunk (non-blocking)
-      if (storyData.id && storyData.userId) {
-        saveStory(updatedStoryData, storyData.userId)
-          .then(() => {
-            console.log(`Auto-saved story with new narration chunk ${chunkToProcessIndex + 1}`);
+      if (storyData.userId) {
+        // Use the original story ID or the newly obtained one
+        const storyToSave = {
+          ...updatedStoryData,
+          id: storyIdToUse || updatedStoryData.id
+        };
+        
+        saveStory(storyToSave, storyData.userId)
+          .then((saveResult) => {
+            if (saveResult.success) {
+              console.log(`Auto-saved story with new narration chunk ${chunkToProcessIndex + 1}`);
+              // If this was the first save and we got a new ID, update the state
+              if (saveResult.storyId && !storyData.id) {
+                updateStoryData({ id: saveResult.storyId });
+              }
+            } else {
+              console.error('Failed to auto-save story after narration generation:', saveResult.error);
+            }
           })
           .catch((error) => {
             console.error('Failed to auto-save story after narration generation:', error);

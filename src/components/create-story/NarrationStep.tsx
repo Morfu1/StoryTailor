@@ -64,6 +64,30 @@ export function NarrationStep({ storyState }: NarrationStepProps) {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
+        {!storyData.id && (
+          <div className="bg-amber-100 border border-amber-300 rounded p-3 mb-4">
+            <h4 className="text-sm font-medium text-amber-800">Please Save Your Story First</h4>
+            <p className="text-xs text-amber-700 mt-1">
+              To ensure narration works correctly, save your story using the "Save Story" button at the bottom of the page before generating audio.
+            </p>
+          </div>
+        )}
+        
+        <div className="bg-blue-50 border border-blue-200 rounded p-3 mb-4">
+          <h4 className="text-sm font-medium text-blue-800">Troubleshooting Audio Issues</h4>
+          <p className="text-xs text-blue-700 mt-1">
+            If you encounter audio loading errors, they may be caused by:
+          </p>
+          <ul className="list-disc list-inside text-xs text-blue-700 mt-1">
+            <li>Ad blockers or privacy extensions blocking Firebase Storage connections</li>
+            <li>Network connectivity issues</li>
+            <li>Story not being saved before generating audio</li>
+          </ul>
+          <p className="text-xs text-blue-700 mt-2">
+            Try disabling ad blockers temporarily for this site, ensure your story is saved, and reload the page if issues persist.
+          </p>
+        </div>
+
         <VoiceSelector storyState={storyState} />
 
         {storyData.narrationChunks && storyData.narrationChunks.length > 0 && (
