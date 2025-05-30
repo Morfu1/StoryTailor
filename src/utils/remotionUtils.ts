@@ -470,8 +470,7 @@ export const saveVideoForDownload = async (
   // Copy file to public directory
   fs.copyFileSync(videoPath, publicPath);
   
-  // Clean up temporary Remotion assets
-  cleanupRemotionAssets();
+  // Note: Asset cleanup is handled separately to avoid interfering with CLI rendering
   
   // Return the relative path for frontend access
   return `/downloads/videos/${filename}`;

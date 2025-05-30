@@ -107,6 +107,12 @@ const organizeScenes = (images: string[], audioChunks: NarrationChunk[]): SceneD
   const totalFrames = scenes.reduce((sum, scene) => sum + scene.durationInFrames, 0);
   console.log('Organized', scenes.length, 'scenes, total duration:', totalFrames / 30, 'seconds');
   
+  // Debug: Check first few scenes and their images
+  console.log('First 3 scenes images:');
+  scenes.slice(0, 3).forEach((scene, i) => {
+    console.log(`Scene ${i}:`, scene.images);
+  });
+  
   return scenes;
 };
 
@@ -175,16 +181,7 @@ export const StoryVideoComponent: React.FC<StoryVideoProps> = ({ images, audioCh
   console.log('- Audio chunks count:', audioChunks?.length || 0);
   
   if (images?.length) {
-    console.log('- Images sample:', images.slice(0, 3));
-  }
-  
-  if (audioChunks?.length) {
-    console.log('- Audio chunks sample:', audioChunks.slice(0, 3).map(chunk => ({
-      id: chunk.id,
-      duration: chunk.duration,
-      hasAudioUrl: !!chunk.audioUrl,
-      audioUrl: chunk.audioUrl?.substring(0, 50) + '...'
-    })));
+    console.log('- First 5 images:', images.slice(0, 5));
   }
   
   // Organize scenes to associate images with audio chunks
@@ -236,6 +233,50 @@ export const StoryVideoComponent: React.FC<StoryVideoProps> = ({ images, audioCh
   );
 };
 
+// Helper to detect image dimensions and calculate optimal video resolution
+const calculateOptimalResolution = async (images: string[]): Promise<{ width: number; height: number }> => {
+  if (!images || images.length === 0) {
+    return { width: 1920, height: 1080 }; // Default Full HD
+  }
+
+  try {
+    // Take the first valid image to detect dimensions
+    const firstImage = images.find(img => img && img !== 'placeholder');
+    if (!firstImage) {
+      return { width: 1920, height: 1080 };
+    }
+
+    // Create a promise to load the image and get its dimensions
+    const getImageDimensions = (src: string): Promise<{ width: number; height: number }> => {
+      return new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => {
+          resolve({ width: img.naturalWidth, height: img.naturalHeight });
+        };
+        img.onerror = () => {
+          resolve({ width: 1920, height: 1080 }); // Fallback on error
+        };
+        img.src = src;
+      });
+    };
+
+    const dimensions = await getImageDimensions(firstImage);
+    
+    // If images are smaller than Full HD, use their dimensions for faster rendering
+    if (dimensions.width <= 1280 && dimensions.height <= 720) {
+      console.log('Using image dimensions for faster rendering:', dimensions);
+      return dimensions;
+    }
+    
+    // For larger images, use standard resolutions for consistency
+    console.log('Using Full HD for large images');
+    return { width: 1920, height: 1080 };
+  } catch (error) {
+    console.error('Error detecting image dimensions:', error);
+    return { width: 1920, height: 1080 }; // Fallback
+  }
+};
+
 // Main entry component for Remotion
 export const StoryVideo = () => {
   const { images, audioChunks } = getInputProps<StoryVideoProps>();
@@ -274,6 +315,15 @@ export const StoryVideo = () => {
     console.log('Using default fallback: 300 frames');
     return 300;
   };
+
+  // Calculate optimal resolution based on image dimensions
+  const [resolution, setResolution] = React.useState({ width: 1920, height: 1080 });
+
+  React.useEffect(() => {
+    if (images?.length > 0) {
+      calculateOptimalResolution(images).then(setResolution);
+    }
+  }, [images]);
   
   return (
     <Composition
@@ -281,8 +331,8 @@ export const StoryVideo = () => {
       component={StoryVideoComponent}
       durationInFrames={calculateDuration()}
       fps={30}
-      width={1920}
-      height={1080}
+      width={resolution.width}
+      height={resolution.height}
       defaultProps={{
         images,
         audioChunks,

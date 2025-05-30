@@ -194,6 +194,15 @@ export async function POST(req: Request) {
     console.log('Saving video for download...');
     const downloadUrl = await saveVideoForDownload(videoPath, storyId);
 
+    // Clean up assets after successful render and save
+    console.log('Cleaning up temporary assets...');
+    try {
+      const { cleanupRemotionAssets } = await import('@/utils/remotionUtils');
+      cleanupRemotionAssets();
+    } catch (error) {
+      console.warn('Failed to cleanup assets:', error);
+    }
+
     // Return the download URL
     return NextResponse.json({ downloadUrl });
   } catch (error) {

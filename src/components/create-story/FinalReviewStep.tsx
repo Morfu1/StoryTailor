@@ -183,15 +183,27 @@ function RenderVideoButton({ storyData }: { storyData: UseStoryStateReturn['stor
     setVideoUrl(null);
 
     try {
-      // First try to get chapter-generated images
-      let sceneImages = storyData.generatedImages
-        ?.filter(image => image.imageUrl && image.isChapterGenerated)
-        .sort((a, b) => (a.chapterNumber || 0) - (b.chapterNumber || 0))
-        .map(image => image.imageUrl) || [];
+      // Order images by their original prompts to match Step 4 sequence
+      let sceneImages: string[] = [];
+      
+      if (storyData.imagePrompts && storyData.generatedImages) {
+        // Create a map of prompt to image URL for fast lookup
+        const imageMap = new Map<string, string>();
+        storyData.generatedImages
+          .filter(image => image.imageUrl && image.originalPrompt)
+          .forEach(image => {
+            imageMap.set(image.originalPrompt, image.imageUrl);
+          });
+        
+        // Order images by imagePrompts sequence (Step 4 order)
+        sceneImages = storyData.imagePrompts
+          .map(prompt => imageMap.get(prompt))
+          .filter(url => url !== undefined) as string[];
+      }
 
-      // If no chapter-generated images found, fall back to any images with URLs
+      // If no ordered images found, fall back to any images with URLs
       if (sceneImages.length === 0) {
-        console.log('No chapter-generated images found, falling back to all images');
+        console.log('No prompt-ordered images found, falling back to all images');
         sceneImages = storyData.generatedImages
           ?.filter(image => image.imageUrl)
           .map(image => image.imageUrl) || [];
