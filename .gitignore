@@ -36,3 +36,18 @@ yarn-error.log*
 
 # sensitive files
 .secure/
+
+# generated media files
+*.wav
+*.mp3
+*.mp4
+*.jpeg
+*.jpg
+*.png
+*.gif
+*.webp
+
+# temporary media directories
+/public/remotion-assets/
+/public/downloads/
+/temp/

@@ -1,10 +1,13 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import { CheckCircle, AlertCircle, Film } from 'lucide-react';
+import { CheckCircle, AlertCircle, Film, VideoIcon, Download } from 'lucide-react';
 import { ImageCategorizer } from './ImageCategorizer';
 import { countSceneImages, countDetailImages } from '@/utils/storyHelpers';
 import type { UseStoryStateReturn } from '@/hooks/useStoryState';
+import { useState } from 'react';
+import { NarrationChunk } from '@/types/narration';
 
 interface FinalReviewStepProps {
   storyState: UseStoryStateReturn;
@@ -156,13 +159,158 @@ export function FinalReviewStep({ storyState }: FinalReviewStepProps) {
                 <CheckCircle className="h-5 w-5" />
                 <span className="font-medium">Story Complete!</span>
               </div>
-              <p className="text-sm text-muted-foreground">
+              <p className="text-sm text-muted-foreground mb-4">
                 Your story is ready. Use the Save Story button below to save your progress.
               </p>
+              <RenderVideoButton storyData={storyData} />
             </div>
           )}
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+// Component for rendering video button
+function RenderVideoButton({ storyData }: { storyData: UseStoryStateReturn['storyData'] }) {
+  const [isRendering, setIsRendering] = useState(false);
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleRenderVideo = async () => {
+    setIsRendering(true);
+    setError(null);
+    setVideoUrl(null);
+
+    try {
+      // First try to get chapter-generated images
+      let sceneImages = storyData.generatedImages
+        ?.filter(image => image.imageUrl && image.isChapterGenerated)
+        .sort((a, b) => (a.chapterNumber || 0) - (b.chapterNumber || 0))
+        .map(image => image.imageUrl) || [];
+
+      // If no chapter-generated images found, fall back to any images with URLs
+      if (sceneImages.length === 0) {
+        console.log('No chapter-generated images found, falling back to all images');
+        sceneImages = storyData.generatedImages
+          ?.filter(image => image.imageUrl)
+          .map(image => image.imageUrl) || [];
+      }
+
+      console.log('Scene images for video:', sceneImages);
+      
+      // Validate that we have images to work with
+      if (sceneImages.length === 0) {
+        throw new Error('No images available for video rendering');
+      }
+
+      // Gather all audio chunks, filter for valid ones, and sort them by index
+      console.log('DEBUG - Total narration chunks from Firebase:', storyData.narrationChunks?.length || 0);
+      
+      const allChunks = [...(storyData.narrationChunks || [])];
+      console.log('DEBUG - All chunks status:', allChunks.map(chunk => ({
+        index: chunk.index,
+        hasAudioUrl: !!chunk.audioUrl,
+        hasText: !!chunk.text,
+        audioUrlPreview: chunk.audioUrl?.substring(0, 30) + '...',
+        duration: chunk.duration
+      })));
+      
+      const audioChunks = allChunks
+        .filter(chunk => chunk.audioUrl) // Only require audioUrl for video rendering
+        .sort((a, b) => a.index - b.index);
+      
+      console.log('DEBUG - Filtered audio chunks count:', audioChunks.length, 'out of', allChunks.length);
+      console.log('DEBUG - Filtered and sorted audio chunks:', audioChunks.map(chunk => ({
+        index: chunk.index,
+        hasAudio: !!chunk.audioUrl,
+        textPreview: chunk.text?.substring(0, 30) || 'NO TEXT',
+        duration: chunk.duration
+      })));
+      
+      // Validate that we have audio chunks to work with
+      if (audioChunks.length === 0) {
+        throw new Error('No audio narration available for video rendering');
+      }
+
+      // Prepare request payload
+      const payload = {
+        images: sceneImages,
+        audioChunks,
+        storyTitle: storyData.title || 'Untitled Story',
+        storyId: storyData.id || `story-${Date.now()}`
+      };
+
+      // Call the API
+      const response = await fetch('/api/render-video', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      // Log the payload to help with debugging
+      console.log('Video render request payload:', {
+        imageCount: payload.images.length,
+        audioChunkCount: payload.audioChunks.length,
+        storyTitle: payload.storyTitle,
+        storyId: payload.storyId
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error('Video render API error:', errorData);
+        throw new Error(errorData.error || 'Failed to render video');
+      }
+
+      const data = await response.json();
+      setVideoUrl(data.downloadUrl);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An unexpected error occurred');
+      console.error('Error rendering video:', err);
+    } finally {
+      setIsRendering(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col items-center space-y-4">
+      {!videoUrl && !isRendering && (
+        <Button
+          onClick={handleRenderVideo}
+          className="flex items-center gap-2"
+          disabled={isRendering}
+        >
+          <VideoIcon className="h-4 w-4" />
+          Generate Video
+        </Button>
+      )}
+
+      {isRendering && (
+        <div className="flex items-center gap-2 text-amber-600">
+          <div className="h-4 w-4 animate-spin rounded-full border-2 border-amber-600 border-t-transparent"></div>
+          <span>Rendering video... This may take a few minutes</span>
+        </div>
+      )}
+
+      {videoUrl && (
+        <div className="flex flex-col items-center gap-2">
+          <span className="text-green-600 text-sm font-medium">Video rendered successfully!</span>
+          <Button asChild variant="outline" className="flex items-center gap-2">
+            <a href={videoUrl} download>
+              <Download className="h-4 w-4" />
+              Download Video
+            </a>
+          </Button>
+        </div>
+      )}
+
+      {error && (
+        <div className="text-red-500 text-sm">
+          Error: {error}
+        </div>
+      )}
+    </div>
   );
 }

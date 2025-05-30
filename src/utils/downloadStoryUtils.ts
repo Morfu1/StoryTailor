@@ -1,6 +1,54 @@
 import JSZip from 'jszip';
 import { Story } from '@/types/story';
 
+/**
+ * Add WAV headers to raw PCM data from Google TTS
+ * Google TTS returns 24kHz, 16-bit, mono PCM data
+ */
+function addWavHeadersToBuffer(pcmData: ArrayBuffer): ArrayBuffer {
+  const pcmBytes = pcmData.byteLength;
+  const sampleRate = 24000; // Google TTS uses 24kHz
+  const numChannels = 1; // Mono
+  const bitsPerSample = 16; // 16-bit
+  const bytesPerSample = bitsPerSample / 8;
+  const blockAlign = numChannels * bytesPerSample;
+  const byteRate = sampleRate * blockAlign;
+  
+  // WAV header is 44 bytes
+  const headerSize = 44;
+  const fileSize = headerSize + pcmBytes;
+  
+  const buffer = new ArrayBuffer(fileSize);
+  const view = new DataView(buffer);
+  
+  // RIFF header
+  view.setUint32(0, 0x52494646, false); // "RIFF"
+  view.setUint32(4, fileSize - 8, true); // File size - 8
+  view.setUint32(8, 0x57415645, false); // "WAVE"
+  
+  // fmt chunk
+  view.setUint32(12, 0x666d7420, false); // "fmt "
+  view.setUint32(16, 16, true); // fmt chunk size
+  view.setUint16(20, 1, true); // Audio format (1 = PCM)
+  view.setUint16(22, numChannels, true); // Number of channels
+  view.setUint32(24, sampleRate, true); // Sample rate
+  view.setUint32(28, byteRate, true); // Byte rate
+  view.setUint16(32, blockAlign, true); // Block align
+  view.setUint16(34, bitsPerSample, true); // Bits per sample
+  
+  // data chunk
+  view.setUint32(36, 0x64617461, false); // "data"
+  view.setUint32(40, pcmBytes, true); // Data size
+  
+  // Copy PCM data
+  const headerArray = new Uint8Array(buffer, 0, headerSize);
+  const dataArray = new Uint8Array(buffer, headerSize);
+  const pcmArray = new Uint8Array(pcmData);
+  dataArray.set(pcmArray);
+  
+  return buffer;
+}
+
 export async function downloadStoryAsZip(storyData: Story) {
   if (!storyData.title) {
     throw new Error('Story must have a title to download');
@@ -9,14 +57,41 @@ export async function downloadStoryAsZip(storyData: Story) {
   const zip = new JSZip();
   
   // Helper function to safely fetch file from URL
-  const fetchFile = async (url: string): Promise<Blob | null> => {
+  const fetchFile = async (url: string, isAudio = false): Promise<Blob | null> => {
     try {
       const response = await fetch(url);
       if (!response.ok) {
         console.warn(`Failed to fetch file from ${url}`);
         return null;
       }
-      return await response.blob();
+      
+      if (isAudio) {
+        // Handle audio files - check if it's raw PCM from Google TTS or complete file from ElevenLabs
+        const arrayBuffer = await response.arrayBuffer();
+        const view = new Uint8Array(arrayBuffer);
+        
+        // Check for WAV header (RIFF)
+        const isWav = view[0] === 0x52 && view[1] === 0x49 && view[2] === 0x46 && view[3] === 0x46;
+        
+        // Check for MP3 header (ID3 tag or MP3 frame sync)
+        const isMp3 = (view[0] === 0x49 && view[1] === 0x44 && view[2] === 0x33) || // ID3 tag
+                      (view[0] === 0xFF && (view[1] & 0xE0) === 0xE0); // MP3 frame sync
+        
+        if (isWav) {
+          // Already a complete WAV file
+          return new Blob([arrayBuffer], { type: 'audio/wav' });
+        } else if (isMp3) {
+          // Complete MP3 file from ElevenLabs - return as is
+          return new Blob([arrayBuffer], { type: 'audio/mpeg' });
+        } else {
+          // This is raw PCM data from Google TTS, add WAV headers
+          console.log('Converting raw PCM data from Google TTS to WAV format for download');
+          const wavBuffer = addWavHeadersToBuffer(arrayBuffer);
+          return new Blob([wavBuffer], { type: 'audio/wav' });
+        }
+      } else {
+        return await response.blob();
+      }
     } catch (error) {
       console.warn(`Error fetching file from ${url}:`, error);
       return null;
@@ -119,10 +194,11 @@ export async function downloadStoryAsZip(storyData: Story) {
     for (let i = 0; i < storyData.narrationChunks.length; i++) {
       const chunk = storyData.narrationChunks[i];
       if (chunk.audioUrl) {
-        const audioBlob = await fetchFile(chunk.audioUrl);
+        const audioBlob = await fetchFile(chunk.audioUrl, true);
         if (audioBlob) {
-          const filename = getFilenameFromUrl(chunk.audioUrl, `chunk_${i + 1}.mp3`);
-          sceneAudioFolder.file(`chunk_${i + 1}_${filename}`, audioBlob);
+          // Use appropriate extension based on the blob type
+          const extension = audioBlob.type === 'audio/mpeg' ? 'mp3' : 'wav';
+          sceneAudioFolder.file(`chunk_${i + 1}.${extension}`, audioBlob);
         }
       }
     }
@@ -130,10 +206,11 @@ export async function downloadStoryAsZip(storyData: Story) {
 
   // Add main narration audio if exists
   if (sceneAudioFolder && storyData.narrationAudioUrl) {
-    const mainAudioBlob = await fetchFile(storyData.narrationAudioUrl);
+    const mainAudioBlob = await fetchFile(storyData.narrationAudioUrl, true);
     if (mainAudioBlob) {
-      const filename = getFilenameFromUrl(storyData.narrationAudioUrl, 'full_narration.mp3');
-      sceneAudioFolder.file(`full_narration_${filename}`, mainAudioBlob);
+      // Use appropriate extension based on the blob type
+      const extension = mainAudioBlob.type === 'audio/mpeg' ? 'mp3' : 'wav';
+      sceneAudioFolder.file(`full_narration.${extension}`, mainAudioBlob);
     }
   }
 
