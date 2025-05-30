@@ -212,13 +212,63 @@ export const renderStoryVideo = async ({
 };
 
 /**
+ * Helper function to detect image dimensions from a buffer
+ */
+const getImageDimensionsFromBuffer = (buffer: ArrayBuffer): { width: number; height: number } | null => {
+  try {
+    const uint8Array = new Uint8Array(buffer);
+    
+    // Check for JPEG
+    if (uint8Array[0] === 0xFF && uint8Array[1] === 0xD8) {
+      // JPEG format - scan for SOF markers
+      for (let i = 2; i < uint8Array.length - 8; i++) {
+        if (uint8Array[i] === 0xFF) {
+          const marker = uint8Array[i + 1];
+          // SOF0, SOF1, SOF2 markers
+          if (marker === 0xC0 || marker === 0xC1 || marker === 0xC2) {
+            const height = (uint8Array[i + 5] << 8) | uint8Array[i + 6];
+            const width = (uint8Array[i + 7] << 8) | uint8Array[i + 8];
+            return { width, height };
+          }
+        }
+      }
+    }
+    
+    // Check for PNG
+    if (uint8Array[0] === 0x89 && uint8Array[1] === 0x50 && uint8Array[2] === 0x4E && uint8Array[3] === 0x47) {
+      // PNG format - IHDR chunk starts at byte 16
+      const width = (uint8Array[16] << 24) | (uint8Array[17] << 16) | (uint8Array[18] << 8) | uint8Array[19];
+      const height = (uint8Array[20] << 24) | (uint8Array[21] << 16) | (uint8Array[22] << 8) | uint8Array[23];
+      return { width, height };
+    }
+    
+    // Check for WebP
+    if (uint8Array[0] === 0x52 && uint8Array[1] === 0x49 && uint8Array[2] === 0x46 && uint8Array[3] === 0x46 &&
+        uint8Array[8] === 0x57 && uint8Array[9] === 0x45 && uint8Array[10] === 0x42 && uint8Array[11] === 0x50) {
+      // WebP format - dimensions are at different locations depending on the VP8 variant
+      if (uint8Array[12] === 0x56 && uint8Array[13] === 0x50 && uint8Array[14] === 0x38 && uint8Array[15] === 0x20) {
+        // VP8 format
+        const width = ((uint8Array[26] | (uint8Array[27] << 8)) & 0x3fff);
+        const height = ((uint8Array[28] | (uint8Array[29] << 8)) & 0x3fff);
+        return { width, height };
+      }
+    }
+    
+    return null;
+  } catch (error) {
+    console.error('Error reading image dimensions from buffer:', error);
+    return null;
+  }
+};
+
+/**
  * Downloads images and audio files from URLs to local files.
  * This is necessary because Remotion needs local files for rendering.
  */
 export const downloadAssetsForRendering = async (
   images: string[],
   audioChunks: NarrationChunk[]
-): Promise<{ localImages: string[]; localAudioChunks: NarrationChunk[] }> => {
+): Promise<{ localImages: string[]; localAudioChunks: NarrationChunk[]; imageDimensions?: { width: number; height: number } }> => {
   if (!isNode) {
     throw new Error('Asset downloading is only supported on the server side');
   }
@@ -230,6 +280,9 @@ export const downloadAssetsForRendering = async (
   fs.mkdirSync(assetsDir, { recursive: true });
   
   console.log(`Downloading ${images.length} images and ${audioChunks.length} audio chunks...`);
+  
+  // Track image dimensions from the first valid image
+  let detectedDimensions: { width: number; height: number } | undefined;
   
   // Create a placeholder image to use as fallback
   const placeholderImagePath = path.join(assetsDir, 'placeholder.jpg');
@@ -295,6 +348,15 @@ export const downloadAssetsForRendering = async (
         if (buffer.byteLength === 0) {
           console.error(`Downloaded empty image ${index} from ${imageUrl}`);
           return 'remotion-assets/placeholder.jpg';
+        }
+        
+        // Detect image dimensions from the first valid image
+        if (!detectedDimensions && index === 0) {
+          const dimensions = getImageDimensionsFromBuffer(buffer);
+          if (dimensions) {
+            detectedDimensions = dimensions;
+            console.log(`Detected image dimensions from first image: ${dimensions.width}x${dimensions.height}`);
+          }
         }
         
         const filename = `image-${index}.jpg`;
@@ -443,7 +505,8 @@ export const downloadAssetsForRendering = async (
   
   return {
     localImages: verifiedImages,
-    localAudioChunks
+    localAudioChunks,
+    imageDimensions: detectedDimensions
   };
 };
 

@@ -14,10 +14,15 @@ import {
 } from 'remotion';
 import { NarrationChunk } from '@/types/narration';
 
+// Dynamic FPS configuration for video rendering
+// Lower FPS for static images improves rendering speed significantly
+const VIDEO_FPS = 15; // Can be adjusted: 15 for fast rendering, 24 for smoother, 30 for highest quality
+
 // Make this a Record<string, unknown> to satisfy Remotion type constraints
 interface StoryVideoProps extends Record<string, unknown> {
   images: string[];
   audioChunks: NarrationChunk[];
+  fps?: number; // Optional FPS override
 }
 
 // Define a structure for scene organization
@@ -29,7 +34,7 @@ interface SceneData {
 }
 
 // Associate images with audio chunks and calculate appropriate durations
-const organizeScenes = (images: string[], audioChunks: NarrationChunk[]): SceneData[] => {
+const organizeScenes = (images: string[], audioChunks: NarrationChunk[], fps: number = VIDEO_FPS): SceneData[] => {
   console.log('Organizing scenes with:', images.length, 'images and', audioChunks.length, 'audio chunks');
   
   // Use all chunks with proper durations - don't filter too aggressively
@@ -39,12 +44,12 @@ const organizeScenes = (images: string[], audioChunks: NarrationChunk[]): SceneD
   
   if (validChunks.length === 0) {
     console.warn('No valid audio chunks found, creating default scene with images');
-    const totalFrames = images.length * 90; // 3 seconds per image at 30fps
+    const totalFrames = images.length * (fps * 3); // 3 seconds per image
     return [{
-      audioChunk: { id: 'default', text: '', index: 0, duration: totalFrames * 1000 / 30 },
+      audioChunk: { id: 'default', text: '', index: 0, duration: totalFrames * 1000 / fps },
       images: images.length > 0 ? images : ['placeholder'],
       durationInFrames: totalFrames,
-      imageFrameDurations: images.map(() => 90)
+      imageFrameDurations: images.map(() => fps * 3) // 3 seconds per image
     }];
   }
   
@@ -84,7 +89,7 @@ const organizeScenes = (images: string[], audioChunks: NarrationChunk[]): SceneD
     
     // Calculate frame duration from audio chunk duration - durations are already in seconds
     const durationInSeconds = chunk.duration || 0; // Durations are already in seconds
-    const totalFrames = Math.ceil(durationInSeconds * 30); // 30 fps
+    const totalFrames = Math.ceil(durationInSeconds * fps);
     
     // Frame calculation complete
     
@@ -132,16 +137,20 @@ const Scene = ({ image, index }: { image: string; index: number }) => {
   // Simplified image source handling
   const getImageSrc = () => {
     if (!image || image === 'placeholder') {
+      console.log('Using placeholder for missing image');
       return 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTkyMCIgaGVpZ2h0PSIxMDgwIiB2aWV3Qm94PSIwIDAgMTkyMCAxMDgwIiBmaWxsPSJub25lIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPgo8cmVjdCB3aWR0aD0iMTkyMCIgaGVpZ2h0PSIxMDgwIiBmaWxsPSIjMzMzMzMzIi8+Cjx0ZXh0IHg9Ijk2MCIgeT0iNTQwIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iNjQiIGZpbGw9IndoaXRlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0iY2VudGVyIj5TY2VuZSBJbWFnZTwvdGV4dD4KPHN2Zz4K';
     }
     
     if (image.startsWith('data:') || image.startsWith('http')) {
+      console.log('Using direct image URL:', image.substring(0, 50) + '...');
       return image;
     }
     
     // For local paths, use staticFile
     try {
-      return staticFile(image);
+      const staticPath = staticFile(image);
+      console.log('Using staticFile for:', image, '-> resolved to:', staticPath);
+      return staticPath;
     } catch (error) {
       console.error(`Error loading image ${image}:`, error);
       return 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTkyMCIgaGVpZ2h0PSIxMDgwIiB2aWV3Qm94PSIwIDAgMTkyMCAxMDgwIiBmaWxsPSJub25lIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPgo8cmVjdCB3aWR0aD0iMTkyMCIgaGVpZ2h0PSIxMDgwIiBmaWxsPSIjRkY0NDQ0Ii8+Cjx0ZXh0IHg9Ijk2MCIgeT0iNTQwIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iNjQiIGZpbGw9IndoaXRlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0iY2VudGVyIj5JbWFnZSBFcnJvcjwvdGV4dD4KPHN2Zz4K';
@@ -175,7 +184,7 @@ const Scene = ({ image, index }: { image: string; index: number }) => {
 };
 
 // Story Video component - exported for use in Root.tsx
-export const StoryVideoComponent: React.FC<StoryVideoProps> = ({ images, audioChunks }) => {
+export const StoryVideoComponent: React.FC<StoryVideoProps> = ({ images, audioChunks, fps }) => {
   console.log('=== StoryVideoComponent rendering ===');
   console.log('- Images count:', images?.length || 0);
   console.log('- Audio chunks count:', audioChunks?.length || 0);
@@ -184,13 +193,16 @@ export const StoryVideoComponent: React.FC<StoryVideoProps> = ({ images, audioCh
     console.log('- First 5 images:', images.slice(0, 5));
   }
   
+  const actualFPS = fps || VIDEO_FPS;
+  console.log('- Using FPS:', actualFPS);
+
   // Organize scenes to associate images with audio chunks
-  const scenes = organizeScenes(images || [], audioChunks || []);
+  const scenes = organizeScenes(images || [], audioChunks || [], actualFPS);
   console.log('=== Organized into', scenes.length, 'scenes ===');
   
   // Calculate the total duration in frames
   const totalDurationInFrames = calculateTotalDuration(scenes);
-  console.log('=== Total video duration:', totalDurationInFrames, 'frames =', totalDurationInFrames / 30, 'seconds ===');
+  console.log('=== Total video duration:', totalDurationInFrames, 'frames =', totalDurationInFrames / actualFPS, 'seconds ===');
   
   return (
     <AbsoluteFill style={{ backgroundColor: 'black' }}>
@@ -233,55 +245,15 @@ export const StoryVideoComponent: React.FC<StoryVideoProps> = ({ images, audioCh
   );
 };
 
-// Helper to detect image dimensions and calculate optimal video resolution
-const calculateOptimalResolution = async (images: string[]): Promise<{ width: number; height: number }> => {
-  if (!images || images.length === 0) {
-    return { width: 1920, height: 1080 }; // Default Full HD
-  }
-
-  try {
-    // Take the first valid image to detect dimensions
-    const firstImage = images.find(img => img && img !== 'placeholder');
-    if (!firstImage) {
-      return { width: 1920, height: 1080 };
-    }
-
-    // Create a promise to load the image and get its dimensions
-    const getImageDimensions = (src: string): Promise<{ width: number; height: number }> => {
-      return new Promise((resolve) => {
-        const img = new Image();
-        img.onload = () => {
-          resolve({ width: img.naturalWidth, height: img.naturalHeight });
-        };
-        img.onerror = () => {
-          resolve({ width: 1920, height: 1080 }); // Fallback on error
-        };
-        img.src = src;
-      });
-    };
-
-    const dimensions = await getImageDimensions(firstImage);
-    
-    // If images are smaller than Full HD, use their dimensions for faster rendering
-    if (dimensions.width <= 1280 && dimensions.height <= 720) {
-      console.log('Using image dimensions for faster rendering:', dimensions);
-      return dimensions;
-    }
-    
-    // For larger images, use standard resolutions for consistency
-    console.log('Using Full HD for large images');
-    return { width: 1920, height: 1080 };
-  } catch (error) {
-    console.error('Error detecting image dimensions:', error);
-    return { width: 1920, height: 1080 }; // Fallback
-  }
-};
-
 // Main entry component for Remotion
 export const StoryVideo = () => {
-  const { images, audioChunks } = getInputProps<StoryVideoProps>();
+  const { images, audioChunks, width, height, fps } = getInputProps<StoryVideoProps & { width?: number; height?: number }>();
   
   console.log('StoryVideo loading:', images?.length || 0, 'images,', audioChunks?.length || 0, 'chunks');
+  console.log('Resolution provided:', width, 'x', height);
+  console.log('FPS provided:', fps, 'fallback to default:', VIDEO_FPS);
+  
+  const actualFPS = fps || VIDEO_FPS;
   
   // Calculate total duration from scenes for the composition
   const calculateDuration = (): number => {
@@ -292,9 +264,9 @@ export const StoryVideo = () => {
           .filter(chunk => chunk.duration && chunk.duration > 0)
           .reduce((sum, chunk) => sum + (chunk.duration || 0), 0);
         
-        const totalFrames = Math.ceil(totalAudioDuration * 30); // Convert seconds to frames at 30fps
+        const totalFrames = Math.ceil(totalAudioDuration * actualFPS);
         
-        console.log('Video duration:', totalFrames, 'frames (', totalFrames / 30, 'sec)');
+        console.log('Video duration:', totalFrames, 'frames (', totalFrames / actualFPS, 'sec)');
         
         if (totalFrames > 0) {
           return totalFrames;
@@ -306,36 +278,29 @@ export const StoryVideo = () => {
     
     // Fallback: try to calculate from images if no audio
     if (images?.length > 0) {
-      const fallbackFrames = images.length * 90; // 3 seconds per image
+      const fallbackFrames = images.length * (actualFPS * 3); // 3 seconds per image
       console.log('Using image fallback:', fallbackFrames, 'frames');
       return fallbackFrames;
     }
     
     // Final fallback
-    console.log('Using default fallback: 300 frames');
-    return 300;
+    const defaultFrames = actualFPS * 10; // 10 seconds default
+    console.log(`Using default fallback: ${defaultFrames} frames`);
+    return defaultFrames;
   };
-
-  // Calculate optimal resolution based on image dimensions
-  const [resolution, setResolution] = React.useState({ width: 1920, height: 1080 });
-
-  React.useEffect(() => {
-    if (images?.length > 0) {
-      calculateOptimalResolution(images).then(setResolution);
-    }
-  }, [images]);
   
   return (
     <Composition
       id="StoryVideo"
       component={StoryVideoComponent}
       durationInFrames={calculateDuration()}
-      fps={30}
-      width={resolution.width}
-      height={resolution.height}
+      fps={actualFPS}
+      width={width || 1920}
+      height={height || 1080}
       defaultProps={{
         images,
         audioChunks,
+        fps: actualFPS,
       }}
     />
   );

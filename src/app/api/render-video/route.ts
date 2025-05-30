@@ -17,11 +17,17 @@ const execAsync = promisify(exec);
 async function renderStoryVideoWithCLI({
   images,
   audioChunks,
-  storyTitle
+  storyTitle,
+  width,
+  height,
+  fps
 }: {
   images: string[];
   audioChunks: NarrationChunk[];
   storyTitle: string;
+  width?: number;
+  height?: number;
+  fps?: number;
 }): Promise<string> {
   try {
     console.log('Starting video rendering process...');
@@ -48,7 +54,10 @@ async function renderStoryVideoWithCLI({
         ...chunk,
         // Ensure text field doesn't have any problematic characters for JSON
         text: chunk.text || ''
-      }))
+      })),
+      width,
+      height,
+      fps
     };
     
     fs.writeFileSync(
@@ -68,7 +77,7 @@ async function renderStoryVideoWithCLI({
     console.log('Rendering video using Remotion CLI...');
     
     // Use npx to run remotion render command with optimized settings for low resources
-    const command = `npx remotion render "${entryPointPath}" StoryVideo "${outputPath}" --props="${propsPath}" --disable-web-security --log=info --concurrency=1 --temp-dir="${tmpDir}" --timeout=30000 --delayRenderTimeoutInMilliseconds=30000`;
+    const command = `npx remotion render "${entryPointPath}" StoryVideo "${outputPath}" --props="${propsPath}" --disable-web-security --log=verbose --concurrency=1 --temp-dir="${tmpDir}" --timeout=30000 --delayRenderTimeoutInMilliseconds=30000`;
     
     console.log(`Executing command: ${command}`);
     
@@ -180,7 +189,34 @@ export async function POST(req: Request) {
 
     // Download assets for rendering
     console.log('Downloading assets for rendering...');
-    const { localImages, localAudioChunks } = await downloadAssetsForRendering(images, audioChunks);
+    const { localImages, localAudioChunks, imageDimensions } = await downloadAssetsForRendering(images, audioChunks);
+    
+    // Calculate optimal video resolution and FPS based on detected image dimensions
+    let videoWidth = 1920;
+    let videoHeight = 1080;
+    let optimalFPS = 15; // Default for static images - much faster than 30fps
+    
+    if (imageDimensions) {
+      console.log(`Original image dimensions: ${imageDimensions.width}x${imageDimensions.height}`);
+      
+      // Use smaller resolution for faster rendering if images are small
+      if (imageDimensions.width <= 1280 && imageDimensions.height <= 720) {
+        videoWidth = imageDimensions.width;
+        videoHeight = imageDimensions.height;
+        console.log(`Using optimized resolution for faster rendering: ${videoWidth}x${videoHeight}`);
+      } else {
+        console.log(`Images are large, using Full HD: ${videoWidth}x${videoHeight}`);
+      }
+      
+      // Optimize FPS based on image size for even faster rendering
+      if (imageDimensions.width <= 640 && imageDimensions.height <= 360) {
+        optimalFPS = 12; // Even faster for very small images
+      }
+    } else {
+      console.log(`No image dimensions detected, using default Full HD: ${videoWidth}x${videoHeight}`);
+    }
+    
+    console.log(`Using optimal FPS: ${optimalFPS} for rendering speed`);
 
     // Render the video using CLI approach to avoid React context issues
     console.log('Rendering video...');
@@ -188,6 +224,9 @@ export async function POST(req: Request) {
       images: localImages,
       audioChunks: localAudioChunks,
       storyTitle,
+      width: videoWidth,
+      height: videoHeight,
+      fps: optimalFPS,
     });
 
     // Save the video for download
