@@ -98,6 +98,8 @@ export function FinalReviewStep({ storyState }: FinalReviewStepProps) {
                 <span className="font-medium">Script Length:</span>
                 <br />
                 {storyData.generatedScript?.length || 0} characters
+                <br />
+                {storyData.generatedScript ? storyData.generatedScript.trim().split(/\s+/).length : 0} words
               </div>
               
               <div>

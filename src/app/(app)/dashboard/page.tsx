@@ -153,16 +153,54 @@ export default function DashboardPage() {
       ) : (
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {stories.map((story) => (
-            <Card key={story.id} className="flex flex-col overflow-hidden shadow-lg hover:shadow-xl transition-shadow duration-300 bg-card">
-              <CardHeader>
-                 <div className="aspect-[16/9] bg-muted rounded-t-md overflow-hidden relative">
-                  <Image 
-                    src={story.generatedImages?.[0]?.imageUrl || "https://picsum.photos/400/225"} 
-                    alt={story.title || "Story image"} 
-                    fill
-                    style={{ objectFit: "cover" }}
-                  />
-                </div>
+            <Card key={story.id} className="flex flex-col overflow-hidden shadow-lg hover:shadow-xl transition-shadow duration-300 bg-card relative">
+            {/* Delete button in top right corner */}
+            <div className="absolute top-2 right-2 z-10">
+            <AlertDialog>
+            <AlertDialogTrigger asChild>
+            <Button 
+              variant="destructive" 
+              size="sm" 
+                className="w-8 h-8 p-0 bg-destructive/80 hover:bg-destructive backdrop-blur-sm"
+                  disabled={deletingStoryId === story.id}
+                     >
+                       {deletingStoryId === story.id ? (
+                         <Loader2 className="h-4 w-4 animate-spin" />
+                       ) : (
+                         <Trash2 className="h-4 w-4" />
+                       )}
+                     </Button>
+                   </AlertDialogTrigger>
+                   <AlertDialogContent>
+                     <AlertDialogHeader>
+                       <AlertDialogTitle>Delete Story</AlertDialogTitle>
+                       <AlertDialogDescription>
+                         Are you sure you want to delete "<strong>{story.title}</strong>"? This action cannot be undone and will permanently delete the story and all its associated files (images, audio, etc.).
+                       </AlertDialogDescription>
+                     </AlertDialogHeader>
+                     <AlertDialogFooter>
+                       <AlertDialogCancel>Cancel</AlertDialogCancel>
+                       <AlertDialogAction 
+                         onClick={() => handleDeleteStory(story.id!, story.title)}
+                         className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                       >
+                         <Trash2 className="mr-2 h-4 w-4" />
+                         Delete Permanently
+                       </AlertDialogAction>
+                     </AlertDialogFooter>
+                   </AlertDialogContent>
+                 </AlertDialog>
+               </div>
+               
+               <CardHeader>
+                  <div className="aspect-[16/9] bg-muted rounded-t-md overflow-hidden relative">
+                   <Image 
+                     src={story.generatedImages?.[0]?.imageUrl || "https://picsum.photos/400/225"} 
+                     alt={story.title || "Story image"} 
+                     fill
+                     style={{ objectFit: "cover" }}
+                   />
+                 </div>
                 <CardTitle className="mt-4 text-xl font-semibold text-foreground truncate">
                   {story.title || 'Untitled Story'}
                 </CardTitle>
@@ -176,60 +214,20 @@ export default function DashboardPage() {
                 </p>
               </CardContent>
               <CardFooter className="flex flex-col gap-2">
-                <div className="flex flex-col sm:flex-row gap-2 w-full">
-                  <Button asChild variant="outline" className="flex-1">
-                    <Link href={`/create-story?storyId=${story.id}`}>
-                      <Edit className="mr-2 h-4 w-4" />
-                      Edit Story
-                    </Link>
-                  </Button>
-                  <Button asChild variant="default" className="flex-1 bg-primary hover:bg-primary/90 text-primary-foreground">
-                    <Link href={`/assemble-video?storyId=${story.id}`}>
-                      <Film className="mr-2 h-4 w-4" />
-                      Edit Video
-                    </Link>
-                  </Button>
-                </div>
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                    <Button 
-                      variant="destructive" 
-                      size="sm" 
-                      className="w-full"
-                      disabled={deletingStoryId === story.id}
-                    >
-                      {deletingStoryId === story.id ? (
-                        <>
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          Deleting...
-                        </>
-                      ) : (
-                        <>
-                          <Trash2 className="mr-2 h-4 w-4" />
-                          Delete Story
-                        </>
-                      )}
-                    </Button>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>Delete Story</AlertDialogTitle>
-                      <AlertDialogDescription>
-                        Are you sure you want to delete "<strong>{story.title}</strong>"? This action cannot be undone and will permanently delete the story and all its associated files (images, audio, etc.).
-                      </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>Cancel</AlertDialogCancel>
-                      <AlertDialogAction 
-                        onClick={() => handleDeleteStory(story.id!, story.title)}
-                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                      >
-                        <Trash2 className="mr-2 h-4 w-4" />
-                        Delete Permanently
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
+              <div className="flex flex-col sm:flex-row gap-2 w-full">
+              <Button asChild variant="outline" className="flex-1">
+              <Link href={`/create-story?storyId=${story.id}`}>
+              <Edit className="mr-2 h-4 w-4" />
+              Edit Story
+              </Link>
+              </Button>
+              <Button asChild variant="default" className="flex-1 bg-primary hover:bg-primary/90 text-primary-foreground">
+              <Link href={`/assemble-video?storyId=${story.id}`}>
+              <Film className="mr-2 h-4 w-4" />
+              Edit Video
+              </Link>
+              </Button>
+              </div>
               </CardFooter>
             </Card>
           ))}

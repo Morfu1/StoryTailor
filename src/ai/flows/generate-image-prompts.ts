@@ -82,17 +82,18 @@ FLUX is exceptionally good at understanding natural language. Use this structure
 "[Camera shot] of @CharacterName [action/emotion/pose] in @LocationName. [Interaction with @ItemName if relevant]. [Lighting description]. [Additional details]."
 
 **Example:**
-"Close-up shot of @Luna, a young girl with curly brown hair and bright green eyes, looking up in wonder at floating golden sparkles around her. She's standing in @EnchantedForest clearing with dappled sunlight filtering through ancient oak trees. @MagicalSparkles dance around her hands. Warm, magical lighting with soft shadows."
+"Close-up shot of @Luna looking up in wonder at floating golden sparkles around her. She's standing in @EnchantedForest clearing with dappled sunlight filtering through ancient oak trees. @MagicalSparkles dance around her hands. Warm, magical lighting with soft shadows."
 
 **Character Consistency Examples:**
-- "@whiskers, a sleek 3yo charcoal grey cat with short smooth fur and piercing green eyes wearing a navy blue collar, sits alertly"
-- "@fuzzy, a small 1yo white kitten with long wavy fur and big blue eyes wearing a pastel pink collar with a tiny bell, bounces playfully"
+- "@Whiskers sits alertly"
+- "@Fuzzy bounces playfully"
 
 **CRITICAL REQUIREMENTS:**
 - Always use '@' prefix before character names (e.g., @Luna, @Hero, @Villain)
 - Always use '@' prefix before location names (e.g., @Castle, @Forest, @Bedroom)
 - Always use '@' prefix before important item names (e.g., @Sword, @Crown, @Book)
 - Extract character, location, and item names from the provided reference descriptions
+- NEVER include character/item/location descriptions when using @placeholders - the @placeholder will be expanded with the full description automatically
 - Use present tense for actions
 - Be specific about emotions and expressions
 - Include environmental context and lighting
@@ -125,29 +126,31 @@ Analyze the script and identify {{numImages}} key scenes that need visualization
 {{{characterPrompts}}}
 
 **CRITICAL NAMING CONSISTENCY:**
-When referencing characters, items, or locations in your image prompts, you MUST use the exact names as they appear in the reference sections above, prefixed with @. 
+When referencing characters, items, or locations in your image prompts, you MUST ONLY use entities that exist in the reference sections above, prefixed with @. 
+
+MANDATORY RULES:
+1. ONLY use @placeholders for entities listed in the CHARACTER REFERENCE, LOCATION REFERENCE, and ITEM REFERENCE sections
+2. NEVER create @placeholders for entities not in these reference sections
+3. Convert entity names to PascalCase when creating @references (e.g., "Old Man Grumbles" becomes @OldManGrumbles)
+4. Do NOT include descriptions alongside @placeholders - they will be expanded automatically
 
 For example, if the character reference shows:
 "Rosie Recycle
 a young girl with..."
 
-Then in your image prompts, use: @RosieRecycle (no spaces, PascalCase)
+Then use: @RosieRecycle (no description needed)
 
 If the character reference shows:
 "Old Man Grumbles  
 an elderly man with..."
 
-Then in your image prompts, use: @OldManGrumbles (no spaces, PascalCase)
-
-ALWAYS convert multi-word names to PascalCase (FirstSecondThird) when creating @ references.
+Then use: @OldManGrumbles (no description needed)
 
 **CHARACTER CONSISTENCY REQUIREMENTS:**
-- Always include specific physical traits for consistency: hair/fur color, eye color, distinctive features
-- Add identifying accessories or clothing when present (collars, jewelry, clothing items)
-- Use age-appropriate descriptors (young, elderly, toddler, etc.)
-- Include unique physical characteristics that make each character recognizable
-- Keep descriptions concise but distinctive (focus on 2-3 key visual elements)
-- Examples: "a sleek charcoal grey cat with green eyes and a navy collar", "a young girl with curly brown hair and bright green eyes"
+- Character descriptions are automatically provided through @placeholders
+- Focus on character actions, emotions, and interactions with environment
+- Use @placeholders for all characters, items, and locations from the reference sections
+- Do not duplicate descriptions that are already in the @placeholder expansions
 
 **REGENERATION NOTICE:**
 ⚠️ After implementing these character consistency requirements, you MUST regenerate:
