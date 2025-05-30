@@ -3,10 +3,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Bot, Loader2, FileText } from 'lucide-react';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Bot, Loader2, FileText, Edit3, Save } from 'lucide-react';
 import { generateTitle, generateScript, saveStory } from '@/actions/storyActions';
 import { prepareScriptChunksAI } from '@/utils/narrationUtils';
 import { useToast } from '@/hooks/use-toast';
+import { useState, useEffect, useCallback } from 'react';
+import { debounce } from '@/utils/debounce';
 import type { UseStoryStateReturn } from '@/hooks/useStoryState';
 
 interface StoryPromptStepProps {
@@ -24,6 +27,74 @@ export function StoryPromptStep({ storyState }: StoryPromptStepProps) {
     isScriptManuallyEditing,
     setIsScriptManuallyEditing
   } = storyState;
+
+  const [activeTab, setActiveTab] = useState('ai-generate');
+  const [manualScript, setManualScript] = useState(storyData.generatedScript || '');
+  const [isAutoSaving, setIsAutoSaving] = useState(false);
+
+  // Auto-save function for manual script entry
+  const autoSaveStory = useCallback(
+    debounce(async (title: string, script: string) => {
+      if (!title.trim() || !script.trim() || !storyData.userId) return;
+      
+      setIsAutoSaving(true);
+      try {
+        const narrationChunks = await prepareScriptChunksAI(script);
+        
+        const updatedStoryData = {
+          ...storyData,
+          title: title.trim(),
+          generatedScript: script,
+          narrationChunks
+        };
+        
+        const saveResult = await saveStory(updatedStoryData, storyData.userId);
+        
+        if (saveResult.success) {
+          if (saveResult.storyId && !storyData.id) {
+            updateStoryData({ 
+              id: saveResult.storyId,
+              title: title.trim(),
+              generatedScript: script,
+              narrationChunks 
+            });
+            toast({
+              title: 'Story Saved!',
+              description: 'Your story has been automatically saved.',
+              className: 'bg-green-500 text-white'
+            });
+          } else {
+            updateStoryData({ 
+              title: title.trim(),
+              generatedScript: script,
+              narrationChunks 
+            });
+          }
+        }
+      } catch (error) {
+        console.error('Auto-save error:', error);
+      } finally {
+        setIsAutoSaving(false);
+      }
+    }, 2000),
+    [storyData, updateStoryData, toast]
+  );
+
+  // Handle manual script changes
+  const handleManualScriptChange = (value: string) => {
+    setManualScript(value);
+    if (storyData.title.trim() && value.trim()) {
+      autoSaveStory(storyData.title, value);
+    }
+  };
+
+  // Handle title changes for manual mode
+  const handleTitleChange = (value: string) => {
+    updateStoryData({ title: value });
+    if (value.trim() && manualScript.trim() && activeTab === 'manual') {
+      autoSaveStory(value, manualScript);
+    }
+  };
 
   const handleGenerateScript = async () => {
     if (!storyData.userPrompt.trim()) {
@@ -115,89 +186,222 @@ export function StoryPromptStep({ storyState }: StoryPromptStepProps) {
     handleSetLoading('script', false);
   };
 
+  const handleContinueWithManualScript = async () => {
+    if (!storyData.title.trim()) {
+      toast({ title: 'Missing Title', description: 'Please enter a story title.', variant: 'destructive' });
+      return;
+    }
+    if (!manualScript.trim()) {
+      toast({ title: 'Missing Script', description: 'Please enter your story script.', variant: 'destructive' });
+      return;
+    }
+
+    handleSetLoading('scriptChunks', true);
+    try {
+      const narrationChunks = await prepareScriptChunksAI(manualScript);
+      
+      updateStoryData({
+        generatedScript: manualScript,
+        narrationChunks
+      });
+
+      if (storyData.userId) {
+        handleSetLoading('save', true);
+        const updatedStoryData = {
+          ...storyData,
+          title: storyData.title.trim(),
+          generatedScript: manualScript,
+          narrationChunks
+        };
+        
+        const saveResult = await saveStory(updatedStoryData, storyData.userId);
+        handleSetLoading('save', false);
+        
+        if (saveResult.success && saveResult.storyId && !storyData.id) {
+          updateStoryData({ id: saveResult.storyId });
+        }
+      }
+
+      setCurrentStep(2);
+      toast({ 
+        title: 'Ready to Continue!', 
+        description: 'Your story script has been processed.',
+        className: 'bg-primary text-primary-foreground' 
+      });
+    } catch (error) {
+      console.error('Error processing manual script:', error);
+      toast({ 
+        title: 'Processing Error', 
+        description: 'Failed to process your script. Please try again.',
+        variant: 'destructive' 
+      });
+    } finally {
+      handleSetLoading('scriptChunks', false);
+    }
+  };
+
   return (
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Bot className="h-5 w-5" />
-          Step 1: Story Prompt & Script Generation
+          Step 1: Story Script
         </CardTitle>
         <CardDescription>
-          Describe your story idea and we'll generate a complete script for you.
+          Choose how you want to create your story script - generate with AI or provide your own.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="space-y-2">
-          <Label htmlFor="title">Story Title (Optional)</Label>
-          <Input
-            id="title"
-            placeholder="Enter a title for your story (or we'll generate one)"
-            value={storyData.title}
-            onChange={(e) => updateStoryData({ title: e.target.value })}
-            disabled={isLoading.script || isLoading.titleGen}
-          />
-        </div>
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="ai-generate" className="flex items-center gap-2">
+              <Bot className="h-4 w-4" />
+              AI Generate
+            </TabsTrigger>
+            <TabsTrigger value="manual" className="flex items-center gap-2">
+              <Edit3 className="h-4 w-4" />
+              Write My Own
+            </TabsTrigger>
+          </TabsList>
 
-        <div className="space-y-2">
-          <Label htmlFor="prompt">Story Prompt *</Label>
-          <Textarea
-            id="prompt"
-            placeholder="Describe your story idea here... (e.g., 'A young wizard discovers a magical forest where animals can talk and must help them solve an ancient mystery.')"
-            value={storyData.userPrompt}
-            onChange={(e) => updateStoryData({ userPrompt: e.target.value })}
-            rows={4}
-            disabled={isLoading.script}
-          />
-        </div>
-
-        <Button 
-          onClick={handleGenerateScript}
-          disabled={!storyData.userPrompt.trim() || isLoading.script}
-          className="w-full"
-        >
-          {isLoading.script ? (
-            <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Generating Story...
-            </>
-          ) : (
-            <>
-              <Bot className="mr-2 h-4 w-4" />
-              Generate Story Script
-            </>
-          )}
-        </Button>
-
-        {storyData.generatedScript && (
-          <div className="mt-6 space-y-3">
-            <div className="flex items-center justify-between">
-              <Label className="text-sm font-medium flex items-center gap-2">
-                <FileText className="h-4 w-4" />
-                Generated Script
-              </Label>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setIsScriptManuallyEditing(!isScriptManuallyEditing)}
-              >
-                {isScriptManuallyEditing ? 'Save' : 'Edit'}
-              </Button>
-            </div>
-            
-            {isScriptManuallyEditing ? (
-              <Textarea
-                value={storyData.generatedScript}
-                onChange={(e) => updateStoryData({ generatedScript: e.target.value })}
-                rows={8}
-                className="text-sm"
+          <TabsContent value="ai-generate" className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="title">Story Title (Optional)</Label>
+              <Input
+                id="title"
+                placeholder="Enter a title for your story (or we'll generate one)"
+                value={storyData.title}
+                onChange={(e) => updateStoryData({ title: e.target.value })}
+                disabled={isLoading.script || isLoading.titleGen}
               />
-            ) : (
-              <div className="p-3 border rounded-md bg-muted/50 text-sm whitespace-pre-wrap max-h-60 overflow-y-auto">
-                {storyData.generatedScript}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="prompt">Story Prompt *</Label>
+              <Textarea
+                id="prompt"
+                placeholder="Describe your story idea here... (e.g., 'A young wizard discovers a magical forest where animals can talk and must help them solve an ancient mystery.')"
+                value={storyData.userPrompt}
+                onChange={(e) => updateStoryData({ userPrompt: e.target.value })}
+                rows={4}
+                disabled={isLoading.script}
+              />
+            </div>
+
+            <Button 
+              onClick={handleGenerateScript}
+              disabled={!storyData.userPrompt.trim() || isLoading.script}
+              className="w-full"
+            >
+              {isLoading.script ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Generating Story...
+                </>
+              ) : (
+                <>
+                  <Bot className="mr-2 h-4 w-4" />
+                  Generate Story Script
+                </>
+              )}
+            </Button>
+
+            {storyData.generatedScript && (
+              <div className="mt-6 space-y-3">
+                <div className="flex items-center justify-between">
+                  <Label className="text-sm font-medium flex items-center gap-2">
+                    <FileText className="h-4 w-4" />
+                    Generated Script
+                  </Label>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setIsScriptManuallyEditing(!isScriptManuallyEditing)}
+                  >
+                    {isScriptManuallyEditing ? 'Save' : 'Edit'}
+                  </Button>
+                </div>
+                
+                {isScriptManuallyEditing ? (
+                  <Textarea
+                    value={storyData.generatedScript}
+                    onChange={(e) => updateStoryData({ generatedScript: e.target.value })}
+                    rows={8}
+                    className="text-sm"
+                  />
+                ) : (
+                  <div className="p-3 border rounded-md bg-muted/50 text-sm whitespace-pre-wrap max-h-60 overflow-y-auto">
+                    {storyData.generatedScript}
+                  </div>
+                )}
               </div>
             )}
-          </div>
-        )}
+          </TabsContent>
+
+          <TabsContent value="manual" className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="manual-title">Story Title *</Label>
+              <div className="relative">
+                <Input
+                  id="manual-title"
+                  placeholder="Enter your story title"
+                  value={storyData.title}
+                  onChange={(e) => handleTitleChange(e.target.value)}
+                  disabled={isLoading.scriptChunks || isLoading.save}
+                />
+                {isAutoSaving && (
+                  <div className="absolute right-2 top-1/2 transform -translate-y-1/2">
+                    <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="manual-script">Story Script *</Label>
+              <div className="relative">
+                <Textarea
+                  id="manual-script"
+                  placeholder="Paste or type your complete story script here..."
+                  value={manualScript}
+                  onChange={(e) => handleManualScriptChange(e.target.value)}
+                  rows={12}
+                  disabled={isLoading.scriptChunks || isLoading.save}
+                  className="text-sm"
+                />
+                {isAutoSaving && (
+                  <div className="absolute right-2 top-2">
+                    <div className="flex items-center gap-1 text-xs text-muted-foreground bg-background px-2 py-1 rounded">
+                      <Save className="h-3 w-3" />
+                      Auto-saving...
+                    </div>
+                  </div>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Your story will automatically save as you type when both title and script are provided.
+              </p>
+            </div>
+
+            <Button 
+              onClick={handleContinueWithManualScript}
+              disabled={!storyData.title.trim() || !manualScript.trim() || isLoading.scriptChunks || isLoading.save}
+              className="w-full"
+            >
+              {isLoading.scriptChunks || isLoading.save ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Processing Script...
+                </>
+              ) : (
+                <>
+                  <FileText className="mr-2 h-4 w-4" />
+                  Continue with My Script
+                </>
+              )}
+            </Button>
+          </TabsContent>
+        </Tabs>
       </CardContent>
     </Card>
   );

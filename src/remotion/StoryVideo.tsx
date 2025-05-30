@@ -1,6 +1,6 @@
 "use client";
 
-import React from 'react';
+import React, { useMemo, useCallback, memo } from 'react';
 import {
   Composition,
   getInputProps,
@@ -33,8 +33,19 @@ interface SceneData {
   imageFrameDurations: number[];
 }
 
+// Cache for organized scenes to prevent recalculation
+const scenesCache = new Map<string, SceneData[]>();
+
 // Associate images with audio chunks and calculate appropriate durations
 const organizeScenes = (images: string[], audioChunks: NarrationChunk[], fps: number = VIDEO_FPS): SceneData[] => {
+  // Create cache key for memoization
+  const cacheKey = `${images.length}-${audioChunks.length}-${fps}-${audioChunks.map(c => c.duration).join(',')}`;
+  
+  if (scenesCache.has(cacheKey)) {
+    console.log('Using cached scenes for:', images.length, 'images and', audioChunks.length, 'audio chunks');
+    return scenesCache.get(cacheKey)!;
+  }
+  
   console.log('Organizing scenes with:', images.length, 'images and', audioChunks.length, 'audio chunks');
   
   // Use all chunks with proper durations - don't filter too aggressively
@@ -44,12 +55,15 @@ const organizeScenes = (images: string[], audioChunks: NarrationChunk[], fps: nu
   
   if (validChunks.length === 0) {
     console.warn('No valid audio chunks found, creating default scene with images');
-    const totalFrames = images.length * (fps * 3); // 3 seconds per image
+    const defaultImages = images.length > 0 ? images : ['placeholder'];
+    const framesPerImage = Math.max(fps * 3, 1); // Minimum 3 seconds or 1 frame per image
+    const totalFrames = defaultImages.length * framesPerImage;
+    
     return [{
-      audioChunk: { id: 'default', text: '', index: 0, duration: totalFrames * 1000 / fps },
-      images: images.length > 0 ? images : ['placeholder'],
+      audioChunk: { id: 'default', text: '', index: 0, duration: totalFrames / fps },
+      images: defaultImages,
       durationInFrames: totalFrames,
-      imageFrameDurations: images.map(() => fps * 3) // 3 seconds per image
+      imageFrameDurations: defaultImages.map(() => framesPerImage)
     }];
   }
   
@@ -88,18 +102,20 @@ const organizeScenes = (images: string[], audioChunks: NarrationChunk[], fps: nu
     }
     
     // Calculate frame duration from audio chunk duration - durations are already in seconds
-    const durationInSeconds = chunk.duration || 0; // Durations are already in seconds
-    const totalFrames = Math.ceil(durationInSeconds * fps);
+    const durationInSeconds = chunk.duration || 3; // Default to 3 seconds if no duration
+    const totalFrames = Math.max(1, Math.ceil(durationInSeconds * fps)); // Ensure minimum 1 frame
     
     // Frame calculation complete
     
     // Distribute frames evenly across images in this chunk
+    // Ensure minimum 1 frame per image to prevent 0 duration error
     const framesPerImage = Math.max(1, Math.floor(totalFrames / chunkImages.length));
-    const extraFrames = totalFrames - (framesPerImage * chunkImages.length);
+    const extraFrames = Math.max(0, totalFrames - (framesPerImage * chunkImages.length));
     
-    const imageFrameDurations = chunkImages.map((_, idx) =>
-      framesPerImage + (idx < extraFrames ? 1 : 0)
-    );
+    const imageFrameDurations = chunkImages.map((_, idx) => {
+      const duration = framesPerImage + (idx < extraFrames ? 1 : 0);
+      return Math.max(1, duration); // Ensure minimum 1 frame
+    });
     
     scenes.push({
       audioChunk: chunk,
@@ -118,6 +134,9 @@ const organizeScenes = (images: string[], audioChunks: NarrationChunk[], fps: nu
     console.log(`Scene ${i}:`, scene.images);
   });
   
+  // Cache the result
+  scenesCache.set(cacheKey, scenes);
+  
   return scenes;
 };
 
@@ -126,36 +145,50 @@ const calculateTotalDuration = (scenes: SceneData[]): number => {
   return scenes.reduce((acc, scene) => acc + scene.durationInFrames, 0);
 };
 
-// Individual Scene component  
-const Scene = ({ image, index }: { image: string; index: number }) => {
+// Cache for image sources to prevent repeated processing
+const imageSrcCache = new Map<string, string>();
+
+// Individual Scene component - memoized for performance
+const Scene = memo(({ image, index }: { image: string; index: number }) => {
   const frame = useCurrentFrame();
 
-  // Simple fade-in effect for the first few frames
-  const fadeInDuration = 10;
-  const opacity = frame < fadeInDuration ? frame / fadeInDuration : 1;
+  // Memoize fade-in calculation
+  const opacity = useMemo(() => {
+    const fadeInDuration = 10;
+    return frame < fadeInDuration ? frame / fadeInDuration : 1;
+  }, [frame]);
 
-  // Simplified image source handling
-  const getImageSrc = () => {
+  // Memoized image source handling with caching
+  const getImageSrc = useCallback(() => {
+    // Check cache first
+    if (imageSrcCache.has(image)) {
+      return imageSrcCache.get(image)!;
+    }
+    
+    let result: string;
+    
     if (!image || image === 'placeholder') {
       console.log('Using placeholder for missing image');
-      return 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTkyMCIgaGVpZ2h0PSIxMDgwIiB2aWV3Qm94PSIwIDAgMTkyMCAxMDgwIiBmaWxsPSJub25lIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPgo8cmVjdCB3aWR0aD0iMTkyMCIgaGVpZ2h0PSIxMDgwIiBmaWxsPSIjMzMzMzMzIi8+Cjx0ZXh0IHg9Ijk2MCIgeT0iNTQwIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iNjQiIGZpbGw9IndoaXRlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0iY2VudGVyIj5TY2VuZSBJbWFnZTwvdGV4dD4KPHN2Zz4K';
-    }
-    
-    if (image.startsWith('data:') || image.startsWith('http')) {
+      result = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTkyMCIgaGVpZ2h0PSIxMDgwIiB2aWV3Qm94PSIwIDAgMTkyMCAxMDgwIiBmaWxsPSJub25lIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPgo8cmVjdCB3aWR0aD0iMTkyMCIgaGVpZ2h0PSIxMDgwIiBmaWxsPSIjMzMzMzMzIi8+Cjx0ZXh0IHg9Ijk2MCIgeT0iNTQwIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iNjQiIGZpbGw9IndoaXRlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0iY2VudGVyIj5TY2VuZSBJbWFnZTwvdGV4dD4KPHN2Zz4K';
+    } else if (image.startsWith('data:') || image.startsWith('http')) {
       console.log('Using direct image URL:', image.substring(0, 50) + '...');
-      return image;
+      result = image;
+    } else {
+      // For local paths, use staticFile
+      try {
+        const staticPath = staticFile(image);
+        console.log('Using staticFile for:', image, '-> resolved to:', staticPath);
+        result = staticPath;
+      } catch (error) {
+        console.error(`Error loading image ${image}:`, error);
+        result = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTkyMCIgaGVpZ2h0PSIxMDgwIiB2aWV3Qm94PSIwIDAgMTkyMCAxMDgwIiBmaWxsPSJub25lIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPgo8cmVjdCB3aWR0aD0iMTkyMCIgaGVpZ2h0PSIxMDgwIiBmaWxsPSIjRkY0NDQ0Ii8+Cjx0ZXh0IHg9Ijk2MCIgeT0iNTQwIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iNjQiIGZpbGw9IndoaXRlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0iY2VudGVyIj5JbWFnZSBFcnJvcjwvdGV4dD4KPHN2Zz4K';
+      }
     }
     
-    // For local paths, use staticFile
-    try {
-      const staticPath = staticFile(image);
-      console.log('Using staticFile for:', image, '-> resolved to:', staticPath);
-      return staticPath;
-    } catch (error) {
-      console.error(`Error loading image ${image}:`, error);
-      return 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTkyMCIgaGVpZ2h0PSIxMDgwIiB2aWV3Qm94PSIwIDAgMTkyMCAxMDgwIiBmaWxsPSJub25lIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPgo8cmVjdCB3aWR0aD0iMTkyMCIgaGVpZ2h0PSIxMDgwIiBmaWxsPSIjRkY0NDQ0Ii8+Cjx0ZXh0IHg9Ijk2MCIgeT0iNTQwIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iNjQiIGZpbGw9IndoaXRlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0iY2VudGVyIj5JbWFnZSBFcnJvcjwvdGV4dD4KPHN2Zz4K';
-    }
-  };
+    // Cache the result
+    imageSrcCache.set(image, result);
+    return result;
+  }, [image]);
 
   return (
     <AbsoluteFill
@@ -181,10 +214,10 @@ const Scene = ({ image, index }: { image: string; index: number }) => {
       />
     </AbsoluteFill>
   );
-};
+});
 
 // Story Video component - exported for use in Root.tsx
-export const StoryVideoComponent: React.FC<StoryVideoProps> = ({ images, audioChunks, fps }) => {
+export const StoryVideoComponent: React.FC<StoryVideoProps> = memo(({ images, audioChunks, fps }) => {
   console.log('=== StoryVideoComponent rendering ===');
   console.log('- Images count:', images?.length || 0);
   console.log('- Audio chunks count:', audioChunks?.length || 0);
@@ -196,12 +229,18 @@ export const StoryVideoComponent: React.FC<StoryVideoProps> = ({ images, audioCh
   const actualFPS = fps || VIDEO_FPS;
   console.log('- Using FPS:', actualFPS);
 
-  // Organize scenes to associate images with audio chunks
-  const scenes = organizeScenes(images || [], audioChunks || [], actualFPS);
+  // Memoize scene organization - expensive computation
+  const scenes = useMemo(() => {
+    return organizeScenes(images || [], audioChunks || [], actualFPS);
+  }, [images, audioChunks, actualFPS]);
+  
   console.log('=== Organized into', scenes.length, 'scenes ===');
   
-  // Calculate the total duration in frames
-  const totalDurationInFrames = calculateTotalDuration(scenes);
+  // Memoize total duration calculation
+  const totalDurationInFrames = useMemo(() => {
+    return calculateTotalDuration(scenes);
+  }, [scenes]);
+  
   console.log('=== Total video duration:', totalDurationInFrames, 'frames =', totalDurationInFrames / actualFPS, 'seconds ===');
   
   return (
@@ -243,7 +282,7 @@ export const StoryVideoComponent: React.FC<StoryVideoProps> = ({ images, audioCh
       </Series>
     </AbsoluteFill>
   );
-};
+});
 
 // Main entry component for Remotion
 export const StoryVideo = () => {
