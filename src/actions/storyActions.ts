@@ -588,7 +588,8 @@ export async function generateImageFromGemini(
 export async function generateImageFromImagen3(
   originalPrompt: string,
   userId?: string,
-  storyId?: string
+  storyId?: string,
+  styleId?: string
 ): Promise<{ success: boolean; imageUrl?: string; error?: string; requestPrompt?: string }> {
   const apiKey = getGeminiApiKey();
 
@@ -597,8 +598,128 @@ export async function generateImageFromImagen3(
     return { success: false, error: "Gemini API key is not configured." };
   }
 
-  const styles = "3D, Cartoon, High Quality";
-  const requestPrompt = originalPrompt ? `${originalPrompt}, ${styles}` : styles;
+  // Special prompt formatting for Imagen 3
+  let requestPrompt = originalPrompt;
+  
+  // If we have userId and storyId, we can access the story data to get entity descriptions
+  if (userId && storyId) {
+    try {
+      // Get the story data to access entity descriptions
+      const storyResult = await getStory(storyId, userId);
+      if (storyResult.success && storyResult.data) {
+        // Extract placeholders from the original prompt
+        const entityReferences = originalPrompt.match(/@[A-Za-z0-9]+/g) || [];
+        
+        if (entityReferences.length > 0) {
+          console.log(`[generateImageFromImagen3] Found entity references in prompt: ${entityReferences.join(', ')}`);
+          
+          // Import utils for entity processing
+          const { nameToReference, extractEntityNames } = await import('@/app/(app)/assemble-video/utils');
+          
+          // Get all entity names from the story
+          const entityNames = extractEntityNames(storyResult.data);
+          
+          // Construct a prefix with all placeholder descriptions
+          let placeholderDescriptions = "";
+          
+          // Process each entity reference
+          for (const ref of entityReferences) {
+            const entityName = ref.substring(1).trim(); // Remove @ symbol
+            
+            // Find the matching actual entity name and type
+            let actualEntityName: string | null = null;
+            let entityType: 'character' | 'item' | 'location' | null = null;
+            
+            // Check characters
+            for (const characterName of entityNames.characters) {
+              if (nameToReference(characterName) === ref) {
+                actualEntityName = characterName;
+                entityType = 'character';
+                break;
+              }
+            }
+            
+            // Check items if not found in characters
+            if (!actualEntityName) {
+              for (const itemName of entityNames.items) {
+                if (nameToReference(itemName) === ref) {
+                  actualEntityName = itemName;
+                  entityType = 'item';
+                  break;
+                }
+              }
+            }
+            
+            // Check locations if not found in items
+            if (!actualEntityName) {
+              for (const locationName of entityNames.locations) {
+                if (nameToReference(locationName) === ref) {
+                  actualEntityName = locationName;
+                  entityType = 'location';
+                  break;
+                }
+              }
+            }
+            
+            if (actualEntityName && entityType) {
+              // Get the appropriate prompts section
+              const promptsSection = entityType === 'character'
+                ? storyResult.data.detailsPrompts?.characterPrompts || ''
+                : entityType === 'item'
+                  ? storyResult.data.detailsPrompts?.itemPrompts || ''
+                  : storyResult.data.detailsPrompts?.locationPrompts || '';
+              
+              // Find the description for this entity
+              const entityPattern = new RegExp(
+                actualEntityName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + "\\s*\\n+(.*?)(?=\\n\\n|$)",
+                "s"
+              );
+              const entityMatch = promptsSection.match(entityPattern);
+              
+              if (entityMatch && entityMatch[1]) {
+                const description = entityMatch[1].trim();
+                // Format exactly as requested: "Name, description" format
+                placeholderDescriptions += `${actualEntityName}, ${description}\n-----------\n`;
+                console.log(`[generateImageFromImagen3] Found description for ${ref} (${actualEntityName})`);
+              }
+            }
+          }
+          
+          // Format the prompt as: {placeholders_descriptions} + {original_prompt} + {styles}
+          if (placeholderDescriptions) {
+            requestPrompt = `${placeholderDescriptions}${originalPrompt}`;
+            console.log(`[generateImageFromImagen3] Added placeholder descriptions to prompt`);
+          }
+        }
+      }
+    } catch (error) {
+      console.warn("[generateImageFromImagen3] Error processing placeholders:", error);
+      // Continue with original prompt if there's an error
+    }
+  }
+  
+  // Apply the user-selected style if available
+  if (styleId) {
+    try {
+      const { applyStyleToPrompt } = await import('@/utils/imageStyleUtils');
+      requestPrompt = applyStyleToPrompt(requestPrompt || originalPrompt, styleId as any, 'imagen3');
+      console.log(`[generateImageFromImagen3] Applied style ${styleId} to prompt: "${requestPrompt}"`);
+    } catch (error) {
+      console.warn("[generateImageFromImagen3] Failed to apply style, using clean prompt:", error);
+    }
+  } else if (userId && storyId) {
+    // Fallback: get style from story if not directly provided
+    try {
+      const storyResult = await getStory(storyId, userId);
+      if (storyResult.success && storyResult.data?.imageStyleId) {
+        const { applyStyleToPrompt } = await import('@/utils/imageStyleUtils');
+        requestPrompt = applyStyleToPrompt(requestPrompt || originalPrompt, storyResult.data.imageStyleId as any, 'imagen3');
+        console.log(`[generateImageFromImagen3] Applied story style ${storyResult.data.imageStyleId} to prompt: "${requestPrompt}"`);
+      }
+    } catch (error) {
+      console.warn("[generateImageFromImagen3] Failed to apply style from story, using clean prompt:", error);
+    }
+  }
 
   try {
     console.log(`Calling Imagen 3 API with prompt: "${requestPrompt}"`);
@@ -691,7 +812,7 @@ export async function generateImageFromPrompt(
   }
   
   if (provider === 'imagen3') {
-    return generateImageFromImagen3(originalPrompt, userId, storyId);
+    return generateImageFromImagen3(originalPrompt, userId, storyId, styleId);
   }
   
   // Original Picsart implementation

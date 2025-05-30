@@ -117,6 +117,9 @@ export const categorizeImages = (storyData: Story) => {
   const locationDescriptions = new Set(locationPrompts.map(p => p.description));
   const itemDescriptions = new Set(itemPrompts.map(p => p.description));
   const scenePrompts = new Set(storyData.imagePrompts || []);
+  
+  // Map to track images by prompt for scene ordering
+  const sceneImagesByPrompt: Record<string, GeneratedImage> = {};
 
   // Track processed images to avoid duplicates by both URL and prompt
   const processedUrls = new Set<string>();
@@ -143,12 +146,22 @@ export const categorizeImages = (storyData: Story) => {
       console.log(`  ✅ Added to items: "${image.originalPrompt}"`);
       items.push(image);
     } else if (scenePrompts.has(image.originalPrompt)) {
-      console.log(`  ✅ Added to scenes: "${image.originalPrompt}"`);
-      scenes.push(image);
+      console.log(`  ✅ Added to scenes map: "${image.originalPrompt}"`);
+      // Store in map instead of pushing directly to scenes array
+      sceneImagesByPrompt[image.originalPrompt] = image;
     } else {
       console.log(`  ❌ No category match for: "${image.originalPrompt}"`);
     }
   });
+  
+  // Now add scene images in the exact order they appear in imagePrompts
+  if (storyData.imagePrompts) {
+    storyData.imagePrompts.forEach(prompt => {
+      if (sceneImagesByPrompt[prompt]) {
+        scenes.push(sceneImagesByPrompt[prompt]);
+      }
+    });
+  }
 
   console.log('Final counts - Characters:', characters.length, 'Locations:', locations.length, 'Items:', items.length, 'Scenes:', scenes.length);
   return { characters, locations, items, scenes };
@@ -156,6 +169,8 @@ export const categorizeImages = (storyData: Story) => {
 
 // Helper function to get scene name for a prompt
 export const getSceneName = (prompt: string, index: number): string => {
+  // index is the position in the scenes array in the FinalReviewStep
+  // which now matches the original order in imagePrompts
   return `Scene ${index + 1}`;
 };
 
