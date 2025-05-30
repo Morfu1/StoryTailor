@@ -6,7 +6,7 @@ import { CheckCircle, AlertCircle, Film, VideoIcon, Download } from 'lucide-reac
 import { ImageCategorizer } from './ImageCategorizer';
 import { countSceneImages, countDetailImages } from '@/utils/storyHelpers';
 import type { UseStoryStateReturn } from '@/hooks/useStoryState';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { NarrationChunk } from '@/types/narration';
 
 interface FinalReviewStepProps {
@@ -176,6 +176,77 @@ function RenderVideoButton({ storyData }: { storyData: UseStoryStateReturn['stor
   const [isRendering, setIsRendering] = useState(false);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [jobId, setJobId] = useState<string | null>(null);
+  const [progress, setProgress] = useState(0);
+  const [estimatedTimeRemaining, setEstimatedTimeRemaining] = useState<number | null>(null);
+
+  // Poll job status when rendering
+  const pollJobStatus = async (jobId: string) => {
+    try {
+      const response = await fetch(`/api/video-job/${jobId}`);
+      const job = await response.json();
+      
+      if (response.ok) {
+        setProgress(job.progress || 0);
+        setEstimatedTimeRemaining(job.estimatedTimeRemaining || null);
+        
+        if (job.status === 'completed' && job.downloadUrl) {
+          setVideoUrl(job.downloadUrl);
+          setIsRendering(false);
+          setJobId(null);
+          return; // Stop polling
+        } else if (job.status === 'error') {
+          setError(job.error || 'Video rendering failed');
+          setIsRendering(false);
+          setJobId(null);
+          return; // Stop polling
+        }
+        
+        // Continue polling if still processing
+        if (job.status === 'processing' || job.status === 'pending') {
+          setTimeout(() => pollJobStatus(jobId), 2000); // Poll every 2 seconds
+        }
+      } else {
+        console.error('Failed to get job status:', job.error);
+        setTimeout(() => pollJobStatus(jobId), 5000); // Retry after 5 seconds
+      }
+    } catch (error) {
+      console.error('Error polling job status:', error);
+      setTimeout(() => pollJobStatus(jobId), 5000); // Retry after 5 seconds
+    }
+  };
+
+  // Check for existing completed videos when component loads
+  useEffect(() => {
+    const checkExistingVideo = async () => {
+      if (!storyData.id) return;
+      
+      try {
+        // Check if there are any completed jobs for this story
+        const response = await fetch(`/api/video-job/story/${storyData.id}`);
+        if (response.ok) {
+          const jobs = await response.json();
+          const completedJob = jobs.find((job: any) => job.status === 'completed' && job.downloadUrl);
+          if (completedJob) {
+            setVideoUrl(completedJob.downloadUrl);
+          }
+          
+          // Check for any in-progress jobs
+          const inProgressJob = jobs.find((job: any) => job.status === 'processing' || job.status === 'pending');
+          if (inProgressJob) {
+            setIsRendering(true);
+            setJobId(inProgressJob.id);
+            setProgress(inProgressJob.progress || 0);
+            pollJobStatus(inProgressJob.id);
+          }
+        }
+      } catch (error) {
+        console.error('Error checking existing videos:', error);
+      }
+    };
+    
+    checkExistingVideo();
+  }, [storyData.id]);
 
   const handleRenderVideo = async () => {
     setIsRendering(true);
@@ -277,11 +348,18 @@ function RenderVideoButton({ storyData }: { storyData: UseStoryStateReturn['stor
       }
 
       const data = await response.json();
-      setVideoUrl(data.downloadUrl);
+      
+      if (data.jobId) {
+        setJobId(data.jobId);
+        setProgress(0);
+        // Start polling for job status
+        pollJobStatus(data.jobId);
+      } else {
+        throw new Error('No job ID returned from server');
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An unexpected error occurred');
       console.error('Error rendering video:', err);
-    } finally {
       setIsRendering(false);
     }
   };
@@ -300,9 +378,66 @@ function RenderVideoButton({ storyData }: { storyData: UseStoryStateReturn['stor
       )}
 
       {isRendering && (
-        <div className="flex items-center gap-2 text-amber-600">
-          <div className="h-4 w-4 animate-spin rounded-full border-2 border-amber-600 border-t-transparent"></div>
-          <span>Rendering video... This may take a few minutes</span>
+        <div className="space-y-4">
+          <div className="text-center">
+            <div className="text-sm font-medium text-gray-700 mb-2">
+              Rendering your video...
+            </div>
+            <div className="text-xs text-gray-500">
+              This process continues even if you leave this page
+            </div>
+          </div>
+          
+          {/* Modern Progress Bar */}
+          <div className="space-y-2">
+            <div className="flex justify-between items-center text-sm">
+              <span className="text-gray-600">Progress</span>
+              <span className="font-medium text-gray-900">{progress}%</span>
+            </div>
+            
+            <div className="relative w-full h-3 bg-gray-200 rounded-full overflow-hidden">
+              {/* Background track */}
+              <div className="absolute inset-0 bg-gradient-to-r from-gray-100 to-gray-200"></div>
+              
+              {/* Progress fill with gradient and animation */}
+              <div 
+                className="absolute top-0 left-0 h-full bg-gradient-to-r from-blue-500 via-purple-500 to-indigo-600 rounded-full transition-all duration-500 ease-out"
+                style={{ width: `${progress}%` }}
+              >
+                {/* Shimmer effect */}
+                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent animate-pulse"></div>
+              </div>
+              
+              {/* Pulse animation for when progress is active */}
+              {progress > 0 && progress < 100 && (
+                <div className="absolute inset-0 bg-gradient-to-r from-blue-400/20 to-purple-400/20 animate-pulse"></div>
+              )}
+            </div>
+            
+            {/* Status text and estimated time */}
+            <div className="flex justify-between items-center text-xs text-gray-500">
+              <span>
+                {progress === 0 && 'Starting...'}
+                {progress > 0 && progress < 20 && 'Downloading assets...'}
+                {progress >= 20 && progress < 40 && 'Optimizing resolution...'}
+                {progress >= 40 && progress < 80 && 'Rendering video...'}
+                {progress >= 80 && progress < 100 && 'Finalizing...'}
+                {progress === 100 && 'Complete!'}
+              </span>
+              {estimatedTimeRemaining && (
+                <span>~{Math.ceil(estimatedTimeRemaining / 60)} min remaining</span>
+              )}
+            </div>
+          </div>
+          
+          {/* Animated rendering icon */}
+          <div className="flex justify-center">
+            <div className="flex items-center gap-1">
+              <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+              <div className="w-2 h-2 bg-purple-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+              <div className="w-2 h-2 bg-indigo-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+            </div>
+          </div>
         </div>
       )}
 

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { downloadAssetsForRendering, saveVideoForDownload } from '@/utils/remotionUtils';
 import { NarrationChunk } from '@/types/narration';
 import { ensureDownloadsDirectory } from './init-downloads';
+import { createVideoJob, updateJobStatus } from '@/utils/videoJobManager';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import path from 'path';
@@ -9,6 +10,102 @@ import fs from 'fs';
 import os from 'os';
 
 const execAsync = promisify(exec);
+
+/**
+ * Background video rendering function that updates job status
+ */
+async function renderVideoInBackground(
+  jobId: string,
+  images: string[],
+  audioChunks: NarrationChunk[],
+  storyTitle: string,
+  storyId: string,
+  defaultWidth: number,
+  defaultHeight: number,
+  defaultFPS: number
+): Promise<void> {
+  try {
+    console.log(`Starting background rendering for job ${jobId}`);
+    updateJobStatus(jobId, { status: 'processing', progress: 10 });
+
+    // Download assets for rendering
+    console.log('Downloading assets for rendering...');
+    updateJobStatus(jobId, { progress: 20 });
+    const { localImages, localAudioChunks, imageDimensions } = await downloadAssetsForRendering(images, audioChunks);
+
+    // Calculate optimal video resolution and FPS based on detected image dimensions
+    let videoWidth = defaultWidth;
+    let videoHeight = defaultHeight;
+    let optimalFPS = defaultFPS;
+    
+    if (imageDimensions) {
+      console.log(`Original image dimensions: ${imageDimensions.width}x${imageDimensions.height}`);
+      
+      // Use smaller resolution for faster rendering if images are small
+      if (imageDimensions.width <= 1280 && imageDimensions.height <= 720) {
+        videoWidth = imageDimensions.width;
+        videoHeight = imageDimensions.height;
+        console.log(`Using optimized resolution for faster rendering: ${videoWidth}x${videoHeight}`);
+      } else {
+        console.log(`Images are large, using Full HD: ${videoWidth}x${videoHeight}`);
+      }
+      
+      // Optimize FPS based on image size for even faster rendering
+      if (imageDimensions.width <= 640 && imageDimensions.height <= 360) {
+        optimalFPS = 12; // Even faster for very small images
+      }
+    } else {
+      console.log(`No image dimensions detected, using default: ${videoWidth}x${videoHeight}`);
+    }
+    
+    console.log(`Using optimal FPS: ${optimalFPS} for rendering speed`);
+
+    // Render the video
+    console.log('Rendering video...');
+    updateJobStatus(jobId, { progress: 30 });
+    const videoPath = await renderStoryVideoWithCLI({
+      images: localImages,
+      audioChunks: localAudioChunks,
+      storyTitle,
+      width: videoWidth,
+      height: videoHeight,
+      fps: optimalFPS,
+      jobId, // Pass job ID for progress tracking
+    });
+
+    updateJobStatus(jobId, { progress: 80 });
+
+    // Save the video for download
+    console.log('Saving video for download...');
+    const downloadUrl = await saveVideoForDownload(videoPath, storyId);
+    
+    updateJobStatus(jobId, { progress: 90 });
+
+    // Clean up assets after successful render and save
+    console.log('Cleaning up temporary assets...');
+    try {
+      const { cleanupRemotionAssets } = await import('@/utils/remotionUtils');
+      cleanupRemotionAssets();
+    } catch (error) {
+      console.warn('Failed to cleanup assets:', error);
+    }
+
+    // Mark job as completed
+    updateJobStatus(jobId, { 
+      status: 'completed', 
+      progress: 100, 
+      downloadUrl 
+    });
+
+    console.log(`Background rendering completed for job ${jobId}`);
+  } catch (error) {
+    console.error(`Background rendering failed for job ${jobId}:`, error);
+    updateJobStatus(jobId, { 
+      status: 'error', 
+      error: error instanceof Error ? error.message : String(error) 
+    });
+  }
+}
 
 /**
  * Renders a video using the Remotion CLI approach
@@ -20,7 +117,8 @@ async function renderStoryVideoWithCLI({
   storyTitle,
   width,
   height,
-  fps
+  fps,
+  jobId
 }: {
   images: string[];
   audioChunks: NarrationChunk[];
@@ -28,6 +126,7 @@ async function renderStoryVideoWithCLI({
   width?: number;
   height?: number;
   fps?: number;
+  jobId?: string;
 }): Promise<string> {
   try {
     console.log('Starting video rendering process...');
@@ -76,16 +175,28 @@ async function renderStoryVideoWithCLI({
     
     console.log('Rendering video using Remotion CLI...');
     
+    if (jobId) {
+      updateJobStatus(jobId, { progress: 40 });
+    }
+    
     // Use npx to run remotion render command with optimized settings for low resources
     const command = `npx remotion render "${entryPointPath}" StoryVideo "${outputPath}" --props="${propsPath}" --disable-web-security --log=verbose --concurrency=1 --temp-dir="${tmpDir}" --timeout=30000 --delayRenderTimeoutInMilliseconds=30000`;
     
     console.log(`Executing command: ${command}`);
+    
+    if (jobId) {
+      updateJobStatus(jobId, { progress: 50 });
+    }
     
     // Execute the command with a 10-minute timeout
     const { stdout, stderr } = await execAsync(command, { 
       timeout: 600000, // 10 minutes
       maxBuffer: 1024 * 1024 * 50 // 50MB buffer
     });
+    
+    if (jobId) {
+      updateJobStatus(jobId, { progress: 70 });
+    }
     
     // Log detailed output for debugging
     console.log('--- REMOTION CLI OUTPUT ---');
@@ -132,6 +243,9 @@ export async function POST(req: Request) {
       storyTitle,
       storyId,
     });
+
+    // Create a background job for video rendering
+    const job = createVideoJob(storyId, storyTitle);
     
     // Validate request data with detailed error messages
     if (!images || !Array.isArray(images)) {
@@ -187,63 +301,26 @@ export async function POST(req: Request) {
       );
     }
 
-    // Download assets for rendering
-    console.log('Downloading assets for rendering...');
-    const { localImages, localAudioChunks, imageDimensions } = await downloadAssetsForRendering(images, audioChunks);
-    
-    // Calculate optimal video resolution and FPS based on detected image dimensions
-    let videoWidth = 1920;
-    let videoHeight = 1080;
-    let optimalFPS = 15; // Default for static images - much faster than 30fps
-    
-    if (imageDimensions) {
-      console.log(`Original image dimensions: ${imageDimensions.width}x${imageDimensions.height}`);
-      
-      // Use smaller resolution for faster rendering if images are small
-      if (imageDimensions.width <= 1280 && imageDimensions.height <= 720) {
-        videoWidth = imageDimensions.width;
-        videoHeight = imageDimensions.height;
-        console.log(`Using optimized resolution for faster rendering: ${videoWidth}x${videoHeight}`);
-      } else {
-        console.log(`Images are large, using Full HD: ${videoWidth}x${videoHeight}`);
-      }
-      
-      // Optimize FPS based on image size for even faster rendering
-      if (imageDimensions.width <= 640 && imageDimensions.height <= 360) {
-        optimalFPS = 12; // Even faster for very small images
-      }
-    } else {
-      console.log(`No image dimensions detected, using default Full HD: ${videoWidth}x${videoHeight}`);
-    }
-    
-    console.log(`Using optimal FPS: ${optimalFPS} for rendering speed`);
-
-    // Render the video using CLI approach to avoid React context issues
-    console.log('Rendering video...');
-    const videoPath = await renderStoryVideoWithCLI({
-      images: localImages,
-      audioChunks: localAudioChunks,
+    // Start background rendering immediately (don't await - let it run in background)
+    renderVideoInBackground(
+      job.id,
+      images,
+      audioChunks,
       storyTitle,
-      width: videoWidth,
-      height: videoHeight,
-      fps: optimalFPS,
+      storyId,
+      1920, // These will be determined in the background function
+      1080,
+      15
+    ).catch(error => {
+      console.error(`Background rendering failed for job ${job.id}:`, error);
     });
 
-    // Save the video for download
-    console.log('Saving video for download...');
-    const downloadUrl = await saveVideoForDownload(videoPath, storyId);
-
-    // Clean up assets after successful render and save
-    console.log('Cleaning up temporary assets...');
-    try {
-      const { cleanupRemotionAssets } = await import('@/utils/remotionUtils');
-      cleanupRemotionAssets();
-    } catch (error) {
-      console.warn('Failed to cleanup assets:', error);
-    }
-
-    // Return the download URL
-    return NextResponse.json({ downloadUrl });
+    // Return job ID immediately so user can check progress
+    return NextResponse.json({ 
+      jobId: job.id,
+      message: 'Video rendering started in background',
+      status: 'processing'
+    });
   } catch (error) {
     console.error('Error rendering video:', error);
     const errorMessage = error instanceof Error ? error.message : String(error);
