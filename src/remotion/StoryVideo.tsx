@@ -216,6 +216,48 @@ const Scene = memo(({ image, index }: { image: string; index: number }) => {
   );
 });
 
+// Function to get image dimensions from URL for resolution optimization
+const getImageDimensionsFromUrl = async (imageUrl: string): Promise<{ width: number; height: number } | null> => {
+  try {
+    if (!imageUrl || imageUrl === 'placeholder') return null;
+    
+    // Only process HTTP URLs (not data URLs or static files)
+    if (!imageUrl.startsWith('http')) return null;
+    
+    const response = await fetch(imageUrl);
+    if (!response.ok) return null;
+    
+    const buffer = await response.arrayBuffer();
+    const uint8Array = new Uint8Array(buffer);
+    
+    // Check for JPEG
+    if (uint8Array[0] === 0xFF && uint8Array[1] === 0xD8) {
+      for (let i = 2; i < uint8Array.length - 8; i++) {
+        if (uint8Array[i] === 0xFF) {
+          const marker = uint8Array[i + 1];
+          if (marker === 0xC0 || marker === 0xC1 || marker === 0xC2) {
+            const height = (uint8Array[i + 5] << 8) | uint8Array[i + 6];
+            const width = (uint8Array[i + 7] << 8) | uint8Array[i + 8];
+            return { width, height };
+          }
+        }
+      }
+    }
+    
+    // Check for PNG
+    if (uint8Array[0] === 0x89 && uint8Array[1] === 0x50 && uint8Array[2] === 0x4E && uint8Array[3] === 0x47) {
+      const width = (uint8Array[16] << 24) | (uint8Array[17] << 16) | (uint8Array[18] << 8) | uint8Array[19];
+      const height = (uint8Array[20] << 24) | (uint8Array[21] << 16) | (uint8Array[22] << 8) | uint8Array[23];
+      return { width, height };
+    }
+    
+    return null;
+  } catch (error) {
+    console.warn('Could not detect image dimensions:', error);
+    return null;
+  }
+};
+
 // Story Video component - exported for use in Root.tsx
 export const StoryVideoComponent: React.FC<StoryVideoProps> = memo(({ images, audioChunks, fps }) => {
   console.log('=== StoryVideoComponent rendering ===');
@@ -286,13 +328,28 @@ export const StoryVideoComponent: React.FC<StoryVideoProps> = memo(({ images, au
 
 // Main entry component for Remotion
 export const StoryVideo = () => {
-  const { images, audioChunks, width, height, fps } = getInputProps<StoryVideoProps & { width?: number; height?: number }>();
+  const { images, audioChunks, width, height, fps, detectedDimensions } = getInputProps<StoryVideoProps & { 
+    width?: number; 
+    height?: number; 
+    detectedDimensions?: { width: number; height: number }; 
+  }>();
   
   console.log('StoryVideo loading:', images?.length || 0, 'images,', audioChunks?.length || 0, 'chunks');
   console.log('Resolution provided:', width, 'x', height);
+  console.log('Detected dimensions:', detectedDimensions);
   console.log('FPS provided:', fps, 'fallback to default:', VIDEO_FPS);
   
   const actualFPS = fps || VIDEO_FPS;
+  
+  // Use detected dimensions if available and no explicit width/height provided
+  let videoWidth = width || 1920;
+  let videoHeight = height || 1080;
+  
+  if (!width && !height && detectedDimensions) {
+    console.log(`Using detected image dimensions: ${detectedDimensions.width}x${detectedDimensions.height}`);
+    videoWidth = detectedDimensions.width;
+    videoHeight = detectedDimensions.height;
+  }
   
   // Calculate total duration from scenes for the composition
   const calculateDuration = (): number => {
@@ -334,8 +391,8 @@ export const StoryVideo = () => {
       component={StoryVideoComponent}
       durationInFrames={calculateDuration()}
       fps={actualFPS}
-      width={width || 1920}
-      height={height || 1080}
+      width={videoWidth}
+      height={videoHeight}
       defaultProps={{
         images,
         audioChunks,

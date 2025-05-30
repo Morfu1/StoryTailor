@@ -41,14 +41,10 @@ async function renderVideoInBackground(
     if (imageDimensions) {
       console.log(`Original image dimensions: ${imageDimensions.width}x${imageDimensions.height}`);
       
-      // Use smaller resolution for faster rendering if images are small
-      if (imageDimensions.width <= 1280 && imageDimensions.height <= 720) {
-        videoWidth = imageDimensions.width;
-        videoHeight = imageDimensions.height;
-        console.log(`Using optimized resolution for faster rendering: ${videoWidth}x${videoHeight}`);
-      } else {
-        console.log(`Images are large, using Full HD: ${videoWidth}x${videoHeight}`);
-      }
+      // Always use detected image dimensions to match the actual image size
+      videoWidth = imageDimensions.width;
+      videoHeight = imageDimensions.height;
+      console.log(`Using detected image resolution: ${videoWidth}x${videoHeight}`);
       
       // Optimize FPS based on image size for even faster rendering
       if (imageDimensions.width <= 640 && imageDimensions.height <= 360) {
@@ -70,6 +66,7 @@ async function renderVideoInBackground(
       width: videoWidth,
       height: videoHeight,
       fps: optimalFPS,
+      detectedDimensions: imageDimensions,
       jobId, // Pass job ID for progress tracking
     });
 
@@ -118,6 +115,7 @@ async function renderStoryVideoWithCLI({
   width,
   height,
   fps,
+  detectedDimensions,
   jobId
 }: {
   images: string[];
@@ -126,6 +124,7 @@ async function renderStoryVideoWithCLI({
   width?: number;
   height?: number;
   fps?: number;
+  detectedDimensions?: { width: number; height: number };
   jobId?: string;
 }): Promise<string> {
   try {
@@ -156,7 +155,8 @@ async function renderStoryVideoWithCLI({
       })),
       width,
       height,
-      fps
+      fps,
+      detectedDimensions
     };
     
     fs.writeFileSync(
