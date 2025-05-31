@@ -13,7 +13,16 @@ import {
   useVideoConfig,
 } from 'remotion';
 import { NarrationChunk } from '@/types/narration';
-import { GeneratedImage } from '@/types/story';
+import { GeneratedImage } from '@/types/story'; // Keep GeneratedImage for inputProps if it's still used there initially
+
+// Define LocalImageWithMetadata (ideally import from a shared types file like src/types/story.ts)
+interface LocalImageWithMetadata {
+  localPath: string;
+  originalUrl?: string;
+  chunkId?: string;
+  chunkIndex?: number;
+  originalPrompt?: string;
+}
 
 // Dynamic FPS configuration for video rendering
 // Lower FPS for static images improves rendering speed significantly
@@ -21,7 +30,7 @@ const VIDEO_FPS = 15; // Can be adjusted: 15 for fast rendering, 24 for smoother
 
 // Make this a Record<string, unknown> to satisfy Remotion type constraints
 interface StoryVideoProps extends Record<string, unknown> {
-  images: (string | GeneratedImage)[];
+  images: LocalImageWithMetadata[]; // Changed from (string | GeneratedImage)[]
   audioChunks: NarrationChunk[];
   fps?: number; // Optional FPS override
 }
@@ -37,21 +46,34 @@ interface SceneData {
 // Cache for organized scenes to prevent recalculation
 const scenesCache = new Map<string, SceneData[]>();
 
-// Helper function to extract image URL from string or GeneratedImage
-const getImageUrl = (image: string | GeneratedImage): string => {
-  return typeof image === 'string' ? image : image.imageUrl;
+// Helper function to extract image URL from LocalImageWithMetadata
+const getImageUrl = (image: LocalImageWithMetadata): string => {
+  return image.localPath; // Use the localPath for Remotion's staticFile
 };
 
-// Helper function to get chunk metadata from GeneratedImage
-const getChunkMetadata = (image: string | GeneratedImage): { chunkId?: string; chunkIndex?: number } => {
-  return typeof image === 'string' ? {} : { chunkId: image.chunkId, chunkIndex: image.chunkIndex };
+// Helper function to get chunk metadata from LocalImageWithMetadata
+const getChunkMetadata = (image: LocalImageWithMetadata): { chunkId?: string; chunkIndex?: number } => {
+  return { chunkId: image.chunkId, chunkIndex: image.chunkIndex };
 };
 
-// Associate images with audio chunks using chunk metadata from GeneratedImages
-const organizeScenes = (images: (string | GeneratedImage)[], audioChunks: NarrationChunk[], fps: number = VIDEO_FPS): SceneData[] => {
-  // Create cache key for memoization (convert images to URLs for consistent caching)
-  const imageUrls = images.map(getImageUrl);
-  const cacheKey = `${imageUrls.length}-${audioChunks.length}-${fps}-${audioChunks.map(c => c.duration).join(',')}`;
+// Associate images with audio chunks using chunk metadata from LocalImageWithMetadata
+const organizeScenes = (images: LocalImageWithMetadata[], audioChunks: NarrationChunk[], fps: number = VIDEO_FPS): SceneData[] => {
+  console.log('--- organizeScenes ---');
+  console.log(`Received ${images.length} images and ${audioChunks.length} audio chunks.`);
+  
+  // Log details of the first few images received
+  images.slice(0, 5).forEach((img, idx) => {
+    console.log(`Image[${idx}]: localPath=${img.localPath}, chunkId=${img.chunkId}, chunkIndex=${img.chunkIndex}, originalPrompt=${img.originalPrompt ? img.originalPrompt.substring(0,20)+'...' : 'N/A'}`);
+  });
+  
+  // Log details of the first few audio chunks received
+  audioChunks.slice(0, 5).forEach((chunk, idx) => {
+    console.log(`AudioChunk[${idx}]: id=${chunk.id}, duration=${chunk.duration}, text=${chunk.text.substring(0,20)+ '...'}`);
+  });
+
+  // Create cache key for memoization (use localPath for consistent caching)
+  const imagePaths = images.map(img => img.localPath); // Use localPath for cache key
+  const cacheKey = `${imagePaths.length}-${audioChunks.length}-${fps}-${audioChunks.map(c => c.duration).join(',')}`;
   
   if (scenesCache.has(cacheKey)) {
     console.log('Using cached scenes for:', images.length, 'images and', audioChunks.length, 'audio chunks');
@@ -100,8 +122,8 @@ const organizeScenes = (images: (string | GeneratedImage)[], audioChunks: Narrat
     }
   } else {
     // Group images by chunk using metadata when available
-    const imagesByChunk = new Map<string, (string | GeneratedImage)[]>();
-    const unassignedImages: (string | GeneratedImage)[] = [];
+    const imagesByChunk = new Map<string, LocalImageWithMetadata[]>();
+    const unassignedImages: LocalImageWithMetadata[] = [];
     
     // First, group images by their chunk metadata
     images.forEach(image => {
@@ -118,10 +140,27 @@ const organizeScenes = (images: (string | GeneratedImage)[], audioChunks: Narrat
     
     console.log(`Found ${imagesByChunk.size} chunks with assigned images, ${unassignedImages.length} unassigned images`);
     
+    // Debug chunk assignments
+    if (imagesByChunk.size > 0) {
+      console.log('Image-to-chunk mappings:');
+      imagesByChunk.forEach((imgs, chunkId) => {
+        console.log(`- Chunk ${chunkId}: ${imgs.length} images`);
+      });
+    }
+    
+    // Debug the first few unassigned images
+    if (unassignedImages.length > 0) {
+      console.log('First few unassigned images:');
+      unassignedImages.slice(0, 3).forEach((img, i) => { // img is LocalImageWithMetadata
+        const metadata = getChunkMetadata(img);
+        console.log(`- Unassigned image ${i}: localPath=${img.localPath}, metadata:`, metadata);
+      });
+    }
+    
     // For each audio chunk, collect its assigned images
     for (let i = 0; i < validChunks.length; i++) {
       const chunk = validChunks[i];
-      let chunkImages: (string | GeneratedImage)[] = [];
+      let chunkImages: LocalImageWithMetadata[] = [];
       
       // Get images assigned to this chunk by metadata
       if (imagesByChunk.has(chunk.id)) {
@@ -129,28 +168,32 @@ const organizeScenes = (images: (string | GeneratedImage)[], audioChunks: Narrat
         console.log(`Chunk ${i + 1} (${chunk.id}): Found ${chunkImages.length} assigned images`);
       }
       
-      // If no assigned images, fall back to distributing unassigned images
-      if (chunkImages.length === 0 && unassignedImages.length > 0) {
-        const totalUnassigned = unassignedImages.length;
-        const averageImagesPerChunk = Math.max(1, Math.floor(totalUnassigned / validChunks.length));
-        const extraImages = totalUnassigned % validChunks.length;
-        
-        const startIndex = i * averageImagesPerChunk + Math.min(i, extraImages);
-        const imagesForThisChunk = averageImagesPerChunk + (i < extraImages ? 1 : 0);
-        const endIndex = Math.min(startIndex + imagesForThisChunk, totalUnassigned);
-        
-        chunkImages = unassignedImages.slice(startIndex, endIndex);
-        console.log(`Chunk ${i + 1} (${chunk.id}): Assigned ${chunkImages.length} unassigned images (${startIndex}-${endIndex - 1})`);
+      // If no assigned images were found via chunk.id, chunkImages remains empty.
+      // We will NOT fall back to distributing unassignedImages into this chunk's specific slot.
+      // This ensures only directly associated images (or a placeholder if none) are shown for this audio chunk.
+      // The unassignedImages array still exists and could be processed separately if desired (e.g., appended at the end of the video).
+      if (chunkImages.length === 0) {
+        console.log(`Chunk ${i + 1} (${chunk.id}): No images specifically assigned. Will use placeholder.`);
       }
       
       // Ensure at least one image per chunk
+      // Placeholder handling needs adjustment if chunkImages is LocalImageWithMetadata[]
+      // For now, if no images, we create a scene with a placeholder string.
+      // The Scene component will handle 'placeholder' string.
       if (chunkImages.length === 0) {
-        chunkImages = ['placeholder'];
-        console.log(`Chunk ${i + 1} (${chunk.id}): Using placeholder image`);
+        // Scene component expects string URLs, so 'placeholder' is fine here.
+        // The actual SceneData.images will be string[]
       }
       
-      // Convert to image URLs for rendering
-      const chunkImageUrls = chunkImages.map(getImageUrl);
+      // Get image URLs (localPaths) for rendering this chunk
+      const physicalPlaceholderPath = 'remotion-assets/placeholder.jpg'; // Path to the physical placeholder
+      const chunkImageUrls = chunkImages.length > 0
+        ? chunkImages.map(getImageUrl) // This will get localPath from LocalImageWithMetadata
+        : [physicalPlaceholderPath]; // Fallback to physical placeholder if no images for chunk
+      
+      if (chunkImages.length === 0) {
+        console.log(`Chunk ${i + 1} (${chunk.id}): No specific images assigned. Using physical placeholder: ${physicalPlaceholderPath}`);
+      }
       
       console.log(`Chunk ${i + 1} (${chunk.id}): ${chunkImageUrls.length} images assigned`);
       
@@ -217,21 +260,24 @@ const Scene = memo(({ image, index }: { image: string; index: number }) => {
     }
     
     let result: string;
-    
-    if (!image || image === 'placeholder') {
-      console.log('Using placeholder for missing image');
-      result = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTkyMCIgaGVpZ2h0PSIxMDgwIiB2aWV3Qm94PSIwIDAgMTkyMCAxMDgwIiBmaWxsPSJub25lIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPgo8cmVjdCB3aWR0aD0iMTkyMCIgaGVpZ2h0PSIxMDgwIiBmaWxsPSIjMzMzMzMzIi8+Cjx0ZXh0IHg9Ijk2MCIgeT0iNTQwIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iNjQiIGZpbGw9IndoaXRlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0iY2VudGVyIj5TY2VuZSBJbWFnZTwvdGV4dD4KPHN2Zz4K';
+    // The 'image' prop is now always a path string (e.g., "remotion-assets/image-0.jpg" or "remotion-assets/placeholder.jpg")
+    // or an http/data URL if passed directly (though current flow uses local paths).
+
+    if (!image) { // Should not happen if organizeScenes guarantees a path
+        console.error('Scene component received undefined or null image path. Using error placeholder.');
+        result = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTkyMCIgaGVpZ2h0PSIxMDgwIiB2aWV3Qm94PSIwIDAgMTkyMCAxMDgwIiBmaWxsPSJub25lIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPgo8cmVjdCB3aWR0aD0iMTkyMCIgaGVpZ2h0PSIxMDgwIiBmaWxsPSIjRkY0NDQ0Ii8+Cjx0ZXh0IHg9Ijk2MCIgeT0iNTQwIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iNjQiIGZpbGw9IndoaXRlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0iY2VudGVyIj5JbWFnZSBFcnJvcjwvdGV4dD4KPHN2Zz4K';
     } else if (image.startsWith('data:') || image.startsWith('http')) {
       console.log('Using direct image URL:', image.substring(0, 50) + '...');
       result = image;
     } else {
-      // For local paths, use staticFile
+      // For local paths (like "remotion-assets/file.jpg"), use staticFile
       try {
-        const staticPath = staticFile(image);
+        const staticPath = staticFile(image); // 'image' could be "remotion-assets/placeholder.jpg" here
         console.log('Using staticFile for:', image, '-> resolved to:', staticPath);
         result = staticPath;
       } catch (error) {
-        console.error(`Error loading image ${image}:`, error);
+        console.error(`Error loading image via staticFile (${image}):`, error);
+        // Fallback to an error SVG if staticFile fails
         result = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTkyMCIgaGVpZ2h0PSIxMDgwIiB2aWV3Qm94PSIwIDAgMTkyMCAxMDgwIiBmaWxsPSJub25lIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPgo8cmVjdCB3aWR0aD0iMTkyMCIgaGVpZ2h0PSIxMDgwIiBmaWxsPSIjRkY0NDQ0Ii8+Cjx0ZXh0IHg9Ijk2MCIgeT0iNTQwIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iNjQiIGZpbGw9IndoaXRlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0iY2VudGVyIj5JbWFnZSBFcnJvcjwvdGV4dD4KPHN2Zz4K';
       }
     }
@@ -379,10 +425,12 @@ export const StoryVideoComponent: React.FC<StoryVideoProps> = memo(({ images, au
 
 // Main entry component for Remotion
 export const StoryVideo = () => {
-  const { images, audioChunks, width, height, fps, detectedDimensions } = getInputProps<StoryVideoProps & { 
-    width?: number; 
-    height?: number; 
-    detectedDimensions?: { width: number; height: number }; 
+  // getInputProps will now provide images as LocalImageWithMetadata[]
+  // Ensure the type passed to getInputProps matches StoryVideoProps
+  const { images, audioChunks, width, height, fps, detectedDimensions } = getInputProps<StoryVideoProps & {
+    width?: number;
+    height?: number;
+    detectedDimensions?: { width: number; height: number };
   }>();
   
   console.log('StoryVideo loading:', images?.length || 0, 'images,', audioChunks?.length || 0, 'chunks');

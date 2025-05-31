@@ -255,6 +255,10 @@ function RenderVideoButton({ storyData }: { storyData: UseStoryStateReturn['stor
     setVideoUrl(null);
 
     try {
+      console.log('--- Debugging Video Rendering ---');
+      console.log('Initial storyData.generatedImages:', JSON.stringify(storyData.generatedImages, null, 2));
+      console.log('Initial storyData.imagePrompts:', JSON.stringify(storyData.imagePrompts, null, 2));
+
       // Order images by their original prompts to match Step 4 sequence (preserve GeneratedImage objects)
       let sceneImages: GeneratedImage[] = [];
       
@@ -266,11 +270,13 @@ function RenderVideoButton({ storyData }: { storyData: UseStoryStateReturn['stor
           .forEach(image => {
             imageMap.set(image.originalPrompt, image);
           });
+        console.log('Populated imageMap:', Array.from(imageMap.entries()));
         
         // Order images by imagePrompts sequence (Step 4 order)
         sceneImages = storyData.imagePrompts
           .map(prompt => imageMap.get(prompt))
           .filter(image => image !== undefined) as GeneratedImage[];
+        console.log('SceneImages after primary ordering:', JSON.stringify(sceneImages, null, 2));
       }
 
       // If no ordered images found, fall back to any images with URLs
@@ -278,9 +284,10 @@ function RenderVideoButton({ storyData }: { storyData: UseStoryStateReturn['stor
         console.log('No prompt-ordered images found, falling back to all images');
         sceneImages = storyData.generatedImages
           ?.filter(image => image.imageUrl) || [];
+        console.log('SceneImages after fallback:', JSON.stringify(sceneImages, null, 2));
       }
 
-      console.log('Scene images for video:', sceneImages.length, 'images with chunk metadata');
+      console.log('Scene images for video (intermediate):', sceneImages.length, 'images with chunk metadata');
       
       // Validate that we have images to work with
       if (sceneImages.length === 0) {
@@ -317,20 +324,28 @@ function RenderVideoButton({ storyData }: { storyData: UseStoryStateReturn['stor
       }
 
       // Prepare request payload
-      // Ensure that 'images' is an array of URL strings
-      const imageUrls = sceneImages.map(img => img.imageUrl).filter(url => typeof url === 'string') as string[];
+      // Ensure all scene images have valid imageUrls
+      const validSceneImages = sceneImages.filter(img => typeof img.imageUrl === 'string');
 
-      if (imageUrls.length !== sceneImages.length) {
+      if (validSceneImages.length !== sceneImages.length) {
         console.warn("Some images were filtered out due to missing or invalid imageUrls.");
       }
       
-      if (imageUrls.length === 0 && sceneImages.length > 0) {
-        throw new Error('No valid image URLs available for video rendering after filtering.');
+      if (validSceneImages.length === 0) {
+        throw new Error('No valid images available for video rendering after filtering.');
       }
 
+      // Log chunk metadata to verify images have correct associations
+      console.log('Final validSceneImages for payload (full objects):', JSON.stringify(validSceneImages, null, 2));
+      console.log('Image chunk associations (enhanced):', validSceneImages.map(img => ({
+        imageUrl: img.imageUrl?.substring(0, 30),
+        originalPrompt: img.originalPrompt,
+        chunkId: img.chunkId,
+        chunkIndex: img.chunkIndex
+      })));
 
       const payload = {
-        images: imageUrls, // Send only the array of imageUrl strings
+        images: validSceneImages, // Send the full GeneratedImage objects with metadata
         audioChunks,
         storyTitle: storyData.title || 'Untitled Story',
         storyId: storyData.id || `story-${Date.now()}`

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { downloadAssetsForRendering, saveVideoForDownload } from '@/utils/remotionUtils';
 import { NarrationChunk } from '@/types/narration';
+import { GeneratedImage } from '@/types/story'; // Import GeneratedImage
 import { ensureDownloadsDirectory } from './init-downloads';
 import { createVideoJob, updateJobStatus } from '@/utils/videoJobManager';
 import { exec, ChildProcess } from 'child_process'; // Import ChildProcess
@@ -19,7 +20,7 @@ export const activeRenderProcesses = new Map<string, ChildProcess>();
  */
 async function renderVideoInBackground(
   jobId: string,
-  images: string[],
+  images: (string | GeneratedImage)[], // This is the input from the request
   audioChunks: NarrationChunk[],
   storyTitle: string,
   storyId: string,
@@ -34,7 +35,9 @@ async function renderVideoInBackground(
     // Download assets for rendering
     console.log('Downloading assets for rendering...');
     updateJobStatus(jobId, { progress: 20 });
-    const { localImages, localAudioChunks, imageDimensions } = await downloadAssetsForRendering(images, audioChunks);
+    // LocalImageWithMetadata is defined at the module scope later
+
+    const { localImages, localAudioChunks, imageDimensions } = await downloadAssetsForRendering(images, audioChunks); // Type assertion removed, will rely on downloadAssetsForRendering's return type
 
     // Calculate optimal video resolution and FPS based on detected image dimensions
     let videoWidth = defaultWidth;
@@ -112,7 +115,7 @@ async function renderVideoInBackground(
  * This avoids React context issues in server components
  */
 async function renderStoryVideoWithCLI({
-  images,
+  images, // Type will be LocalImageWithMetadata[] due to call site
   audioChunks,
   storyTitle,
   width,
@@ -121,7 +124,7 @@ async function renderStoryVideoWithCLI({
   detectedDimensions,
   jobId
 }: {
-  images: string[];
+  images: LocalImageWithMetadata[]; // Corrected type for destructuring
   audioChunks: NarrationChunk[];
   storyTitle: string;
   width?: number;
@@ -139,7 +142,13 @@ async function renderStoryVideoWithCLI({
     fs.mkdirSync(tmpDir, { recursive: true });
     
     // Log information about the props being passed to Remotion
-    console.log('Images paths (first 3):', images.slice(0, 3).map(img => img?.substring(0, 30)));
+    console.log('Images (first 3 LocalImageWithMetadata objects):', images.slice(0, 3).map(img => ({
+        localPath: img.localPath ? img.localPath.substring(0,30) + "..." : "N/A",
+        chunkId: img.chunkId,
+        chunkIndex: img.chunkIndex,
+        originalUrl: img.originalUrl ? img.originalUrl.substring(0,30) + "..." : "N/A",
+        originalPrompt: img.originalPrompt ? img.originalPrompt.substring(0,20) + "..." : "N/A"
+    })));
     console.log('Audio chunks (first 3):', audioChunks.slice(0, 3).map(chunk => ({
       id: chunk.id,
       hasAudio: !!chunk.audioUrl,
@@ -255,11 +264,23 @@ async function renderStoryVideoWithCLI({
   }
 }
 
+// Removed duplicate GeneratedImage import, it's already at the top (line 4)
+
+// RenderVideoRequest defines the API input structure
 interface RenderVideoRequest {
-  images: string[];
+  images: (string | GeneratedImage)[];
   audioChunks: NarrationChunk[];
   storyTitle: string;
   storyId: string;
+}
+
+// Define LocalImageWithMetadata once at module scope
+interface LocalImageWithMetadata {
+  localPath: string;
+  originalUrl?: string;
+  chunkId?: string;
+  chunkIndex?: number;
+  originalPrompt?: string;
 }
 
 export async function POST(req: Request) {

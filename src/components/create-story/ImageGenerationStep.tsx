@@ -85,11 +85,11 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
     if (!storyData.generatedScript || !storyData.detailsPrompts) return;
     handleSetLoading('imagePrompts', true);
     
-    const audioDurationSeconds = storyData.narrationAudioDurationSeconds || 
-      (storyData.narrationChunks?.reduce((total, chunk) => total + (chunk.duration || 0), 0)) || 
+    const audioDurationSeconds = storyData.narrationAudioDurationSeconds ||
+      (storyData.narrationChunks?.reduce((total, chunk) => total + (chunk.duration || 0), 0)) ||
       60; // Default fallback
     
-    const imagePromptsInput = { 
+    const imagePromptsInput = {
       script: storyData.generatedScript,
       characterPrompts: storyData.detailsPrompts.characterPrompts || '',
       locationPrompts: storyData.detailsPrompts.locationPrompts || '',
@@ -109,89 +109,133 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
     console.log('Narration chunks:', storyData.narrationChunks?.length);
     console.log('Details prompts available:', !!storyData.detailsPrompts);
     console.log('Is regeneration:', isRegeneration);
-    
-    const result = await generateImagePrompts(imagePromptsInput);
-    
-    console.log('=== SERVER ACTION RESULT ===');
-    console.log('Result:', result);
-    
-    if (result.success && result.data?.imagePrompts) {
-      // On regeneration, preserve character/location/item images from Step 2, only clear scene images
-      const preservedImages = isRegeneration 
-        ? (storyData.generatedImages || []).filter(img => {
-            // Preserve images that don't match any existing scene image prompts
-            return !storyData.imagePrompts?.includes(img.originalPrompt);
-          })
-        : storyData.generatedImages;
 
-      const updatedStoryData = {
-        ...storyData,
-        imagePrompts: result.data.imagePrompts,
-        // Preserve detail images from Step 2 during regeneration
-        generatedImages: preservedImages,
-        // Add action prompts from AI generation with chunk text mapping
-        actionPrompts: (() => {
-          const actionPrompts: ActionPrompt[] = [];
-          let promptIndex = 0;
-          
-          if (storyData.narrationChunks && storyData.narrationChunks.length > 0) {
-            // Map prompts back to their source chunks
-            storyData.narrationChunks.forEach((chunk, chunkIndex) => {
-              const duration = chunk.duration || 0;
-              let promptCount: number;
-              if (duration <= 5) {
-                promptCount = 1;
-              } else if (duration <= 10) {
-                promptCount = chunk.text.length > 100 ? 2 : 1;
-              } else if (duration <= 15) {
-                promptCount = 2;
-              } else {
-                promptCount = 3;
-              }
-              
-              // Add prompts for this chunk
-              for (let i = 0; i < promptCount && promptIndex < result.data.imagePrompts.length; i++) {
-                actionPrompts.push({
-                  sceneIndex: promptIndex,
-                  originalPrompt: result.data.imagePrompts[promptIndex],
-                  actionDescription: result.data.actionPrompts?.[promptIndex] || `Character performs action in scene ${promptIndex + 1}.`,
-                  chunkText: chunk.text,
-                  chunkId: chunk.id,
-                  chunkIndex: chunkIndex
-                });
-                promptIndex++;
-              }
-            });
-          } else {
-            // Fallback for when no chunks are available
-            result.data.imagePrompts.forEach((prompt, index) => {
+    let currentImagePrompts = storyData.imagePrompts || [];
+    let currentActionDescriptions = storyData.actionPrompts?.map(ap => ap.actionDescription) || [];
+
+    let calledAiForPrompts = false;
+    // Only call AI if not regenerating an existing set of prompts, or if prompts don't exist yet
+    if (!isRegeneration || !storyData.imagePrompts || storyData.imagePrompts.length === 0) {
+      console.log('Calling AI to generate new image prompts and action descriptions...');
+      const aiResult = await generateImagePrompts(imagePromptsInput);
+      console.log('=== AI SERVER ACTION RESULT ===');
+      console.log('Result:', aiResult);
+      if (aiResult.success && aiResult.data) {
+        currentImagePrompts = aiResult.data.imagePrompts || [];
+        // Correctly access actionPrompts which are the descriptions
+        currentActionDescriptions = aiResult.data.actionPrompts || [];
+        calledAiForPrompts = true;
+      } else {
+        toast({
+          title: 'Error Generating Prompts via AI',
+          description: aiResult.error || 'Failed to get prompts from AI.',
+          variant: 'destructive'
+        });
+        handleSetLoading('imagePrompts', false);
+        setIsRegenerateDialogOpen(false);
+        return;
+      }
+    } else {
+      console.log('Using existing image prompts for re-association / action prompt generation. AI will not be called for new prompts.');
+      // Ensure currentActionDescriptions has a fallback length matching currentImagePrompts
+      if (currentActionDescriptions.length !== currentImagePrompts.length) {
+        currentActionDescriptions = currentImagePrompts.map((_, idx) => storyData.actionPrompts?.[idx]?.actionDescription || `Character performs action in scene ${idx + 1}.`);
+      }
+    }
+    
+    if (currentImagePrompts.length > 0) {
+      const newActionPrompts = (() => {
+        const actionPrompts: ActionPrompt[] = [];
+        let promptIndex = 0;
+        if (storyData.narrationChunks && storyData.narrationChunks.length > 0) {
+          storyData.narrationChunks.forEach((chunk, chunkIndex) => {
+            const duration = chunk.duration || 0;
+            let promptCount: number;
+            if (duration <= 5) promptCount = 1;
+            else if (duration <= 10) promptCount = chunk.text.length > 100 ? 2 : 1;
+            else if (duration <= 15) promptCount = 2;
+            else promptCount = 3;
+            
+            for (let i = 0; i < promptCount && promptIndex < currentImagePrompts.length; i++) {
               actionPrompts.push({
-                sceneIndex: index,
-                originalPrompt: prompt,
-                actionDescription: result.data.actionPrompts?.[index] || `Character performs action in scene ${index + 1}.`,
-                chunkText: "Script chunk not available"
+                sceneIndex: promptIndex,
+                originalPrompt: currentImagePrompts[promptIndex],
+                actionDescription: currentActionDescriptions[promptIndex] || `Character performs action in scene ${promptIndex + 1}.`,
+                chunkText: chunk.text,
+                chunkId: chunk.id,
+                chunkIndex: chunkIndex
               });
+              promptIndex++;
+            }
+          });
+        } else {
+          currentImagePrompts.forEach((prompt, index) => {
+            actionPrompts.push({
+              sceneIndex: index,
+              originalPrompt: prompt,
+              actionDescription: currentActionDescriptions[index] || `Character performs action in scene ${index + 1}.`,
+              chunkText: "Script chunk not available"
             });
+          });
+        }
+        return actionPrompts;
+      })();
+
+      console.log('--- ImageGenerationStep: Generated actionPrompts ---');
+      console.log(JSON.stringify(newActionPrompts, null, 2));
+
+      let updatedGeneratedImages = [...(storyData.generatedImages || [])];
+
+      if (isRegeneration && calledAiForPrompts) {
+        // If AI was called to get new prompts during a regeneration,
+        // then clear images associated with the *old* set of scene prompts.
+        const oldScenePrompts = new Set(storyData.imagePrompts || []); // storyData.imagePrompts here are the ones *before* AI call
+        updatedGeneratedImages = updatedGeneratedImages.filter(img => !oldScenePrompts.has(img.originalPrompt));
+        console.log('Regeneration with AI: Cleared images associated with old scene prompts. Remaining images:', updatedGeneratedImages.length);
+      } else if (isRegeneration && !calledAiForPrompts) {
+        console.log('Update Associations: Keeping all existing images for potential chunk data backfill.');
+        // No images are cleared in this case, we want to preserve them and update associations.
+      }
+
+      // Attempt to backfill chunkId and chunkIndex for existing images
+      // This runs regardless of whether AI was called, to ensure associations are up-to-date.
+      if (newActionPrompts.length > 0) {
+        updatedGeneratedImages = updatedGeneratedImages.map(image => {
+          if (image.originalPrompt && (image.chunkId === undefined || image.chunkIndex === undefined)) {
+            const matchingActionPrompt = newActionPrompts.find(ap => ap.originalPrompt === image.originalPrompt);
+            if (matchingActionPrompt) {
+              console.log(`Backfilling chunk info for image with prompt: ${image.originalPrompt.substring(0,30)}...`);
+              return {
+                ...image,
+                chunkId: matchingActionPrompt.chunkId,
+                chunkIndex: matchingActionPrompt.chunkIndex,
+              };
+            }
           }
-          
-          return actionPrompts;
-        })()
-      };
+          return image;
+        });
+        console.log('Attempted backfill of chunk info for existing images.');
+      }
       
-      updateStoryData({ 
-        imagePrompts: result.data.imagePrompts,
-        generatedImages: preservedImages,
-        actionPrompts: updatedStoryData.actionPrompts
+      updateStoryData({
+        imagePrompts: currentImagePrompts, // Use the (potentially existing) image prompts
+        generatedImages: updatedGeneratedImages,
+        actionPrompts: newActionPrompts
       });
-      setIsImagePromptEditing(Array(result.data.imagePrompts.length).fill(false));
+      setIsImagePromptEditing(Array(currentImagePrompts.length).fill(false));
       
-      // Auto-save the story with the new image prompts
       if (storyData.id && storyData.userId) {
         try {
-          await saveStory(updatedStoryData, storyData.userId);
-          console.log('Auto-saved story with new image prompts');
+          const finalStoryDataToSave = {
+            ...storyData,
+            imagePrompts: currentImagePrompts, // Save the potentially existing image prompts
+            generatedImages: updatedGeneratedImages,
+            actionPrompts: newActionPrompts,
+          };
+          await saveStory(finalStoryDataToSave, storyData.userId);
+          console.log('Auto-saved story. Image prompts count:', currentImagePrompts.length, 'Action prompts count:', newActionPrompts.length, 'Updated images count:', updatedGeneratedImages.length);
         } catch (error) {
-          console.error('Failed to auto-save story after image prompts generation:', error);
+          console.error('Failed to auto-save story after image prompts generation/update:', error);
         }
       }
       
@@ -199,16 +243,16 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
         setCurrentStep(5);
       }
       
-      toast({ 
-        title: isRegeneration ? 'Image Prompts Regenerated!' : 'Image Prompts Generated!', 
-        description: `${result.data.imagePrompts.length} scene prompts are ready. ${isRegeneration ? 'Previous images cleared.' : ''}`, 
-        className: 'bg-primary text-primary-foreground' 
+      toast({
+        title: isRegeneration ? 'Image Associations Updated!' : 'Image Prompts Generated!',
+        description: `${currentImagePrompts.length} scene prompts processed. Chunk associations updated for existing images.`,
+        className: 'bg-primary text-primary-foreground'
       });
-    } else {
-      toast({ 
-        title: 'Error', 
-        description: result.error || 'Failed to generate image prompts.', 
-        variant: 'destructive' 
+    } else { // This else now applies if currentImagePrompts is empty after attempt to get/use them
+      toast({
+        title: 'Error Processing Prompts',
+        description: 'Could not obtain or process image prompts.',
+        variant: 'destructive'
       });
     }
     handleSetLoading('imagePrompts', false);
@@ -250,6 +294,11 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
         chunkId: actionPrompt?.chunkId,
         chunkIndex: actionPrompt?.chunkIndex,
       };
+      
+      console.log(`--- ImageGenerationStep: Assigning to newImage (individual) for prompt "${prompt.substring(0,30)}..." ---`);
+      console.log('Found actionPrompt:', JSON.stringify(actionPrompt, null, 2));
+      console.log('Assigned chunkId:', newImage.chunkId);
+      console.log('Assigned chunkIndex:', newImage.chunkIndex);
       
       // Add to generatedImages, ensuring no duplicates
       const updatedImages = [
@@ -365,6 +414,11 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
           chunkId: actionPrompt.chunkId,
           chunkIndex: actionPrompt.chunkIndex,
         };
+
+        console.log(`--- ImageGenerationStep: Assigning to newImage (all) for prompt "${prompt.substring(0,30)}..." ---`);
+        console.log('Using actionPrompt:', JSON.stringify(actionPrompt, null, 2));
+        console.log('Assigned chunkId:', newImage.chunkId);
+        console.log('Assigned chunkIndex:', newImage.chunkIndex);
         
         const updatedImages = [
           ...(currentStoryData.generatedImages || []).filter(img => img.originalPrompt !== prompt),
@@ -635,7 +689,7 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
               className="w-full"
             >
               <RotateCcw className="mr-2 h-4 w-4" />
-              Regenerate All Prompts
+              Update Scene Associations
             </Button>
           )}
         </div>
@@ -820,12 +874,12 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction 
+            <AlertDialogAction
               onClick={handleRegenerateImagePrompts}
               className="bg-primary text-primary-foreground hover:bg-primary/90"
             >
               <RotateCcw className="mr-2 h-4 w-4" />
-              Regenerate Prompts
+              Update Associations
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
