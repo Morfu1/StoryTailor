@@ -121,55 +121,45 @@ export const parseNamedPrompts = (
 export const parseEntityReferences = (prompt: string, storyData: Story | null): string => {
   if (!storyData) return prompt;
   
-  // Extract all @Entity references
-  // Allow alphanumeric characters and dots in entity references
-  const entityReferences = prompt.match(/@[A-Za-z0-9.]+/g) || [];
-  let parsedPrompt = prompt;
+  // Allow alphanumeric characters and dots in entity references.
+  // Ensures that a trailing period (sentence punctuation) isn't captured as part of the name.
+  const entityRegex = /@([A-Za-z0-9]+(?:[.][A-Za-z0-9]+)*)/g;
 
-  console.log("[parseEntityReferences] Entity references found:", entityReferences);
   console.log("[parseEntityReferences] Input prompt:", prompt);
   console.log("[parseEntityReferences] Has character prompts:", !!storyData?.detailsPrompts?.characterPrompts);
 
-  // Get all actual entity names from the story
   const entityNames = extractEntityNames(storyData);
   console.log("[parseEntityReferences] Available entities:", entityNames);
 
-  // Process each entity reference
-  entityReferences.forEach((ref) => {
-    const entityName = ref.substring(1).trim(); // Remove @ symbol and trim
-    console.log(`[parseEntityReferences] Processing entity: ${entityName}`);
+  const characterPrompts = storyData?.detailsPrompts?.characterPrompts || "";
+  const locationPrompts = storyData?.detailsPrompts?.locationPrompts || "";
+  const itemPrompts = storyData?.detailsPrompts?.itemPrompts || "";
 
-    // Look for entity in character prompts
-    const characterPrompts =
-      storyData?.detailsPrompts?.characterPrompts || "";
-    const locationPrompts = storyData?.detailsPrompts?.locationPrompts || "";
-    const itemPrompts = storyData?.detailsPrompts?.itemPrompts || "";
+  const parsedPrompt = prompt.replace(entityRegex, (matchedRef, capturedName) => {
+    const originalRef = `@${capturedName}`; // Reconstruct the full @reference
+    console.log(`[parseEntityReferences] Processing entity reference: ${originalRef} (captured name: ${capturedName})`);
 
-    console.log(`[parseEntityReferences] Character prompts length:`, characterPrompts.length);
-    if (characterPrompts.length > 0) {
-      console.log(`[parseEntityReferences] Character prompts preview:`, characterPrompts.substring(0, 200));
-    }
-
-    // Find all entities and their descriptions
     let description = "";
-
-    // Find the matching actual entity name
     let actualEntityName: string | null = null;
     let entityType: 'character' | 'item' | 'location' | null = null;
 
     // Check characters
-    for (const characterName of entityNames.characters) {
-      if (nameToReference(characterName) === ref) {
-        actualEntityName = characterName;
+    for (const charName of entityNames.characters) {
+      const generatedRef = nameToReference(charName);
+      console.log(`[DEBUG] Comparing prompt ref "${originalRef}" (lowercase: "${originalRef.toLowerCase()}") with generated ref "${generatedRef}" (lowercase: "${generatedRef.toLowerCase()}") for character "${charName}" (Original: "${charName}")`);
+      if (generatedRef.toLowerCase() === originalRef.toLowerCase()) {
+        actualEntityName = charName;
         entityType = 'character';
         break;
       }
     }
 
-    // Check items if not found in characters
+    // Check items if not found
     if (!actualEntityName) {
       for (const itemName of entityNames.items) {
-        if (nameToReference(itemName) === ref) {
+        const generatedRef = nameToReference(itemName);
+        console.log(`[DEBUG] Comparing prompt ref "${originalRef}" (lowercase: "${originalRef.toLowerCase()}") with generated ref "${generatedRef}" (lowercase: "${generatedRef.toLowerCase()}") for item "${itemName}" (Original: "${itemName}")`);
+        if (generatedRef.toLowerCase() === originalRef.toLowerCase()) {
           actualEntityName = itemName;
           entityType = 'item';
           break;
@@ -177,47 +167,41 @@ export const parseEntityReferences = (prompt: string, storyData: Story | null): 
       }
     }
 
-    // Check locations if not found in items
+    // Check locations if not found
     if (!actualEntityName) {
-      for (const locationName of entityNames.locations) {
-        if (nameToReference(locationName) === ref) {
-          actualEntityName = locationName;
+      for (const locName of entityNames.locations) {
+        const generatedRef = nameToReference(locName);
+        console.log(`[DEBUG] Comparing prompt ref "${originalRef}" (lowercase: "${originalRef.toLowerCase()}") with generated ref "${generatedRef}" (lowercase: "${generatedRef.toLowerCase()}") for location "${locName}" (Original: "${locName}")`);
+        if (generatedRef.toLowerCase() === originalRef.toLowerCase()) {
+          actualEntityName = locName;
           entityType = 'location';
           break;
         }
       }
     }
 
-    console.log(`[parseEntityReferences] Found matching entity: "${actualEntityName}" of type: ${entityType}`);
+    console.log(`[parseEntityReferences] For ref "${originalRef}", found matching entity: "${actualEntityName}" of type: ${entityType}`);
 
     if (actualEntityName && entityType) {
-      // Get the appropriate prompts section
       const promptsSection = entityType === 'character' ? characterPrompts :
                             entityType === 'item' ? itemPrompts : locationPrompts;
-
-      // Find the description for this entity
       const entityPattern = new RegExp(
         actualEntityName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + "\\s*\\n+(.*?)(?=\\n\\n|$)",
         "s",
       );
       const entityMatch = promptsSection.match(entityPattern);
-
       if (entityMatch && entityMatch[1]) {
         description = entityMatch[1].trim();
-        console.log(`[parseEntityReferences] Found ${entityType} description for ${actualEntityName}:`, description.substring(0, 100));
+        console.log(`[parseEntityReferences] Found ${entityType} description for ${actualEntityName}: "${description.substring(0, 100)}..."`);
       }
     }
 
-
-
-    // Replace with the actual description if found
     if (description) {
-      parsedPrompt = parsedPrompt.replace(ref, description);
-      console.log(`[parseEntityReferences] Replaced ${ref} with description (${description.length} chars)`);
+      console.log(`[parseEntityReferences] Replacing "${originalRef}" with description (${description.length} chars)`);
+      return description; // Return the description for replacement
     } else {
-      console.log(
-        `[parseEntityReferences] No description found for ${entityName}, keeping original reference`,
-      );
+      console.log(`[parseEntityReferences] No description found for "${originalRef}", keeping original reference.`);
+      return originalRef; // Return the original reference if no description found
     }
   });
 
