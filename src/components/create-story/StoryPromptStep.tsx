@@ -1,10 +1,12 @@
+
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Bot, Loader2, FileText, Edit3, Save } from 'lucide-react';
+import { Bot, Loader2, FileText, Edit3, Save, Settings } from 'lucide-react'; // Added Settings
+import Link from 'next/link'; // Added Link
 import { generateTitle, generateScript, saveStory } from '@/actions/storyActions';
 import { prepareScriptChunksAI } from '@/utils/narrationUtils';
 import { useToast } from '@/hooks/use-toast';
@@ -25,21 +27,25 @@ export function StoryPromptStep({ storyState }: StoryPromptStepProps) {
     handleSetLoading,
     setCurrentStep,
     isScriptManuallyEditing,
-    setIsScriptManuallyEditing
+    setIsScriptManuallyEditing,
+    userApiKeys, // Get userApiKeys from storyState
+    apiKeysLoading // Get apiKeysLoading from storyState
   } = storyState;
 
   const [activeTab, setActiveTab] = useState('ai-generate');
   const [manualScript, setManualScript] = useState(storyData.generatedScript || '');
   const [isAutoSaving, setIsAutoSaving] = useState(false);
 
-  // Auto-save function for manual script entry
+  const googleKeyMissing = !apiKeysLoading && !userApiKeys?.googleApiKey;
+
   const autoSaveStory = useCallback(
     debounce(async (title: string, script: string) => {
       if (!title.trim() || !script.trim() || !storyData.userId) return;
-      
+      if (googleKeyMissing && activeTab === 'ai-generate') return; // Don't autosave if key is missing for AI mode
+
       setIsAutoSaving(true);
       try {
-        const narrationChunks = await prepareScriptChunksAI(script);
+        const narrationChunks = await prepareScriptChunksAI(script, storyData.userId);
         
         const updatedStoryData = {
           ...storyData,
@@ -71,16 +77,19 @@ export function StoryPromptStep({ storyState }: StoryPromptStepProps) {
             });
           }
         }
-      } catch (error) {
-        console.error('Auto-save error:', error);
+      } catch (error: any) {
+        if (error.message && error.message.toLowerCase().includes("api key not configured")) {
+           toast({ title: "Action Required", description: "Google API key needed to prepare script chunks. Please set it in Account Settings.", variant: "destructive" });
+        } else {
+           console.error('Auto-save error:', error);
+        }
       } finally {
         setIsAutoSaving(false);
       }
     }, 2000),
-    [storyData, updateStoryData, toast]
+    [storyData, updateStoryData, toast, googleKeyMissing, activeTab]
   );
 
-  // Handle manual script changes
   const handleManualScriptChange = (value: string) => {
     setManualScript(value);
     if (storyData.title.trim() && value.trim()) {
@@ -88,7 +97,6 @@ export function StoryPromptStep({ storyState }: StoryPromptStepProps) {
     }
   };
 
-  // Handle title changes for manual mode
   const handleTitleChange = (value: string) => {
     updateStoryData({ title: value });
     if (value.trim() && manualScript.trim() && activeTab === 'manual') {
@@ -97,6 +105,10 @@ export function StoryPromptStep({ storyState }: StoryPromptStepProps) {
   };
 
   const handleGenerateScript = async () => {
+    if (googleKeyMissing) {
+      toast({ title: 'API Key Required', description: 'Please configure your Google API Key in Account Settings to generate scripts.', variant: 'destructive' });
+      return;
+    }
     if (!storyData.userPrompt.trim()) {
       toast({ title: 'Missing Prompt', description: 'Please enter a story prompt.', variant: 'destructive' });
       return;
@@ -108,7 +120,7 @@ export function StoryPromptStep({ storyState }: StoryPromptStepProps) {
     let currentTitle = storyData.title;
     if (!currentTitle.trim() && storyData.userPrompt.trim()) {
       handleSetLoading('titleGen', true);
-      const titleResult = await generateTitle({ userPrompt: storyData.userPrompt });
+      const titleResult = await generateTitle({ userPrompt: storyData.userPrompt, userId: storyData.userId });
       handleSetLoading('titleGen', false);
       if (titleResult.success && titleResult.data?.title) {
         currentTitle = titleResult.data.title;
@@ -124,12 +136,11 @@ export function StoryPromptStep({ storyState }: StoryPromptStepProps) {
       }
     }
     
-    const scriptResult = await generateScript({ prompt: storyData.userPrompt });
+    const scriptResult = await generateScript({ prompt: storyData.userPrompt, userId: storyData.userId });
     if (scriptResult.success && scriptResult.data) {
-      // Split the script into chunks for narration using AI
       const scriptText = scriptResult.data.script;
       handleSetLoading('scriptChunks', true);
-      const narrationChunks = await prepareScriptChunksAI(scriptText);
+      const narrationChunks = await prepareScriptChunksAI(scriptText, storyData.userId);
       handleSetLoading('scriptChunks', false);
       
       const updatedStoryData = {
@@ -143,7 +154,6 @@ export function StoryPromptStep({ storyState }: StoryPromptStepProps) {
         narrationChunks
       });
       
-      // Auto-save the story with the new script
       if (storyData.userId) {
         try {
           handleSetLoading('save', true);
@@ -151,9 +161,6 @@ export function StoryPromptStep({ storyState }: StoryPromptStepProps) {
           handleSetLoading('save', false);
           
           if (saveResult.success) {
-            console.log('Auto-saved story with new script', saveResult);
-            
-            // If this was the first save, update the story ID
             if (saveResult.storyId && !storyData.id) {
               updateStoryData({ id: saveResult.storyId });
               toast({
@@ -161,11 +168,8 @@ export function StoryPromptStep({ storyState }: StoryPromptStepProps) {
                 description: 'Your story has been automatically saved to your account.',
                 className: 'bg-green-500 text-white'
               });
-            } else {
-              console.log('Story auto-updated');
             }
           } else {
-            console.error('Failed to auto-save story:', saveResult.error);
             toast({
               title: 'Auto-Save Failed',
               description: saveResult.error || 'Could not save your story. Please use the Save button below.',
@@ -187,6 +191,10 @@ export function StoryPromptStep({ storyState }: StoryPromptStepProps) {
   };
 
   const handleContinueWithManualScript = async () => {
+    if (googleKeyMissing) { // Also check for Google key for chunking
+      toast({ title: 'API Key Required', description: 'Google API Key needed for script processing. Please set it in Account Settings.', variant: 'destructive' });
+      return;
+    }
     if (!storyData.title.trim()) {
       toast({ title: 'Missing Title', description: 'Please enter a story title.', variant: 'destructive' });
       return;
@@ -198,7 +206,7 @@ export function StoryPromptStep({ storyState }: StoryPromptStepProps) {
 
     handleSetLoading('scriptChunks', true);
     try {
-      const narrationChunks = await prepareScriptChunksAI(manualScript);
+      const narrationChunks = await prepareScriptChunksAI(manualScript, storyData.userId);
       
       updateStoryData({
         generatedScript: manualScript,
@@ -228,13 +236,13 @@ export function StoryPromptStep({ storyState }: StoryPromptStepProps) {
         description: 'Your story script has been processed.',
         className: 'bg-primary text-primary-foreground' 
       });
-    } catch (error) {
-      console.error('Error processing manual script:', error);
-      toast({ 
-        title: 'Processing Error', 
-        description: 'Failed to process your script. Please try again.',
-        variant: 'destructive' 
-      });
+    } catch (error: any) {
+      if (error.message && error.message.toLowerCase().includes("api key not configured")) {
+        toast({ title: "Action Required", description: "Google API key needed to process script chunks. Please set it in Account Settings.", variant: "destructive" });
+      } else {
+        console.error('Error processing manual script:', error);
+        toast({ title: 'Processing Error', description: 'Failed to process your script. Please try again.', variant: 'destructive' });
+      }
     } finally {
       handleSetLoading('scriptChunks', false);
     }
@@ -272,7 +280,7 @@ export function StoryPromptStep({ storyState }: StoryPromptStepProps) {
                 placeholder="Enter a title for your story (or we'll generate one)"
                 value={storyData.title}
                 onChange={(e) => updateStoryData({ title: e.target.value })}
-                disabled={isLoading.script || isLoading.titleGen}
+                disabled={isLoading.script || isLoading.titleGen || apiKeysLoading}
               />
             </div>
 
@@ -284,19 +292,19 @@ export function StoryPromptStep({ storyState }: StoryPromptStepProps) {
                 value={storyData.userPrompt}
                 onChange={(e) => updateStoryData({ userPrompt: e.target.value })}
                 rows={4}
-                disabled={isLoading.script}
+                disabled={isLoading.script || apiKeysLoading}
               />
             </div>
 
             <Button 
               onClick={handleGenerateScript}
-              disabled={!storyData.userPrompt.trim() || isLoading.script}
+              disabled={!storyData.userPrompt.trim() || isLoading.script || apiKeysLoading || googleKeyMissing}
               className="w-full"
             >
-              {isLoading.script ? (
+              {isLoading.script || apiKeysLoading ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Generating Story...
+                  {apiKeysLoading ? "Checking API Keys..." : "Generating Story..."}
                 </>
               ) : (
                 <>
@@ -305,6 +313,11 @@ export function StoryPromptStep({ storyState }: StoryPromptStepProps) {
                 </>
               )}
             </Button>
+            {googleKeyMissing && (
+              <p className="text-xs text-destructive text-center mt-2">
+                Google API Key required for AI script generation. Please set it in <Link href="/settings" className="underline">Account Settings</Link>.
+              </p>
+            )}
 
             {storyData.generatedScript && (
               <div className="mt-6 space-y-3">
@@ -347,7 +360,7 @@ export function StoryPromptStep({ storyState }: StoryPromptStepProps) {
                   placeholder="Enter your story title"
                   value={storyData.title}
                   onChange={(e) => handleTitleChange(e.target.value)}
-                  disabled={isLoading.scriptChunks || isLoading.save}
+                  disabled={isLoading.scriptChunks || isLoading.save || apiKeysLoading}
                 />
                 {isAutoSaving && (
                   <div className="absolute right-2 top-1/2 transform -translate-y-1/2">
@@ -366,7 +379,7 @@ export function StoryPromptStep({ storyState }: StoryPromptStepProps) {
                   value={manualScript}
                   onChange={(e) => handleManualScriptChange(e.target.value)}
                   rows={12}
-                  disabled={isLoading.scriptChunks || isLoading.save}
+                  disabled={isLoading.scriptChunks || isLoading.save || apiKeysLoading}
                   className="text-sm"
                 />
                 {isAutoSaving && (
@@ -385,13 +398,13 @@ export function StoryPromptStep({ storyState }: StoryPromptStepProps) {
 
             <Button 
               onClick={handleContinueWithManualScript}
-              disabled={!storyData.title.trim() || !manualScript.trim() || isLoading.scriptChunks || isLoading.save}
+              disabled={!storyData.title.trim() || !manualScript.trim() || isLoading.scriptChunks || isLoading.save || apiKeysLoading || googleKeyMissing}
               className="w-full"
             >
-              {isLoading.scriptChunks || isLoading.save ? (
+              {isLoading.scriptChunks || isLoading.save || apiKeysLoading ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Processing Script...
+                  {apiKeysLoading ? "Checking API Keys..." : "Processing Script..."}
                 </>
               ) : (
                 <>
@@ -400,9 +413,15 @@ export function StoryPromptStep({ storyState }: StoryPromptStepProps) {
                 </>
               )}
             </Button>
+            {googleKeyMissing && (
+              <p className="text-xs text-destructive text-center mt-2">
+                Google API Key required for script processing. Please set it in <Link href="/settings" className="underline">Account Settings</Link>.
+              </p>
+            )}
           </TabsContent>
         </Tabs>
       </CardContent>
     </Card>
   );
 }
+

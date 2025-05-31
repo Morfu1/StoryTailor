@@ -1,6 +1,8 @@
+
 import { useState, useCallback } from 'react';
 import type { Story, ElevenLabsVoice } from '@/types/story';
 import { initialStoryState } from '@/constants/storyDefaults';
+import type { UserApiKeys } from '@/types/apiKeys';
 
 export interface UseStoryStateReturn {
   storyData: Story;
@@ -76,6 +78,12 @@ export interface UseStoryStateReturn {
   setCurrentNarrationChunkIndex: (index: number) => void;
   processingAllMode: boolean;
   setProcessingAllMode: (mode: boolean) => void;
+
+  // API Key states
+  userApiKeys: UserApiKeys | null;
+  setUserApiKeys: (keys: UserApiKeys | null) => void;
+  apiKeysLoading: boolean;
+  setApiKeysLoading: (loading: boolean) => void;
 }
 
 export const useStoryState = (userId?: string): UseStoryStateReturn => {
@@ -109,6 +117,10 @@ export const useStoryState = (userId?: string): UseStoryStateReturn => {
     generating: number[];
   }>({ total: 0, completed: 0, generating: [] });
 
+  const [userApiKeys, setUserApiKeysState] = useState<UserApiKeys | null>(null);
+  const [apiKeysLoading, setApiKeysLoadingState] = useState<boolean>(true);
+
+
   const updateStoryData = useCallback((updates: Partial<Story>) => {
     setStoryDataState(prev => ({ ...prev, ...updates }));
   }, []);
@@ -119,6 +131,14 @@ export const useStoryState = (userId?: string): UseStoryStateReturn => {
 
   const handleSetLoading = useCallback((key: string, value: boolean) => {
     setIsLoading(prev => ({ ...prev, [key]: value }));
+  }, []);
+
+  const setUserApiKeys = useCallback((keys: UserApiKeys | null) => {
+    setUserApiKeysState(keys);
+  }, []);
+
+  const setApiKeysLoading = useCallback((loading: boolean) => {
+    setApiKeysLoadingState(loading);
   }, []);
 
   // Initialize userId if provided
@@ -185,5 +205,11 @@ export const useStoryState = (userId?: string): UseStoryStateReturn => {
     setCurrentNarrationChunkIndex,
     processingAllMode,
     setProcessingAllMode,
+
+    userApiKeys,
+    setUserApiKeys,
+    apiKeysLoading,
+    setApiKeysLoading,
   };
 };
+

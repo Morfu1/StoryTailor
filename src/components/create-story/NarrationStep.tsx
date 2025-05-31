@@ -1,9 +1,11 @@
+
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
-import { Mic, Loader2, Play, Pause, RefreshCw, StopCircle } from 'lucide-react';
+import { Mic, Loader2, Play, Pause, RefreshCw, StopCircle, Settings } from 'lucide-react'; // Added Settings
+import Link from 'next/link'; // Added Link
 import { VoiceSelector } from './VoiceSelector';
 import { NarrationChunkPlayer } from './NarrationChunkPlayer';
 import { useNarrationGeneration } from '@/hooks/useNarrationGeneration';
@@ -24,13 +26,24 @@ export function NarrationStep({ storyState }: NarrationStepProps) {
     narrationSource,
     processingAllMode,
     setProcessingAllMode,
-    currentNarrationChunkIndex
+    currentNarrationChunkIndex,
+    userApiKeys, // Get userApiKeys
+    apiKeysLoading, // Get apiKeysLoading
+    selectedTtsModel
   } = storyState;
 
   const handleGenerateAllNarration = () => {
     setProcessingAllMode(true);
-    handleGenerateNarration(); // No specific index means "generate all"
+    handleGenerateNarration(); 
   };
+
+  const elevenLabsKeyMissing = selectedTtsModel === 'elevenlabs' && !apiKeysLoading && !userApiKeys?.elevenLabsApiKey;
+  const googleKeyMissingForTTS = selectedTtsModel === 'google' && !apiKeysLoading && !userApiKeys?.googleApiKey && !userApiKeys?.geminiApiKey;
+  const googleKeyMissingForChunks = !apiKeysLoading && !userApiKeys?.googleApiKey; // Chunking always uses Google API Key
+
+  const canGenerate = narrationSource === 'generate' && !apiKeysLoading &&
+    !(selectedTtsModel === 'elevenlabs' && !userApiKeys?.elevenLabsApiKey) &&
+    !(selectedTtsModel === 'google' && (!userApiKeys?.googleApiKey && !userApiKeys?.geminiApiKey));
 
   if (!storyData.detailsPrompts) {
     return (
@@ -90,6 +103,18 @@ export function NarrationStep({ storyState }: NarrationStepProps) {
 
         <VoiceSelector storyState={storyState} />
 
+        { (elevenLabsKeyMissing || googleKeyMissingForTTS) && narrationSource === 'generate' && (
+           <p className="text-xs text-destructive text-center">
+             {selectedTtsModel === 'elevenlabs' ? 'ElevenLabs' : 'Google'} API Key required for narration generation. Please set it in <Link href="/settings" className="underline">Account Settings</Link>.
+           </p>
+        )}
+        { googleKeyMissingForChunks && (!storyData.narrationChunks || storyData.narrationChunks.length === 0) && (
+           <p className="text-xs text-destructive text-center">
+             Google API Key required for initial script chunking. Please set it in <Link href="/settings" className="underline">Account Settings</Link>.
+           </p>
+        )}
+
+
         {storyData.narrationChunks && storyData.narrationChunks.length > 0 && (
           <div className="space-y-4">
             <div className="space-y-2">
@@ -106,9 +131,9 @@ export function NarrationStep({ storyState }: NarrationStepProps) {
                       <Button
                         variant="outline"
                         size="sm"
-                        disabled={isLoading.scriptChunksUpdate}
+                        disabled={isLoading.scriptChunksUpdate || apiKeysLoading || googleKeyMissingForChunks}
                       >
-                        {isLoading.scriptChunksUpdate ? (
+                        {isLoading.scriptChunksUpdate || apiKeysLoading ? (
                           <Loader2 className="h-3 w-3 animate-spin" />
                         ) : (
                           <RefreshCw className="h-3 w-3" />
@@ -123,11 +148,12 @@ export function NarrationStep({ storyState }: NarrationStepProps) {
                           <strong className="block mt-2 text-destructive">
                             Warning: All existing voice generations will be cleared and need to be regenerated.
                           </strong>
+                           {googleKeyMissingForChunks && <span className="block mt-2 text-destructive">Google API Key is required for this.</span>}
                         </AlertDialogDescription>
                       </AlertDialogHeader>
                       <AlertDialogFooter>
                         <AlertDialogCancel>Cancel</AlertDialogCancel>
-                        <AlertDialogAction onClick={handleRegenerateChunks}>
+                        <AlertDialogAction onClick={handleRegenerateChunks} disabled={googleKeyMissingForChunks}>
                           Regenerate Chunks
                         </AlertDialogAction>
                       </AlertDialogFooter>
@@ -143,7 +169,7 @@ export function NarrationStep({ storyState }: NarrationStepProps) {
                 {!processingAllMode ? (
                   <Button 
                     onClick={handleGenerateAllNarration}
-                    disabled={isLoading.narration}
+                    disabled={isLoading.narration || apiKeysLoading || !canGenerate}
                     className="flex-1"
                   >
                     <Mic className="mr-2 h-4 w-4" />
@@ -203,13 +229,13 @@ export function NarrationStep({ storyState }: NarrationStepProps) {
               Your script is ready to be split into narration chunks.
             </p>
             <Button 
-              onClick={handleGenerateAllNarration}
-              disabled={isLoading.narration}
+              onClick={handleGenerateAllNarration} // This will first trigger chunk preparation
+              disabled={isLoading.narration || apiKeysLoading || googleKeyMissingForChunks}
             >
-              {isLoading.narration ? (
+              {isLoading.narration || apiKeysLoading ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Preparing Chunks...
+                  {apiKeysLoading ? "Checking API Keys..." : "Preparing Chunks..."}
                 </>
               ) : (
                 <>
@@ -218,9 +244,15 @@ export function NarrationStep({ storyState }: NarrationStepProps) {
                 </>
               )}
             </Button>
+            {googleKeyMissingForChunks && (
+               <p className="text-xs text-destructive text-center mt-2">
+                 Google API Key required to prepare script chunks. Please set it in <Link href="/settings" className="underline">Account Settings</Link>.
+               </p>
+            )}
           </div>
         )}
       </CardContent>
     </Card>
   );
 }
+

@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useAuth } from '@/components/auth-provider';
@@ -15,10 +16,10 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from '@/components/ui/button';
-import { cleanupBrokenImages, getStory, deleteStory } from '@/actions/storyActions';
+import { cleanupBrokenImages, getStory, deleteStory, getUserApiKeys } from '@/actions/storyActions'; // Added getUserApiKeys
 import { prepareScriptChunksAI } from '@/utils/narrationUtils';
 import { determineCurrentStep } from '@/utils/storyHelpers';
-import { Loader2, RefreshCw, Trash2, Save, Film, Download } from 'lucide-react';
+import { Loader2, RefreshCw, Trash2, Save, Film, Download, Settings } from 'lucide-react'; // Added Settings icon
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
@@ -59,10 +60,39 @@ export default function CreateStoryPage() {
     setNarrationSource,
     setUploadedAudioFileName,
     setIsImagePromptEditing,
-    handleSetLoading
+    handleSetLoading,
+    userApiKeys, // Get from storyState
+    setUserApiKeys, // Setter for storyState
+    apiKeysLoading, // Loading state for API keys from storyState
+    setApiKeysLoading // Setter for loading state
   } = storyState;
 
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+
+  // Fetch User API Keys
+  useEffect(() => {
+    if (user && !userApiKeys && !apiKeysLoading) {
+      setApiKeysLoading(true);
+      handleSetLoading('userApiKeys', true); // Use a specific loading key if preferred
+      getUserApiKeys(user.uid).then(result => {
+        if (result.success && result.data) {
+          setUserApiKeys(result.data);
+        } else {
+          setUserApiKeys({}); // Set to empty object if fetch fails or no keys
+          toast({ title: "Could not load your API keys", description: result.error || "Please configure them in Account Settings.", variant: "default" });
+        }
+        setApiKeysLoading(false);
+        handleSetLoading('userApiKeys', false);
+      }).catch(err => {
+        console.error("Error fetching user API keys:", err);
+        setUserApiKeys({});
+        setApiKeysLoading(false);
+        handleSetLoading('userApiKeys', false);
+        toast({ title: "Error Loading API Keys", description: "An unexpected error occurred.", variant: "destructive" });
+      });
+    }
+  }, [user, userApiKeys, apiKeysLoading, setUserApiKeys, setApiKeysLoading, handleSetLoading, toast]);
+
 
   // Handle authentication and story loading
   useEffect(() => {
@@ -83,9 +113,8 @@ export default function CreateStoryPage() {
             let loadedStory = response.data;
             console.log('=== LOADED STORY FROM FIRESTORE ===');
             console.log('Story ID:', storyId);
-            console.log('Full story data:', loadedStory);
+            // console.log('Full story data:', loadedStory); // Avoid logging full story data
 
-            // Handle timestamp conversion
             if (loadedStory.createdAt && !(loadedStory.createdAt instanceof Date)) {
               loadedStory.createdAt = (loadedStory.createdAt as any).toDate();
             }
@@ -93,11 +122,10 @@ export default function CreateStoryPage() {
               loadedStory.updatedAt = (loadedStory.updatedAt as any).toDate();
             }
             
-            // Proactively prepare text chunks if script exists but chunks don't
             if (loadedStory.generatedScript && (!loadedStory.narrationChunks || loadedStory.narrationChunks.length === 0)) {
               console.log("Loaded story has script but no narration chunks. Attempting to prepare them now...");
               try {
-                const newNarrationChunks = await prepareScriptChunksAI(loadedStory.generatedScript);
+                const newNarrationChunks = await prepareScriptChunksAI(loadedStory.generatedScript, user.uid); // Pass userId
                 if (newNarrationChunks.length > 0) {
                   loadedStory = { ...loadedStory, narrationChunks: newNarrationChunks };
                   toast({ 
@@ -113,18 +141,18 @@ export default function CreateStoryPage() {
                     variant: 'default'
                   });
                 }
-              } catch (error) {
-                console.error("Error proactively preparing chunks for loaded story:", error);
+              } catch (error: any) {
+                 // Check if the error is due to missing API key
+                if (error.message && error.message.toLowerCase().includes("api key not configured")) {
+                   toast({ title: "Action Required", description: "Google API key needed to prepare script chunks. Please set it in Account Settings.", variant: "destructive" });
+                } else {
+                  console.error("Error proactively preparing chunks for loaded story:", error);
+                  toast({ title: 'Chunk Preparation Error', description: 'Failed to auto-prepare text chunks.', variant: 'destructive' });
+                }
                 loadedStory = { ...loadedStory, narrationChunks: [] };
-                toast({ 
-                  title: 'Chunk Preparation Error', 
-                  description: 'Failed to auto-prepare text chunks.', 
-                  variant: 'destructive'
-                });
               }
             }
             
-            // Auto-clean corrupted images before setting state
             if (loadedStory.generatedImages && Array.isArray(loadedStory.generatedImages)) {
               const cleanImages = loadedStory.generatedImages.filter(img => 
                 img.imageUrl && !img.imageUrl.includes('.mp3')
@@ -138,7 +166,6 @@ export default function CreateStoryPage() {
             
             setStoryData(loadedStory);
 
-            // Set up voice and audio states
             if (loadedStory.elevenLabsVoiceId) {
               setSelectedVoiceId(loadedStory.elevenLabsVoiceId);
               setNarrationSource('generate');
@@ -147,7 +174,6 @@ export default function CreateStoryPage() {
               setUploadedAudioFileName("Previously uploaded audio (legacy)");
             }
 
-            // Determine initial step based on completion status
             initialStep = determineCurrentStep(loadedStory);
             setCurrentStep(initialStep);
             setActiveAccordionItem(`step-${initialStep}`);
@@ -180,15 +206,13 @@ export default function CreateStoryPage() {
       setCurrentStep(initialStep);
       setActiveAccordionItem(`step-${initialStep}`);
     }
-  }, [storyId, user, router, toast, authLoading]);
+  }, [storyId, user, router, toast, authLoading, setPageLoading, setFirebaseError, setStoryData, setSelectedVoiceId, setNarrationSource, setUploadedAudioFileName, setCurrentStep, setActiveAccordionItem, setIsImagePromptEditing]);
 
-  // Track the last auto-expanded step to avoid conflicts with manual control
+
   const lastAutoExpandedStep = useRef(currentStep);
   
-  // Only auto-expand accordion when step changes due to completing a step
   useEffect(() => {
     const newValue = `step-${currentStep}`;
-    // Only auto-expand if currentStep increased (step completion) and it's different from last auto-expanded
     if (currentStep > lastAutoExpandedStep.current) {
       lastAutoExpandedStep.current = currentStep;
       setActiveAccordionItem(newValue);
@@ -207,7 +231,6 @@ export default function CreateStoryPage() {
           description: 'Corrupted images have been removed.', 
           className: 'bg-green-500 text-white' 
         });
-        // Reload the story to reflect changes
         if (storyId) {
           const reloadResult = await getStory(storyId, storyData.userId);
           if (reloadResult.success && reloadResult.data) {
@@ -248,7 +271,6 @@ export default function CreateStoryPage() {
           description: 'Your story has been permanently deleted.', 
           className: 'bg-green-500 text-white' 
         });
-        // Redirect to dashboard after successful deletion
         router.push('/dashboard');
       } else {
         toast({ 
@@ -269,11 +291,12 @@ export default function CreateStoryPage() {
     setIsDeleteConfirmOpen(false);
   };
 
-  if (authLoading || pageLoading) {
+  if (authLoading || pageLoading || apiKeysLoading) { // Added apiKeysLoading
     return (
       <div className="container mx-auto px-4 py-8">
         <div className="flex items-center justify-center h-64">
           <Loader2 className="h-8 w-8 animate-spin" />
+          <p className="ml-2">{apiKeysLoading ? "Loading API key status..." : "Loading story..."}</p>
         </div>
       </div>
     );
@@ -295,11 +318,22 @@ export default function CreateStoryPage() {
       </div>
     );
   }
+  
+  // Generic message for missing API keys
+  const MissingApiKeyMessage = () => (
+    <div className="mt-2 p-3 bg-yellow-100 border border-yellow-300 text-yellow-700 rounded-md text-sm">
+      One or more API keys required for this step are missing. Please configure them in your{' '}
+      <Link href="/settings" className="font-semibold underline hover:text-yellow-800">
+        Account Settings <Settings size={14} className="inline-block ml-1" />
+      </Link>
+      .
+    </div>
+  );
+
 
   return (
     <div className="container mx-auto px-4 py-8 max-w-4xl">
       <div className="space-y-6">
-        {/* Header */}
         <div className="text-center space-y-2">
           <h1 className="text-3xl font-bold">{storyData.title || "Create Your Story"}</h1>
           <p className="text-muted-foreground">
@@ -307,7 +341,6 @@ export default function CreateStoryPage() {
           </p>
         </div>
 
-        {/* Story Creation Steps */}
         <Accordion 
           type="single" 
           value={activeAccordionItem} 
@@ -328,6 +361,7 @@ export default function CreateStoryPage() {
             </AccordionTrigger>
             <AccordionContent className="px-6 pb-6">
               <StoryPromptStep storyState={storyState} />
+              {!userApiKeys?.googleApiKey && !apiKeysLoading && <MissingApiKeyMessage />}
             </AccordionContent>
           </AccordionItem>
 
@@ -344,6 +378,7 @@ export default function CreateStoryPage() {
             </AccordionTrigger>
             <AccordionContent className="px-6 pb-6">
               <StoryDetailsStep storyState={storyState} />
+               {!userApiKeys?.googleApiKey && !apiKeysLoading && <MissingApiKeyMessage />}
             </AccordionContent>
           </AccordionItem>
 
@@ -360,6 +395,10 @@ export default function CreateStoryPage() {
             </AccordionTrigger>
             <AccordionContent className="px-6 pb-6">
               <NarrationStep storyState={storyState} />
+              {storyState.narrationSource === 'generate' && 
+               ((storyState.selectedTtsModel === 'elevenlabs' && !userApiKeys?.elevenLabsApiKey) || 
+                (storyState.selectedTtsModel === 'google' && !userApiKeys?.googleApiKey)) && 
+               !apiKeysLoading && <MissingApiKeyMessage />}
             </AccordionContent>
           </AccordionItem>
 
@@ -376,6 +415,11 @@ export default function CreateStoryPage() {
             </AccordionTrigger>
             <AccordionContent className="px-6 pb-6">
               <ImageGenerationStep storyState={storyState} />
+              {((!userApiKeys?.googleApiKey) || // For prompt generation
+                (storyState.imageProvider === 'picsart' && !userApiKeys?.picsartApiKey) ||
+                (storyState.imageProvider === 'gemini' && !userApiKeys?.geminiApiKey) ||
+                (storyState.imageProvider === 'imagen3' && !userApiKeys?.googleApiKey) 
+              ) && !apiKeysLoading && <MissingApiKeyMessage />}
             </AccordionContent>
           </AccordionItem>
 
@@ -396,7 +440,6 @@ export default function CreateStoryPage() {
           </AccordionItem>
         </Accordion>
 
-        {/* Persistent Action Buttons */}
         <div className="flex gap-3 pt-4 border-t flex-wrap">
           <Button 
             onClick={async () => {
@@ -524,7 +567,6 @@ export default function CreateStoryPage() {
           )}
         </div>
 
-        {/* Cleanup Dialog */}
         <AlertDialog open={isSaveConfirmOpen} onOpenChange={setIsSaveConfirmOpen}>
           <AlertDialogContent>
             <AlertDialogHeader>
@@ -543,7 +585,6 @@ export default function CreateStoryPage() {
           </AlertDialogContent>
         </AlertDialog>
 
-        {/* Delete Story Dialog */}
         <AlertDialog open={isDeleteConfirmOpen} onOpenChange={setIsDeleteConfirmOpen}>
           <AlertDialogContent>
             <AlertDialogHeader>
@@ -568,3 +609,4 @@ export default function CreateStoryPage() {
     </div>
   );
 }
+

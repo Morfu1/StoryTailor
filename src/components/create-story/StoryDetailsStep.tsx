@@ -1,10 +1,12 @@
+
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Users, Loader2, Edit2, RefreshCw } from 'lucide-react';
+import { Users, Loader2, Edit2, RefreshCw, Settings } from 'lucide-react'; // Added Settings
+import Link from 'next/link'; // Added Link
 import { generateCharacterPrompts, saveStory } from '@/actions/storyActions';
 import { useToast } from '@/hooks/use-toast';
 import type { UseStoryStateReturn } from '@/hooks/useStoryState';
@@ -32,10 +34,18 @@ export function StoryDetailsStep({ storyState }: StoryDetailsStepProps) {
     isLocationPromptsEditing,
     setIsLocationPromptsEditing,
     imageProvider,
-    setImageProvider
+    setImageProvider,
+    userApiKeys, // Get userApiKeys
+    apiKeysLoading // Get apiKeysLoading
   } = storyState;
 
+  const googleKeyMissing = !apiKeysLoading && !userApiKeys?.googleApiKey;
+
   const handleGenerateDetails = async () => {
+    if (googleKeyMissing) {
+      toast({ title: 'API Key Required', description: 'Please configure your Google API Key in Account Settings to generate details.', variant: 'destructive' });
+      return;
+    }
     if (!storyData.generatedScript) return;
     handleSetLoading('details', true);
     setIsCharacterPromptsEditing(false);
@@ -46,6 +56,7 @@ export function StoryDetailsStep({ storyState }: StoryDetailsStepProps) {
       script: storyData.generatedScript,
       imageStyleId: storyData.imageStyleId,
       imageProvider: imageProvider,
+      userId: storyData.userId, // Pass userId
     });
     if (result.success && result.data) {
       const updatedStoryData = {
@@ -55,7 +66,6 @@ export function StoryDetailsStep({ storyState }: StoryDetailsStepProps) {
       
       updateStoryData({ detailsPrompts: result.data as StoryCharacterLocationItemPrompts });
       
-      // Auto-save the story with the new details
       if (storyData.id && storyData.userId) {
         try {
           await saveStory(updatedStoryData, storyData.userId);
@@ -74,6 +84,10 @@ export function StoryDetailsStep({ storyState }: StoryDetailsStepProps) {
   };
 
   const handleRegeneratePrompts = async () => {
+    if (googleKeyMissing) {
+      toast({ title: 'API Key Required', description: 'Please configure your Google API Key in Account Settings to regenerate prompts.', variant: 'destructive' });
+      return;
+    }
     if (!storyData.generatedScript) return;
     handleSetLoading('details', true);
     
@@ -81,6 +95,7 @@ export function StoryDetailsStep({ storyState }: StoryDetailsStepProps) {
       script: storyData.generatedScript,
       imageStyleId: storyData.imageStyleId,
       imageProvider: imageProvider,
+      userId: storyData.userId, // Pass userId
     });
     if (result.success && result.data) {
       const updatedStoryData = {
@@ -90,7 +105,6 @@ export function StoryDetailsStep({ storyState }: StoryDetailsStepProps) {
       
       updateStoryData({ detailsPrompts: result.data as StoryCharacterLocationItemPrompts });
       
-      // Auto-save the story with the new details
       if (storyData.id && storyData.userId) {
         try {
           await saveStory(updatedStoryData, storyData.userId);
@@ -139,11 +153,14 @@ export function StoryDetailsStep({ storyState }: StoryDetailsStepProps) {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        {/* AI Model and Art Style Selection */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 border rounded-md bg-muted/50">
           <div className="space-y-2">
             <Label>Image Provider for Details</Label>
-            <Select value={imageProvider} onValueChange={(value: 'picsart' | 'gemini' | 'imagen3') => setImageProvider(value)}>
+            <Select 
+              value={imageProvider} 
+              onValueChange={(value: 'picsart' | 'gemini' | 'imagen3') => setImageProvider(value)}
+              disabled={apiKeysLoading}
+            >
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
@@ -160,6 +177,7 @@ export function StoryDetailsStep({ storyState }: StoryDetailsStepProps) {
             <Select 
               value={storyData.imageStyleId || DEFAULT_STYLE_ID} 
               onValueChange={(value: ImageStyleId) => updateStoryData({ imageStyleId: value })}
+              disabled={apiKeysLoading}
             >
               <SelectTrigger>
                 <SelectValue />
@@ -181,13 +199,13 @@ export function StoryDetailsStep({ storyState }: StoryDetailsStepProps) {
         <div className="flex gap-2">
           <Button 
             onClick={handleGenerateDetails}
-            disabled={isLoading.details}
+            disabled={isLoading.details || apiKeysLoading || googleKeyMissing}
             className="flex-1"
           >
-            {isLoading.details ? (
+            {isLoading.details || apiKeysLoading ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Generating Details...
+                {apiKeysLoading ? "Checking API Keys..." : "Generating Details..."}
               </>
             ) : (
               <>
@@ -200,12 +218,12 @@ export function StoryDetailsStep({ storyState }: StoryDetailsStepProps) {
           {storyData.detailsPrompts && (
             <Button 
               onClick={handleRegeneratePrompts}
-              disabled={isLoading.details}
+              disabled={isLoading.details || apiKeysLoading || googleKeyMissing}
               variant="outline"
               className="px-3"
               title="Regenerate prompts with updated consistency requirements"
             >
-              {isLoading.details ? (
+              {isLoading.details || apiKeysLoading ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
                 <RefreshCw className="h-4 w-4" />
@@ -213,10 +231,14 @@ export function StoryDetailsStep({ storyState }: StoryDetailsStepProps) {
             </Button>
           )}
         </div>
+        {googleKeyMissing && (
+          <p className="text-xs text-destructive text-center">
+            Google API Key required for detail generation. Please set it in <Link href="/settings" className="underline">Account Settings</Link>.
+          </p>
+        )}
 
         {storyData.detailsPrompts && (
           <div className="space-y-6 mt-6">
-            {/* Character Prompts */}
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <Label className="text-sm font-medium">Character Prompts</Label>
@@ -258,7 +280,6 @@ export function StoryDetailsStep({ storyState }: StoryDetailsStepProps) {
 
             <Separator />
 
-            {/* Item Prompts */}
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <Label className="text-sm font-medium">Item Prompts</Label>
@@ -300,7 +321,6 @@ export function StoryDetailsStep({ storyState }: StoryDetailsStepProps) {
 
             <Separator />
 
-            {/* Location Prompts */}
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <Label className="text-sm font-medium">Location Prompts</Label>
@@ -340,12 +360,11 @@ export function StoryDetailsStep({ storyState }: StoryDetailsStepProps) {
               />
             </div>
 
-            {/* Generate All Detail Images Button */}
             <div className="pt-4">
               <DetailImageManager 
                 storyState={storyState}
                 promptType="All"
-                promptsString="generate-all"
+                promptsString="generate-all" // This is a special value to trigger the "Generate All" button
                 showGenerateAllButton={true}
               />
             </div>
@@ -355,3 +374,4 @@ export function StoryDetailsStep({ storyState }: StoryDetailsStepProps) {
     </Card>
   );
 }
+
