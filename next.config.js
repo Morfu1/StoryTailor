@@ -35,7 +35,7 @@ const nextConfig = {
         port: '',
         pathname: '/**',
       },
-      { // Added from next.config.ts for completeness, if next.config.js is the source of truth
+      {
         protocol: 'https',
         hostname: 'placehold.co',
         port: '',
@@ -43,8 +43,14 @@ const nextConfig = {
       }
     ],
   },
-  // Add transpilePackages to handle Remotion properly
-  transpilePackages: ['@remotion/cli', '@remotion/bundler', '@remotion/renderer', '@remotion/player'],
+  transpilePackages: [
+    '@remotion/cli', 
+    '@remotion/bundler', 
+    '@remotion/renderer', 
+    '@remotion/player',
+    '@remotion/media-parser', // Added
+    '@remotion/licensing'    // Added
+  ],
   
   webpack: (config, { isServer }) => {
     // Ignore TypeScript declaration files from esbuild that cause parsing errors
@@ -53,11 +59,9 @@ const nextConfig = {
       loader: 'ignore-loader',
     });
 
-    // Add handlebars alias (from next.config.ts)
     config.resolve.alias = {
       ...config.resolve.alias,
-      'handlebars': 'handlebars/dist/handlebars.js', // Added alias
-      // Use our mocks for the platform-specific modules that are causing errors
+      'handlebars': 'handlebars/dist/handlebars.js',
       '@remotion/compositor-win32-x64-msvc': path.resolve(__dirname, 'src/mocks/compositor-win32-x64-msvc.js'),
       '@remotion/compositor-linux-x64-musl': path.resolve(__dirname, 'src/mocks/compositor-linux-x64-musl.js'),
       '@remotion/compositor-linux-x64-gnu': path.resolve(__dirname, 'src/mocks/compositor-linux-x64-gnu.js'),
@@ -65,27 +69,31 @@ const nextConfig = {
       '@remotion/compositor-darwin-arm64': path.resolve(__dirname, 'src/mocks/compositor-darwin-arm64.js'),
     };
 
-    // For other platform-specific modules, use empty modules
     config.resolve.fallback = {
       ...config.resolve.fallback,
-      // Handle other Windows compositor modules when on non-Windows
       '@remotion/compositor-win32-ia32-msvc': false,
       '@remotion/compositor-win32-arm64-msvc': false,
-      // Handle other Linux compositor modules when on non-Linux
       '@remotion/compositor-linux-arm64-gnu': false,
       '@remotion/compositor-linux-arm64-musl': false,
     };
 
+    // Ensure config.module.noParse is initialized if it doesn't exist
+    config.module.noParse = config.module.noParse || [];
+    
     // Add noParse rule for problematic Remotion files
     // These regexes target the specific files mentioned in your build error.
-    config.module.noParse = [
-      ...(config.module.noParse || []), // Keep existing noParse rules if any
+    config.module.noParse.push(
       /node_modules\/@remotion\/licensing\/dist\/register-usage-point\.js$/,
       /node_modules\/@remotion\/media-parser\/dist\/aac-codecprivate\.js$/,
       /node_modules\/@remotion\/media-parser\/dist\/containers\/flac\/parse-flac-frame\.js$/,
       /node_modules\/@remotion\/media-parser\/dist\/containers\/iso-base-media\/esds\/esds-descriptors\.js$/,
       /node_modules\/@remotion\/media-parser\/dist\/containers\/iso-base-media\/find-track-to-seek\.js$/,
-    ];
+      /node_modules\/@remotion\/media-parser\/dist\/containers\/iso-base-media\/mdat\/mdat\.js$/,
+      /node_modules\/@remotion\/media-parser\/dist\/containers\/iso-base-media\/stsd\/samples\.js$/,
+      /node_modules\/@remotion\/media-parser\/dist\/containers\/iso-base-media\/traversal\.js$/,
+      /node_modules\/@remotion\/media-parser\/dist\/containers\/m3u\/get-playlist\.js$/,
+      /node_modules\/@remotion\/media-parser\/dist\/containers\/m3u\/get-seeking-byte\.js$/
+    );
 
     return config;
   },
