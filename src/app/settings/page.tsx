@@ -24,7 +24,7 @@ interface CreditBalance {
 export default function SettingsPage() {
   const { user } = useAuth();
   const [credits, setCredits] = useState<CreditBalance | null>(null);
-  const [loadingCredits, setLoadingCredits] = useState(true);
+  const [loadingCredits, setLoadingCredits] = useState(false); // Set to false initially
   const [refreshingCredits, setRefreshingCredits] = useState(false);
   const [creditsError, setCreditsError] = useState<string | null>(null);
   const { toast } = useToast();
@@ -34,19 +34,35 @@ export default function SettingsPage() {
   const [savingApiKeys, setSavingApiKeys] = useState(false);
 
   const fetchCredits = async (showRefreshToast = false) => {
+    if (!user) {
+      setCreditsError("User not authenticated. Cannot fetch credits.");
+      return;
+    }
+    // Check if user has provided Picsart API key
+    if (!apiKeys.picsartApiKey) {
+      setCredits(null); // Clear credits if no API key
+      setCreditsError("Please enter your Picsart API key to view credits.");
+      setLoadingCredits(false);
+      return;
+    }
+
     try {
       setCreditsError(null);
       if (showRefreshToast) setRefreshingCredits(true);
       else setLoadingCredits(true);
       
-      const response = await fetch('/api/picsart/credits');
-      
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to fetch credit balance');
-      }
+      const idToken = await user.getIdToken();
+      const response = await fetch('/api/picsart/credits', {
+        headers: {
+          'Authorization': `Bearer ${idToken}`
+        }
+      });
       
       const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to fetch credit balance');
+      }
+      
       setCredits(data);
       
       if (showRefreshToast) {
@@ -63,6 +79,7 @@ export default function SettingsPage() {
         description: errorMessage, 
         variant: 'destructive' 
       });
+      setCredits(null); // Clear credits on error
     } finally {
       setLoadingCredits(false);
       setRefreshingCredits(false);
@@ -75,22 +92,32 @@ export default function SettingsPage() {
     const result = await getUserApiKeys(user.uid);
     if (result.success && result.data) {
       setApiKeys(result.data);
+      // After fetching API keys, try to fetch credits if Picsart key exists
+      if (result.data.picsartApiKey) {
+        fetchCredits(); 
+      } else {
+        setCreditsError("Please enter your Picsart API key to view credits.");
+        setLoadingCredits(false); // No key, so no loading for credits
+      }
     } else {
       toast({
         title: 'Error Fetching API Keys',
         description: result.error || 'Could not load your API keys.',
         variant: 'destructive',
       });
+      setLoadingCredits(false); // No keys, so no loading for credits
     }
     setLoadingApiKeys(false);
   };
 
   useEffect(() => {
-    fetchCredits();
     if (user) {
-      fetchApiKeys();
+      fetchApiKeys(); // This will subsequently call fetchCredits if picsartApiKey is found
+    } else {
+      setLoadingApiKeys(false);
+      setLoadingCredits(false);
     }
-  }, [user]);
+  }, [user]); // fetchApiKeys depends on user
 
   const handleRefreshCredits = () => {
     fetchCredits(true);
@@ -110,6 +137,10 @@ export default function SettingsPage() {
     const result = await saveUserApiKeys(user.uid, apiKeys);
     if (result.success) {
       toast({ title: 'API Keys Saved', description: 'Your API keys have been successfully saved.', className: 'bg-green-500 text-white' });
+      // After saving, if Picsart key was just added, fetch credits
+      if (apiKeys.picsartApiKey && (!credits || creditsError)) {
+        fetchCredits();
+      }
     } else {
       toast({ title: 'Error Saving API Keys', description: result.error || 'Failed to save API keys.', variant: 'destructive' });
     }
@@ -146,7 +177,7 @@ export default function SettingsPage() {
                 <AlertTitle>Security Warning</AlertTitle>
                 <AlertDescription>
                   API keys provide access to paid services. Treat them like passwords.
-                  For enhanced security in a production environment with multiple users, consider using a backend proxy to manage these keys and ensure they are encrypted at rest.
+                  These keys are stored in Firestore. For enhanced security in a production environment, consider implementing encryption at rest for these keys.
                 </AlertDescription>
               </Alert>
 
@@ -158,7 +189,7 @@ export default function SettingsPage() {
               ) : (
                 <div className="space-y-4">
                   <div>
-                    <Label htmlFor="googleApiKey">Google API Key (for Genkit/Gemini)</Label>
+                    <Label htmlFor="googleApiKey">Google API Key (for Story AI & Imagen3)</Label>
                     <Input
                       id="googleApiKey"
                       name="googleApiKey"
@@ -168,9 +199,10 @@ export default function SettingsPage() {
                       onChange={handleApiKeyChange}
                       className="mt-1"
                     />
+                    <p className="text-xs text-muted-foreground mt-1">Used for core story generation, AI flows, and Imagen3 image generation.</p>
                   </div>
                   <div>
-                    <Label htmlFor="geminiApiKey">Gemini API Key (Optional, if different)</Label>
+                    <Label htmlFor="geminiApiKey">Gemini API Key (Optional, for Gemini Image Gen)</Label>
                     <Input
                       id="geminiApiKey"
                       name="geminiApiKey"
@@ -180,6 +212,7 @@ export default function SettingsPage() {
                       onChange={handleApiKeyChange}
                       className="mt-1"
                     />
+                     <p className="text-xs text-muted-foreground mt-1">Used specifically for Gemini image generation if chosen.</p>
                   </div>
                   <div>
                     <Label htmlFor="elevenLabsApiKey">ElevenLabs API Key</Label>
@@ -192,6 +225,7 @@ export default function SettingsPage() {
                       onChange={handleApiKeyChange}
                       className="mt-1"
                     />
+                     <p className="text-xs text-muted-foreground mt-1">Used for ElevenLabs text-to-speech narration.</p>
                   </div>
                   <div>
                     <Label htmlFor="picsartApiKey">Picsart API Key</Label>
@@ -204,6 +238,7 @@ export default function SettingsPage() {
                       onChange={handleApiKeyChange}
                       className="mt-1"
                     />
+                     <p className="text-xs text-muted-foreground mt-1">Used for Picsart image generation and credit balance check.</p>
                   </div>
                   <Button onClick={handleSaveApiKeys} disabled={savingApiKeys} className="w-full sm:w-auto">
                     {savingApiKeys ? (
@@ -227,14 +262,14 @@ export default function SettingsPage() {
                   API Credits Balance (Picsart)
                 </CardTitle>
                 <CardDescription>
-                  Your current Picsart API credit balance.
+                  Your current Picsart API credit balance. Requires Picsart API key to be set.
                 </CardDescription>
               </div>
               <Button 
                 variant="outline" 
                 size="sm" 
                 onClick={handleRefreshCredits}
-                disabled={loadingCredits || refreshingCredits}
+                disabled={loadingCredits || refreshingCredits || !apiKeys.picsartApiKey}
               >
                 {refreshingCredits ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -335,3 +370,5 @@ export default function SettingsPage() {
     </>
   );
 }
+
+    

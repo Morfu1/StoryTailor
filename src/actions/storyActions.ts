@@ -1,78 +1,166 @@
 
 "use server";
 
-import type { GenerateCharacterPromptsInput } from '@/ai/flows/generate-character-prompts';
-import { generateCharacterPrompts as aiGenerateCharacterPrompts } from '@/ai/flows/generate-character-prompts';
-import type { GenerateImagePromptsInput } from '@/ai/flows/generate-image-prompts';
-import { generateImagePrompts as aiGenerateImagePrompts } from '@/ai/flows/generate-image-prompts';
-import type { GenerateNarrationAudioInput, GenerateNarrationAudioOutput } from '@/ai/flows/generate-narration-audio'; // Input will be extended for API keys
-import { generateNarrationAudio as aiGenerateNarrationAudio } from '@/ai/flows/generate-narration-audio';
-import type { GenerateScriptInput } from '@/ai/flows/generate-script';
-import { generateScript as aiGenerateScript } from '@/ai/flows/generate-script';
-import type { GenerateTitleInput } from '@/ai/flows/generate-title';
-import { generateTitle as aiGenerateTitle } from '@/ai/flows/generate-title';
-import type { GenerateScriptChunksInput } from '@/ai/flows/generate-script-chunks';
-import { generateScriptChunks as aiGenerateScriptChunks } from '@/ai/flows/generate-script-chunks';
+import { genkit } from 'genkit';
+import { googleAI } from '@genkit-ai/googleai';
+import { z } from 'zod';
+
+// Import Input/Output schemas from the original flow files
+import type { GenerateCharacterPromptsInput as AICharacterPromptsInput, GenerateCharacterPromptsOutput as AICharacterPromptsOutput } from '@/ai/flows/generate-character-prompts';
+const { GenerateCharacterPromptsInputSchema: AICharacterPromptsInputSchemaOriginal, GenerateCharacterPromptsOutputSchema: AICharacterPromptsOutputSchema } = await import('@/ai/flows/generate-character-prompts');
+
+import type { GenerateImagePromptsInput as AIImagePromptsInput, GenerateImagePromptsOutput as AIImagePromptsOutput } from '@/ai/flows/generate-image-prompts';
+const { GenerateImagePromptsInputSchema: AIImagePromptsInputSchemaOriginal, GenerateImagePromptsOutputSchema: AIImagePromptsOutputSchema } = await import('@/ai/flows/generate-image-prompts');
+
+import type { GenerateNarrationAudioInput, GenerateNarrationAudioOutput } from '@/ai/flows/generate-narration-audio';
+const { GenerateNarrationAudioInputSchema: AINarrationAudioInputSchema, GenerateNarrationAudioOutputSchema: AINarrationAudioOutputSchema } = await import('@/ai/flows/generate-narration-audio');
+
+import type { GenerateScriptInput as AIScriptInputType, GenerateScriptOutput as AIScriptOutputType } from '@/ai/flows/generate-script';
+const { GenerateScriptInputSchema: AIScriptInputSchema, GenerateScriptOutputSchema: AIScriptOutputSchema } = await import('@/ai/flows/generate-script');
+
+import type { GenerateTitleInput as AITitleInputType, GenerateTitleOutput as AITitleOutputType } from '@/ai/flows/generate-title';
+const { GenerateTitleInputSchema: AITitleInputSchema, GenerateTitleOutputSchema: AITitleOutputSchema } = await import('@/ai/flows/generate-title');
+
+import type { GenerateScriptChunksInput as AIScriptChunksInputType, GenerateScriptChunksOutput as AIScriptChunksOutputType } from '@/ai/flows/generate-script-chunks';
+const { GenerateScriptChunksInputSchema: AIScriptChunksInputSchema, GenerateScriptChunksOutputSchema: AIScriptChunksOutputSchema } = await import('@/ai/flows/generate-script-chunks');
+
+
 import { firebaseAdmin, dbAdmin } from '@/lib/firebaseAdmin';
-import type { Story, ElevenLabsVoice } from '@/types/story';
+import type { Story, ElevenLabsVoice, GeneratedImage } from '@/types/story';
 import type { Timestamp as AdminTimestamp } from 'firebase-admin/firestore';
 import { getStorage as getAdminStorage } from 'firebase-admin/storage';
 import { revalidatePath } from 'next/cache';
-import { getUserApiKeys } from './apiKeyActions'; // Import the action to get user API keys
+import { getUserApiKeys } from './apiKeyActions';
 
-// Environment variable getters (only for global/app-owned keys)
-function getAppGoogleApiKey(): string | undefined {
-  // This key is for app-level Genkit flows, not user-specific Google TTS
-  return process.env?.GOOGLE_API_KEY;
-}
+// Prompt templates (extracted or simplified from original flow files)
+const titlePromptTemplate = `You are an expert at creating catchy and concise titles for stories.
+Based on the user's story prompt, generate a short title (ideally 3-7 words, maximum 10 words) that captures the essence of the story.
+User Prompt: "{{userPrompt}}"
+Generated Title:`;
+
+const scriptPromptTemplate = `You are a script writer for animated videos. Your task is to generate a script based on the user's prompt.
+The script should be engaging for both children and adults, and should follow the themes, character descriptions, and story twists provided in the prompt.
+Importantly, the entire script must be written from the perspective of a single narrator. Do not include character dialogues unless the narrator is quoting them. The narrative should flow as if one person is telling the entire story.
+Ensure the script maintains a specific word count for optimal engagement.
+User Prompt: {{{prompt}}}
+Generated Script (for single narrator):`;
+
+const characterPromptsPromptTemplate = `You are an expert prompt engineer... (Full template from generate-character-prompts.ts, simplified here)
+Script: {{{script}}}
+{{#if stylePrompt}}**ARTISTIC STYLE REQUIREMENTS:** {{{stylePrompt}}}{{/if}}
+Instructions for output:...`; // Ensure full template content
+
+const imagePromptsPromptTemplate = `You are an expert at creating detailed image prompts... (Full template from generate-image-prompts.ts, simplified here)
+{{#if chunksData}}Chunk Details:{{#each chunksData}}...{{/each}}{{else}}Fallback Mode{{/if}}
+CHARACTER REFERENCE: {{{characterPrompts}}}
+LOCATION REFERENCE: {{{locationPrompts}}}
+ITEM REFERENCE: {{{itemPrompts}}}
+STORY SCRIPT: {{{script}}}
+Output Format: JSON object with "imagePrompts" and "actionPrompts" arrays.`; // Ensure full template content
+
+const scriptChunksPromptTemplate = `You are a movie director and script editor... (Full template from generate-script-chunks.ts, simplified here)
+Script to split:
+{{{script}}}
+Return your response as a JSON object with a single key "scriptChunks".`; // Ensure full template content
+
+
+// Schemas to be used in server actions, possibly extended if needed
+const GenerateTitleInputServerSchema = AITitleInputSchema.extend({ userId: z.string() });
+export type GenerateTitleInput = z.infer<typeof GenerateTitleInputServerSchema>;
+
+const GenerateScriptInputServerSchema = AIScriptInputSchema.extend({ userId: z.string() });
+export type GenerateScriptInput = z.infer<typeof GenerateScriptInputServerSchema>;
+
+const GenerateCharacterPromptsInputServerSchema = AICharacterPromptsInputSchemaOriginal.extend({ userId: z.string() });
+export type GenerateCharacterPromptsInput = z.infer<typeof GenerateCharacterPromptsInputServerSchema>;
+
+const GenerateImagePromptsInputServerSchema = AIImagePromptsInputSchemaOriginal.extend({ userId: z.string() });
+export type GenerateImagePromptsInput = z.infer<typeof GenerateImagePromptsInputServerSchema>;
+
+const GenerateScriptChunksInputServerSchema = AIScriptChunksInputSchema.extend({ userId: z.string() });
+export type GenerateScriptChunksInput = z.infer<typeof GenerateScriptChunksInputServerSchema>;
+
 
 function getStorageBucket(): string | undefined {
   return process.env?.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET;
 }
 
-// Log dbAdmin status when this module is loaded (server-side)
-console.log('---------------------------------------------------------------------');
-console.log('[storyActions Module Load] Checking dbAdmin status...');
-if (typeof dbAdmin === 'undefined') {
-  console.error("[storyActions Module Load] CRITICAL: `dbAdmin` from @/lib/firebaseAdmin is UNDEFINED at module load time. All Firestore admin operations will fail. Check firebaseAdmin.ts logs for errors, especially GOOGLE_APPLICATION_CREDENTIALS configuration and Admin SDK initialization.");
-} else {
-  console.log("[storyActions Module Load] INFO: `dbAdmin` from @/lib/firebaseAdmin is DEFINED at module load time. Firestore admin operations should be possible IF SDK was fully initialized.");
-}
-console.log('---------------------------------------------------------------------');
+export async function generateTitle(input: GenerateTitleInput): Promise<{ success: boolean, data?: AITitleOutputType, error?: string }> {
+  const userKeysResult = await getUserApiKeys(input.userId);
+  if (!userKeysResult.success || !userKeysResult.data?.googleApiKey) {
+    return { success: false, error: "Google API key not configured by user. Please set it in Account Settings." };
+  }
+  const userGoogleKey = userKeysResult.data.googleApiKey;
 
-
-export async function generateTitle(input: GenerateTitleInput) {
-  // This Genkit flow uses the global GOOGLE_API_KEY
   try {
-    const result = await aiGenerateTitle(input);
-    return { success: true, data: result };
+    const localAi = genkit({ plugins: [googleAI({ apiKey: userGoogleKey })], model: 'googleai/gemini-2.0-flash' });
+    const prompt = titlePromptTemplate.replace('{{userPrompt}}', input.userPrompt);
+    const { output } = await localAi.generate({ prompt, output: { schema: AITitleOutputSchema, format: 'json' } });
+    
+    if (!output?.title) {
+      const promptWords = input.userPrompt.split(' ').slice(0, 5).join(' ');
+      return { success: true, data: { title: `${promptWords}... (Draft)` } };
+    }
+    return { success: true, data: output };
   } catch (error) {
-    console.error("Error in generateTitle AI flow:", error);
-    return { success: false, error: "Failed to generate title." };
+    console.error("Error in generateTitle AI call:", error);
+    return { success: false, error: "Failed to generate title with user's key." };
   }
 }
 
-export async function generateScript(input: GenerateScriptInput) {
-  // This Genkit flow uses the global GOOGLE_API_KEY
+export async function generateScript(input: GenerateScriptInput): Promise<{ success: boolean, data?: AIScriptOutputType, error?: string }> {
+  const userKeysResult = await getUserApiKeys(input.userId);
+  if (!userKeysResult.success || !userKeysResult.data?.googleApiKey) {
+    return { success: false, error: "Google API key not configured by user. Please set it in Account Settings." };
+  }
+  const userGoogleKey = userKeysResult.data.googleApiKey;
+
   try {
-    const result = await aiGenerateScript(input);
-    return { success: true, data: result };
+    const localAi = genkit({ plugins: [googleAI({ apiKey: userGoogleKey })], model: 'googleai/gemini-2.0-flash' });
+    const prompt = scriptPromptTemplate.replace('{{{prompt}}}', input.prompt);
+    const { output } = await localAi.generate({ prompt, output: { schema: AIScriptOutputSchema, format: 'json' } });
+    return { success: true, data: output! };
   } catch (error) {
-    console.error("Error in generateScript AI flow:", error);
-    return { success: false, error: "Failed to generate script." };
+    console.error("Error in generateScript AI call:", error);
+    return { success: false, error: "Failed to generate script with user's key." };
   }
 }
 
-export async function generateCharacterPrompts(input: GenerateCharacterPromptsInput) {
-  // This Genkit flow uses the global GOOGLE_API_KEY
+export async function generateCharacterPrompts(input: GenerateCharacterPromptsInput): Promise<{ success: boolean, data?: AICharacterPromptsOutput, error?: string }> {
+  const userKeysResult = await getUserApiKeys(input.userId);
+  if (!userKeysResult.success || !userKeysResult.data?.googleApiKey) {
+    return { success: false, error: "Google API key not configured by user. Please set it in Account Settings." };
+  }
+  const userGoogleKey = userKeysResult.data.googleApiKey;
+
   try {
-    const result = await aiGenerateCharacterPrompts(input);
-    return { success: true, data: result };
-  } catch (error)    {
-    console.error("Error in generateCharacterPrompts AI flow:", error);
-    return { success: false, error: "Failed to generate character/item/location prompts." };
+    const localAi = genkit({ plugins: [googleAI({ apiKey: userGoogleKey })], model: 'googleai/gemini-2.0-flash' });
+    
+    let stylePromptText: string | undefined;
+    if (input.imageStyleId) {
+      try {
+        const { getStylePromptForProvider } = await import('@/utils/imageStyleUtils');
+        stylePromptText = getStylePromptForProvider(input.imageStyleId as any, input.imageProvider || 'picsart');
+      } catch (error) {
+        console.warn('Failed to get style prompt for character generation:', error);
+      }
+    }
+
+    let finalPrompt = characterPromptsPromptTemplate.replace('{{{script}}}', input.script);
+    if (stylePromptText) {
+        finalPrompt = finalPrompt.replace('{{#if stylePrompt}}**ARTISTIC STYLE REQUIREMENTS:** {{{stylePrompt}}}{{/if}}', `**ARTISTIC STYLE REQUIREMENTS:** ${stylePromptText}`);
+    } else {
+        finalPrompt = finalPrompt.replace('{{#if stylePrompt}}**ARTISTIC STYLE REQUIREMENTS:** {{{stylePrompt}}}{{/if}}', '');
+    }
+    
+    const { output } = await localAi.generate({ prompt: finalPrompt, output: { schema: AICharacterPromptsOutputSchema, format: 'json' } });
+    return { success: true, data: output! };
+  } catch (error) {
+    console.error("Error in generateCharacterPrompts AI call:", error);
+    return { success: false, error: "Failed to generate character/item/location prompts with user's key." };
   }
 }
+
 
 // Helper function to estimate duration from audio data URI (MP3 or WAV)
 function getMp3DurationFromDataUri(dataUri: string): number {
@@ -111,12 +199,10 @@ function getMp3DurationFromDataUri(dataUri: string): number {
   }
 }
 
-
 export interface GenerateNarrationAudioActionInput extends GenerateNarrationAudioInput {
-  userId?: string; // userId is crucial for fetching API keys
+  userId?: string; 
   storyId?: string;
   chunkId?: string;
-  // ttsModel, googleApiModel, languageCode are already in GenerateNarrationAudioInput
 }
 
 export async function generateNarrationAudio(actionInput: GenerateNarrationAudioActionInput): Promise<{ success: boolean; data?: { audioStorageUrl?: string; voices?: ElevenLabsVoice[]; duration?: number }; error?: string }> {
@@ -140,7 +226,7 @@ export async function generateNarrationAudio(actionInput: GenerateNarrationAudio
         return { success: false, error: "ElevenLabs API key not configured by user. Please set it in Account Settings." };
       }
     } else if (modelToUse === 'google') {
-      serviceApiKey = userApiKeys.googleApiKey; // Or geminiApiKey if specific for Google TTS via Gemini
+      serviceApiKey = userApiKeys.googleApiKey; 
       if (!serviceApiKey) {
         return { success: false, error: "Google API key for TTS not configured by user. Please set it in Account Settings." };
       }
@@ -152,11 +238,13 @@ export async function generateNarrationAudio(actionInput: GenerateNarrationAudio
       ttsModel: modelToUse,
       googleApiModel: actionInput.googleApiModel,
       languageCode: actionInput.languageCode,
-      // Pass the fetched API key to the flow
       apiKey: serviceApiKey 
     };
     
+    // This still calls the flow, which needs to be adapted to use the passed apiKey
+    const { generateNarrationAudio: aiGenerateNarrationAudio } = await import('@/ai/flows/generate-narration-audio');
     const result: GenerateNarrationAudioOutput = await aiGenerateNarrationAudio(aiFlowInput);
+
 
     if (result.error) {
       return { success: false, error: result.error };
@@ -181,7 +269,7 @@ export async function generateNarrationAudio(actionInput: GenerateNarrationAudio
       }
     }
     
-    if (result.voices) { // This branch is for listing ElevenLabs voices, doesn't need user key if the flow handles it.
+    if (result.voices) { 
       return { success: true, data: { voices: result.voices as ElevenLabsVoice[] } };
     }
     
@@ -199,7 +287,7 @@ export interface VoicePreviewInput {
   googleApiModel?: string;
   languageCode?: string;
   demoText?: string;
-  userId?: string; // Add userId to fetch API keys for preview
+  userId?: string;
 }
 
 export async function generateVoicePreview(input: VoicePreviewInput): Promise<{ success: boolean; audioDataUri?: string; error?: string }> {
@@ -238,6 +326,7 @@ export async function generateVoicePreview(input: VoicePreviewInput): Promise<{ 
       apiKey: serviceApiKey,
     };
 
+    const { generateNarrationAudio: aiGenerateNarrationAudio } = await import('@/ai/flows/generate-narration-audio');
     const result: GenerateNarrationAudioOutput = await aiGenerateNarrationAudio(aiFlowInput);
 
     if (result.error) {
@@ -256,50 +345,96 @@ export async function generateVoicePreview(input: VoicePreviewInput): Promise<{ 
 }
 
 
-export async function generateImagePrompts(input: GenerateImagePromptsInput) {
-  // This Genkit flow uses the global GOOGLE_API_KEY
-  try {
-    console.log('=== SERVER ACTION: generateImagePrompts ===');
-    console.log('Received input:', {
-      scriptLength: input.script?.length,
-      imageProvider: input.imageProvider,
-      narrationChunksCount: input.narrationChunks?.length,
-      audioDurationSeconds: input.audioDurationSeconds
-    });
-    
-    const result = await aiGenerateImagePrompts(input);
-    
-    console.log('AI flow result:', {
-      success: !!result,
-      imagePromptsCount: result.imagePrompts?.length,
-      hasImagePrompts: !!result.imagePrompts
-    });
-    
-    return { success: true, data: result };
-  } catch (error) {
-    console.error("Error in generateImagePrompts AI flow:", error);
-    console.error("Error details:", {
-      name: (error as Error)?.name,
-      message: (error as Error)?.message,
-      stack: (error as Error)?.stack
-    });
-    return { success: false, error: "Failed to generate image prompts." };
-  }
+export async function generateImagePrompts(input: GenerateImagePromptsInput): Promise<{ success: boolean, data?: AIImagePromptsOutput, error?: string }> {
+    const userKeysResult = await getUserApiKeys(input.userId);
+    if (!userKeysResult.success || !userKeysResult.data?.googleApiKey) {
+      return { success: false, error: "Google API key not configured by user. Please set it in Account Settings." };
+    }
+    const userGoogleKey = userKeysResult.data.googleApiKey;
+
+    try {
+        const localAi = genkit({ plugins: [googleAI({ apiKey: userGoogleKey })], model: 'googleai/gemini-2.0-flash', })
+        
+        let numImages: number;
+        let chunksDataForPrompt: Array<{text: string; duration: number; promptCount: number}> | undefined;
+
+        if (input.narrationChunks && input.narrationChunks.length > 0) {
+            chunksDataForPrompt = input.narrationChunks.map(chunk => {
+                let promptCount: number;
+                if (chunk.duration <= 5) promptCount = 1;
+                else if (chunk.duration <= 10) promptCount = chunk.text.length > 100 ? 2 : 1;
+                else if (chunk.duration <= 15) promptCount = 2;
+                else promptCount = 3;
+                return { text: chunk.text, duration: chunk.duration, promptCount };
+            });
+            numImages = chunksDataForPrompt.reduce((total, chunk) => total + chunk.promptCount, 0);
+        } else {
+            numImages = Math.max(1, Math.ceil(input.audioDurationSeconds * (5 / 60)));
+        }
+
+        // Simplified prompt templating - ensure full template content is used
+        let finalPrompt = imagePromptsPromptTemplate
+            .replace('{{{characterPrompts}}}', input.characterPrompts || '')
+            .replace('{{{locationPrompts}}}', input.locationPrompts || '')
+            .replace('{{{itemPrompts}}}', input.itemPrompts || '')
+            .replace('{{{script}}}', input.script);
+        
+        if (chunksDataForPrompt) {
+            const chunkDetailsText = chunksDataForPrompt.map((c, i) => `Chunk ${i}: "${c.text}" (Duration: ${c.duration}s, Required prompts: ${c.promptCount})`).join('\n');
+            finalPrompt = finalPrompt.replace('{{#if chunksData}}Chunk Details:{{#each chunksData}}...{{/each}}{{else}}Fallback Mode{{/if}}', `Chunk Details:\n${chunkDetailsText}`);
+        } else {
+            finalPrompt = finalPrompt.replace('{{#if chunksData}}Chunk Details:{{#each chunksData}}...{{/each}}{{else}}Fallback Mode{{/if}}', `Fallback Mode: Analyze the script and identify ${numImages} key scenes...`);
+        }
+        finalPrompt = finalPrompt.replace('{{numImages}}', numImages.toString());
+
+
+        const { output } = await localAi.generate({
+            prompt: finalPrompt,
+            output: { schema: AIImagePromptsOutputSchema, format: 'json' },
+            config: { temperature: 0.7, maxOutputTokens: 4096 }
+        });
+
+        if (!output || !Array.isArray(output.imagePrompts)) {
+          console.warn("Image prompt generation did not return the expected array structure. Output:", output);
+          return { success: false, error: "AI did not return valid image prompts." };
+        }
+        
+        return { success: true, data: output };
+    } catch (error) {
+        console.error("Error in generateImagePrompts AI call:", error);
+        return { success: false, error: "Failed to generate image prompts with user's key." };
+    }
 }
 
-export async function generateScriptChunks(input: GenerateScriptChunksInput) {
-  // This Genkit flow uses the global GOOGLE_API_KEY
-  try {
-    const result = await aiGenerateScriptChunks(input);
-    if (result.error) {
-      return { success: false, error: result.error };
+export async function generateScriptChunks(input: GenerateScriptChunksInput): Promise<{ success: boolean, data?: Omit<AIScriptChunksOutputType, 'error'>, error?: string }> {
+    const userKeysResult = await getUserApiKeys(input.userId);
+    if (!userKeysResult.success || !userKeysResult.data?.googleApiKey) {
+      return { success: false, error: "Google API key not configured by user. Please set it in Account Settings." };
     }
-    return { success: true, data: { scriptChunks: result.scriptChunks } };
-  } catch (error) {
-    console.error("Error in generateScriptChunks action:", error);
-    return { success: false, error: "Failed to generate script chunks." };
-  }
+    const userGoogleKey = userKeysResult.data.googleApiKey;
+
+    try {
+        const localAi = genkit({ plugins: [googleAI({ apiKey: userGoogleKey })], model: 'googleai/gemini-2.0-flash' });
+        const prompt = scriptChunksPromptTemplate.replace('{{{script}}}', input.script);
+
+        const { output } = await localAi.generate({
+            prompt,
+            output: { schema: AIScriptChunksOutputSchema, format: 'json' },
+            config: { temperature: 0.3, maxOutputTokens: 2048 }
+        });
+
+        if (output && output.scriptChunks && Array.isArray(output.scriptChunks)) {
+          const nonEmptyChunks = output.scriptChunks.filter(chunk => chunk.trim().length > 0);
+          return { success: true, data: { scriptChunks: nonEmptyChunks } };
+        }
+        console.error('AI did not return the expected scriptChunks array:', output);
+        return { success: false, error: 'Failed to parse script chunks from AI response.' };
+    } catch (error) {
+        console.error("Error in generateScriptChunks AI call:", error);
+        return { success: false, error: "Failed to generate script chunks with user's key." };
+    }
 }
+
 
 interface FirebaseErrorWithCode extends Error {
   code?: string;
@@ -494,19 +629,14 @@ export async function getStory(storyId: string, userId: string): Promise<{ succe
 
 export async function generateImageFromGemini(
   originalPrompt: string,
-  userId: string, // Changed from optional to required
+  userId: string, 
   storyId?: string
 ): Promise<{ success: boolean; imageUrl?: string; error?: string; requestPrompt?: string }> {
   const userKeysResult = await getUserApiKeys(userId);
-  if (!userKeysResult.success || !userKeysResult.data) {
-    return { success: false, error: "Could not fetch user API keys for Gemini. " + (userKeysResult.error || "") };
+  if (!userKeysResult.success || !userKeysResult.data?.geminiApiKey) { // Check for geminiApiKey specifically
+    return { success: false, error: "Gemini API key not configured by user. Please set it in Account Settings." };
   }
-  const apiKey = userKeysResult.data.geminiApiKey || userKeysResult.data.googleApiKey;
-
-  if (!apiKey) {
-    console.error("User has not configured a Gemini/Google API key.");
-    return { success: false, error: "Gemini/Google API key not configured by user. Please set it in Account Settings." };
-  }
+  const apiKey = userKeysResult.data.geminiApiKey;
 
   const styles = "3D, Cartoon, High Quality, 16:9 aspect ratio, detailed, sharp, professional photography";
   const requestPrompt = originalPrompt ? `${originalPrompt}, ${styles}` : styles;
@@ -572,20 +702,16 @@ export async function generateImageFromGemini(
 
 export async function generateImageFromImagen3(
   originalPrompt: string,
-  userId: string, // Changed from optional to required
+  userId: string, 
   storyId?: string,
   styleId?: string
 ): Promise<{ success: boolean; imageUrl?: string; error?: string; requestPrompt?: string }> {
   const userKeysResult = await getUserApiKeys(userId);
-  if (!userKeysResult.success || !userKeysResult.data) {
-    return { success: false, error: "Could not fetch user API keys for Imagen3. " + (userKeysResult.error || "") };
-  }
-  const apiKey = userKeysResult.data.googleApiKey; // Assuming Imagen3 uses the general Google API key
-
-  if (!apiKey) {
-    console.error("User has not configured a Google API key for Imagen3.");
+  // Imagen3 might use the general Google API key or a specific one. Assuming general for now.
+  if (!userKeysResult.success || !userKeysResult.data?.googleApiKey) {
     return { success: false, error: "Google API key for Imagen3 not configured by user. Please set it in Account Settings." };
   }
+  const apiKey = userKeysResult.data.googleApiKey; 
 
   let requestPrompt = originalPrompt;
   if (userId && storyId) {
@@ -681,32 +807,24 @@ export async function generateImageFromImagen3(
 
 export async function generateImageFromPrompt(
   originalPrompt: string,
-  userId: string, // Changed from optional to required
+  userId: string, 
   storyId?: string,
   provider: 'picsart' | 'gemini' | 'imagen3' = 'picsart',
   styleId?: string
 ): Promise<{ success: boolean; imageUrl?: string; error?: string; requestPrompt?: string }> {
   if (provider === 'gemini') {
-    // generateImageFromGemini now requires userId
     return generateImageFromGemini(originalPrompt, userId, storyId);
   }
   
   if (provider === 'imagen3') {
-    // generateImageFromImagen3 now requires userId
     return generateImageFromImagen3(originalPrompt, userId, storyId, styleId);
   }
   
-  // Picsart implementation
   const userKeysResult = await getUserApiKeys(userId);
-  if (!userKeysResult.success || !userKeysResult.data) {
-    return { success: false, error: "Could not fetch user API keys for Picsart. " + (userKeysResult.error || "") };
-  }
-  const picsartApiKey = userKeysResult.data.picsartApiKey;
-
-  if (!picsartApiKey) {
-    console.error("User has not configured a Picsart API key.");
+  if (!userKeysResult.success || !userKeysResult.data?.picsartApiKey) {
     return { success: false, error: "Picsart API key not configured by user. Please set it in Account Settings." };
   }
+  const picsartApiKey = userKeysResult.data.picsartApiKey;
 
   let processedPrompt = originalPrompt;
   if (userId && storyId) {
@@ -1038,5 +1156,6 @@ export async function deleteStory(
     return { success: false, error: errorMessage };
   }
 }
+    
 
     

@@ -1,17 +1,42 @@
+
 import { NextRequest, NextResponse } from 'next/server';
+import { firebaseAdmin } from '@/lib/firebaseAdmin'; // For token verification
+import { getUserApiKeys } from '@/actions/apiKeyActions'; // To fetch user's Picsart key
 
 export async function GET(request: NextRequest) {
   try {
-    const apiKey = process.env.PICSART_API_KEY;
-    
-    if (!apiKey) {
-      return NextResponse.json(
-        { error: 'Picsart API key not configured. Please add PICSART_API_KEY to your environment variables.' },
-        { status: 500 }
-      );
+    const authorization = request.headers.get('Authorization');
+    if (!authorization || !authorization.startsWith('Bearer ')) {
+      return NextResponse.json({ error: 'Unauthorized: Missing or invalid token.' }, { status: 401 });
+    }
+    const idToken = authorization.split('Bearer ')[1];
+
+    let decodedToken;
+    try {
+      if (!firebaseAdmin.apps.length) { // Ensure admin app is initialized
+        return NextResponse.json({ error: 'Server error: Firebase Admin not initialized.' }, { status: 500 });
+      }
+      decodedToken = await firebaseAdmin.auth().verifyIdToken(idToken);
+    } catch (error) {
+      console.error('Error verifying Firebase ID token:', error);
+      return NextResponse.json({ error: 'Unauthorized: Invalid token.' }, { status: 401 });
     }
 
-    console.log('Attempting to fetch Picsart credits...');
+    const userId = decodedToken.uid;
+    if (!userId) {
+      return NextResponse.json({ error: 'Unauthorized: Could not identify user.' }, { status: 401 });
+    }
+
+    const userKeysResult = await getUserApiKeys(userId);
+    if (!userKeysResult.success || !userKeysResult.data?.picsartApiKey) {
+      return NextResponse.json(
+        { error: 'Picsart API key not configured by user. Please set it in Account Settings.' },
+        { status: 403 } // 403 Forbidden as user is authenticated but lacks permission/config
+      );
+    }
+    const userPicsartApiKey = userKeysResult.data.picsartApiKey;
+
+    console.log(`Attempting to fetch Picsart credits for user ${userId} using their key...`);
 
     const response: any = {};
     const errors: string[] = [];
@@ -21,7 +46,7 @@ export async function GET(request: NextRequest) {
       const videoResponse = await fetch('https://video-api.picsart.io/v1/balance', {
         method: 'GET',
         headers: {
-          'X-Picsart-API-Key': apiKey,
+          'X-Picsart-API-Key': userPicsartApiKey,
           'Accept': 'application/json',
         },
       });
@@ -47,7 +72,7 @@ export async function GET(request: NextRequest) {
       const genaiResponse = await fetch('https://genai-api.picsart.io/v1/balance', {
         method: 'GET',
         headers: {
-          'X-Picsart-API-Key': apiKey,
+          'X-Picsart-API-Key': userPicsartApiKey,
           'Accept': 'application/json',
         },
       });
@@ -68,7 +93,6 @@ export async function GET(request: NextRequest) {
       errors.push(`GenAI API: Network error - ${error}`);
     }
 
-    // If we got at least one successful response, return the data with any errors
     if (Object.keys(response).length > 0) {
       if (errors.length > 0) {
         response.partial_errors = errors;
@@ -76,21 +100,22 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(response);
     }
 
-    // If no APIs worked, return an error
     return NextResponse.json(
       { 
-        error: 'Unable to fetch credits from any Picsart API', 
+        error: 'Unable to fetch credits from any Picsart API using your key.', 
         details: errors,
-        hint: 'Check your API key permissions for Video and GenAI APIs in your Picsart account.'
+        hint: 'Check your Picsart API key permissions for Video and GenAI APIs.'
       },
-      { status: 401 }
+      { status: 401 } // Use 401 if the key itself was invalid for Picsart
     );
 
   } catch (error) {
-    console.error('Error fetching Picsart credits:', error);
+    console.error('Error fetching Picsart credits (outer try-catch):', error);
     return NextResponse.json(
       { error: 'Internal server error while fetching credits' },
       { status: 500 }
     );
   }
 }
+
+    
