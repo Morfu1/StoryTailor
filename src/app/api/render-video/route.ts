@@ -3,13 +3,16 @@ import { downloadAssetsForRendering, saveVideoForDownload } from '@/utils/remoti
 import { NarrationChunk } from '@/types/narration';
 import { ensureDownloadsDirectory } from './init-downloads';
 import { createVideoJob, updateJobStatus } from '@/utils/videoJobManager';
-import { exec } from 'child_process';
+import { exec, ChildProcess } from 'child_process'; // Import ChildProcess
 import { promisify } from 'util';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
 
 const execAsync = promisify(exec);
+
+// Map to store active rendering processes
+export const activeRenderProcesses = new Map<string, ChildProcess>();
 
 /**
  * Background video rendering function that updates job status
@@ -187,12 +190,39 @@ async function renderStoryVideoWithCLI({
     if (jobId) {
       updateJobStatus(jobId, { progress: 50 });
     }
-    
-    // Execute the command with a 10-minute timeout
-    const { stdout, stderr } = await execAsync(command, { 
-      timeout: 600000, // 10 minutes
-      maxBuffer: 1024 * 1024 * 50 // 50MB buffer
+
+    // Execute the command and manage the child process
+    const executionPromise = new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
+      const childProcess = exec(command, {
+        timeout: 600000, // 10 minutes
+        maxBuffer: 1024 * 1024 * 50 // 50MB buffer
+      }, (error, stdout, stderr) => {
+        if (jobId) {
+          activeRenderProcesses.delete(jobId); // Remove process from map on completion/error
+        }
+        if (error) {
+          console.error(`Exec error for job ${jobId}:`, error);
+          // Include stdout and stderr in the rejection for better debugging
+          reject(new Error(`Command failed: ${error.message}\nStdout: ${stdout}\nStderr: ${stderr}`));
+          return;
+        }
+        resolve({ stdout, stderr });
+      });
+
+      if (jobId) {
+        activeRenderProcesses.set(jobId, childProcess); // Store process in map
+        console.log(`Stored child process for job ${jobId} with PID: ${childProcess.pid}`);
+      }
+
+      childProcess.on('exit', (code, signal) => {
+        console.log(`Child process for job ${jobId} exited with code ${code} and signal ${signal}`);
+        if (jobId) {
+          activeRenderProcesses.delete(jobId); // Ensure removal on any exit
+        }
+      });
     });
+
+    const { stdout, stderr } = await executionPromise;
     
     if (jobId) {
       updateJobStatus(jobId, { progress: 70 });
@@ -218,6 +248,9 @@ async function renderStoryVideoWithCLI({
     return outputPath;
   } catch (error) {
     console.error('Error rendering video with CLI:', error);
+    if (jobId) {
+      activeRenderProcesses.delete(jobId); // Ensure removal on error
+    }
     throw error;
   }
 }

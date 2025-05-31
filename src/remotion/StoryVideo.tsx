@@ -13,6 +13,7 @@ import {
   useVideoConfig,
 } from 'remotion';
 import { NarrationChunk } from '@/types/narration';
+import { GeneratedImage } from '@/types/story';
 
 // Dynamic FPS configuration for video rendering
 // Lower FPS for static images improves rendering speed significantly
@@ -20,7 +21,7 @@ const VIDEO_FPS = 15; // Can be adjusted: 15 for fast rendering, 24 for smoother
 
 // Make this a Record<string, unknown> to satisfy Remotion type constraints
 interface StoryVideoProps extends Record<string, unknown> {
-  images: string[];
+  images: (string | GeneratedImage)[];
   audioChunks: NarrationChunk[];
   fps?: number; // Optional FPS override
 }
@@ -36,10 +37,21 @@ interface SceneData {
 // Cache for organized scenes to prevent recalculation
 const scenesCache = new Map<string, SceneData[]>();
 
-// Associate images with audio chunks and calculate appropriate durations
-const organizeScenes = (images: string[], audioChunks: NarrationChunk[], fps: number = VIDEO_FPS): SceneData[] => {
-  // Create cache key for memoization
-  const cacheKey = `${images.length}-${audioChunks.length}-${fps}-${audioChunks.map(c => c.duration).join(',')}`;
+// Helper function to extract image URL from string or GeneratedImage
+const getImageUrl = (image: string | GeneratedImage): string => {
+  return typeof image === 'string' ? image : image.imageUrl;
+};
+
+// Helper function to get chunk metadata from GeneratedImage
+const getChunkMetadata = (image: string | GeneratedImage): { chunkId?: string; chunkIndex?: number } => {
+  return typeof image === 'string' ? {} : { chunkId: image.chunkId, chunkIndex: image.chunkIndex };
+};
+
+// Associate images with audio chunks using chunk metadata from GeneratedImages
+const organizeScenes = (images: (string | GeneratedImage)[], audioChunks: NarrationChunk[], fps: number = VIDEO_FPS): SceneData[] => {
+  // Create cache key for memoization (convert images to URLs for consistent caching)
+  const imageUrls = images.map(getImageUrl);
+  const cacheKey = `${imageUrls.length}-${audioChunks.length}-${fps}-${audioChunks.map(c => c.duration).join(',')}`;
   
   if (scenesCache.has(cacheKey)) {
     console.log('Using cached scenes for:', images.length, 'images and', audioChunks.length, 'audio chunks');
@@ -55,7 +67,7 @@ const organizeScenes = (images: string[], audioChunks: NarrationChunk[], fps: nu
   
   if (validChunks.length === 0) {
     console.warn('No valid audio chunks found, creating default scene with images');
-    const defaultImages = images.length > 0 ? images : ['placeholder'];
+    const defaultImages = images.length > 0 ? images.map(getImageUrl) : ['placeholder'];
     const framesPerImage = Math.max(fps * 3, 1); // Minimum 3 seconds or 1 frame per image
     const totalFrames = defaultImages.length * framesPerImage;
     
@@ -69,60 +81,99 @@ const organizeScenes = (images: string[], audioChunks: NarrationChunk[], fps: nu
   
   console.log('Using', validChunks.length, 'valid chunks, total duration:', validChunks.reduce((sum, chunk) => sum + (chunk.duration || 0), 0), 'seconds');
   
-  // Ensure we have at least one image per chunk
-  const paddedImages = [...images];
-  while (paddedImages.length < validChunks.length) {
-    const lastImage = paddedImages[paddedImages.length - 1] || 'placeholder';
-    paddedImages.push(lastImage);
-  }
-  
-  // Distribute images across chunks
+  // Group images by chunk using metadata (if available) or fallback to sequential distribution
   const scenes: SceneData[] = [];
-  const imagesPerChunk = Math.max(1, Math.floor(paddedImages.length / validChunks.length));
-  const extraImages = paddedImages.length % validChunks.length;
   
-  let imageIndex = 0;
-  
-  for (let i = 0; i < validChunks.length; i++) {
-    const chunk = validChunks[i];
-    const chunkImages = [];
-    
-    // Calculate how many images this chunk gets
-    const imagesForThisChunk = imagesPerChunk + (i < extraImages ? 1 : 0);
-    
-    // Assign images to this chunk
-    for (let j = 0; j < imagesForThisChunk && imageIndex < paddedImages.length; j++) {
-      chunkImages.push(paddedImages[imageIndex]);
-      imageIndex++;
+  if (images.length === 0) {
+    // No images available, create placeholder scenes
+    for (let i = 0; i < validChunks.length; i++) {
+      const chunk = validChunks[i];
+      const durationInSeconds = chunk.duration || 3;
+      const totalFrames = Math.max(1, Math.ceil(durationInSeconds * fps));
+      
+      scenes.push({
+        audioChunk: chunk,
+        images: ['placeholder'],
+        durationInFrames: totalFrames,
+        imageFrameDurations: [totalFrames]
+      });
     }
+  } else {
+    // Group images by chunk using metadata when available
+    const imagesByChunk = new Map<string, (string | GeneratedImage)[]>();
+    const unassignedImages: (string | GeneratedImage)[] = [];
     
-    // Ensure at least one image per chunk
-    if (chunkImages.length === 0) {
-      chunkImages.push(paddedImages[i % paddedImages.length] || 'placeholder');
-    }
-    
-    // Calculate frame duration from audio chunk duration - durations are already in seconds
-    const durationInSeconds = chunk.duration || 3; // Default to 3 seconds if no duration
-    const totalFrames = Math.max(1, Math.ceil(durationInSeconds * fps)); // Ensure minimum 1 frame
-    
-    // Frame calculation complete
-    
-    // Distribute frames evenly across images in this chunk
-    // Ensure minimum 1 frame per image to prevent 0 duration error
-    const framesPerImage = Math.max(1, Math.floor(totalFrames / chunkImages.length));
-    const extraFrames = Math.max(0, totalFrames - (framesPerImage * chunkImages.length));
-    
-    const imageFrameDurations = chunkImages.map((_, idx) => {
-      const duration = framesPerImage + (idx < extraFrames ? 1 : 0);
-      return Math.max(1, duration); // Ensure minimum 1 frame
+    // First, group images by their chunk metadata
+    images.forEach(image => {
+      const metadata = getChunkMetadata(image);
+      if (metadata.chunkId) {
+        if (!imagesByChunk.has(metadata.chunkId)) {
+          imagesByChunk.set(metadata.chunkId, []);
+        }
+        imagesByChunk.get(metadata.chunkId)!.push(image);
+      } else {
+        unassignedImages.push(image);
+      }
     });
     
-    scenes.push({
-      audioChunk: chunk,
-      images: chunkImages,
-      durationInFrames: totalFrames,
-      imageFrameDurations
-    });
+    console.log(`Found ${imagesByChunk.size} chunks with assigned images, ${unassignedImages.length} unassigned images`);
+    
+    // For each audio chunk, collect its assigned images
+    for (let i = 0; i < validChunks.length; i++) {
+      const chunk = validChunks[i];
+      let chunkImages: (string | GeneratedImage)[] = [];
+      
+      // Get images assigned to this chunk by metadata
+      if (imagesByChunk.has(chunk.id)) {
+        chunkImages = imagesByChunk.get(chunk.id)! || [];
+        console.log(`Chunk ${i + 1} (${chunk.id}): Found ${chunkImages.length} assigned images`);
+      }
+      
+      // If no assigned images, fall back to distributing unassigned images
+      if (chunkImages.length === 0 && unassignedImages.length > 0) {
+        const totalUnassigned = unassignedImages.length;
+        const averageImagesPerChunk = Math.max(1, Math.floor(totalUnassigned / validChunks.length));
+        const extraImages = totalUnassigned % validChunks.length;
+        
+        const startIndex = i * averageImagesPerChunk + Math.min(i, extraImages);
+        const imagesForThisChunk = averageImagesPerChunk + (i < extraImages ? 1 : 0);
+        const endIndex = Math.min(startIndex + imagesForThisChunk, totalUnassigned);
+        
+        chunkImages = unassignedImages.slice(startIndex, endIndex);
+        console.log(`Chunk ${i + 1} (${chunk.id}): Assigned ${chunkImages.length} unassigned images (${startIndex}-${endIndex - 1})`);
+      }
+      
+      // Ensure at least one image per chunk
+      if (chunkImages.length === 0) {
+        chunkImages = ['placeholder'];
+        console.log(`Chunk ${i + 1} (${chunk.id}): Using placeholder image`);
+      }
+      
+      // Convert to image URLs for rendering
+      const chunkImageUrls = chunkImages.map(getImageUrl);
+      
+      console.log(`Chunk ${i + 1} (${chunk.id}): ${chunkImageUrls.length} images assigned`);
+      
+      // Calculate frame duration from audio chunk duration
+      const durationInSeconds = chunk.duration || 3;
+      const totalFrames = Math.max(1, Math.ceil(durationInSeconds * fps));
+      
+      // Distribute frames evenly across images in this chunk
+      const framesPerImage = Math.max(1, Math.floor(totalFrames / chunkImageUrls.length));
+      const extraFrames = Math.max(0, totalFrames - (framesPerImage * chunkImageUrls.length));
+      
+      const imageFrameDurations = chunkImageUrls.map((_, idx) => {
+        const duration = framesPerImage + (idx < extraFrames ? 1 : 0);
+        return Math.max(1, duration); // Ensure minimum 1 frame
+      });
+      
+      scenes.push({
+        audioChunk: chunk,
+        images: chunkImageUrls,
+        durationInFrames: totalFrames,
+        imageFrameDurations
+      });
+    }
   }
   
   const totalFrames = scenes.reduce((sum, scene) => sum + scene.durationInFrames, 0);

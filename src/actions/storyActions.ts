@@ -753,6 +753,7 @@ export async function generateImageFromImagen3(
     // Extract image data from response
     const predictions = result.predictions;
     if (!predictions || predictions.length === 0) {
+      console.error("[generateImageFromImagen3] Imagen 3 API Error: No predictions array or empty predictions in response. Full response:", result);
       return { success: false, error: "No image data returned from Imagen 3 API", requestPrompt };
     }
 

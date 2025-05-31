@@ -14,6 +14,8 @@ export interface GeneratedImage {
   isChapterGenerated?: boolean; // Flag to identify images generated through chapter generation
   chapterNumber?: number; // The chapter number this image belongs to
   expandedPrompt?: string; // The full prompt with all @Entity references expanded
+  chunkId?: string; // The narration chunk ID this image belongs to
+  chunkIndex?: number; // The narration chunk index this image belongs to
   history?: {
     imageUrl: string;
     originalPrompt: string;
@@ -65,6 +67,8 @@ export interface ActionPrompt {
   originalPrompt: string;
   actionDescription: string; // Simple action description for animation
   chunkText: string; // Original narration chunk text that generated this scene
+  chunkId?: string; // The narration chunk ID this prompt belongs to
+  chunkIndex?: number; // The narration chunk index this prompt belongs to
 }
 
 export interface Story {

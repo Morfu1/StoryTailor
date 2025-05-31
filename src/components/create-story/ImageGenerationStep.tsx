@@ -25,6 +25,12 @@ import type { UseStoryStateReturn } from '@/hooks/useStoryState';
 import type { GeneratedImage, ActionPrompt } from '@/types/story';
 import { IMAGE_STYLES, DEFAULT_STYLE_ID, type ImageStyleId } from '@/types/imageStyles';
 
+interface ImageGenerationProgressState {
+  total: number;
+  completed: number;
+  generating: number[];
+}
+
 // Helper function to highlight @ references in prompts
 const HighlightedPrompt = ({ prompt }: { prompt: string | undefined }) => {
   // Safety check for undefined prompts
@@ -149,7 +155,9 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
                   sceneIndex: promptIndex,
                   originalPrompt: result.data.imagePrompts[promptIndex],
                   actionDescription: result.data.actionPrompts?.[promptIndex] || `Character performs action in scene ${promptIndex + 1}.`,
-                  chunkText: chunk.text
+                  chunkText: chunk.text,
+                  chunkId: chunk.id,
+                  chunkIndex: chunkIndex
                 });
                 promptIndex++;
               }
@@ -232,10 +240,15 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
     const result = await generateImageFromPrompt(prompt, storyData.userId, storyData.id, imageProvider, styleId);
     
     if (result.success && result.imageUrl && result.requestPrompt) {
+      // Find the corresponding action prompt for chunk metadata
+      const actionPrompt = storyData.actionPrompts?.find((ap: ActionPrompt) => ap.originalPrompt === prompt);
+      
       const newImage: GeneratedImage = {
         originalPrompt: prompt,
         requestPrompt: result.requestPrompt,
         imageUrl: result.imageUrl,
+        chunkId: actionPrompt?.chunkId,
+        chunkIndex: actionPrompt?.chunkIndex,
       };
       
       // Add to generatedImages, ensuring no duplicates
@@ -262,7 +275,7 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
       setImageGenerationProgress({
         ...imageGenerationProgress,
         completed: imageGenerationProgress.completed + 1,
-        generating: imageGenerationProgress.generating.filter((i: number) => i !== index)
+        generating: imageGenerationProgress.generating.filter((i) => i !== index)
       });
       
       toast({ 
@@ -273,7 +286,7 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
     } else {
       setImageGenerationProgress({
         ...imageGenerationProgress,
-        generating: imageGenerationProgress.generating.filter((i: number) => i !== index)
+        generating: imageGenerationProgress.generating.filter((i) => i !== index)
       });
       
       toast({ 
@@ -295,12 +308,12 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
     handleSetLoading('allImages', true);
     
     // Count already generated images
-    const alreadyGenerated = storyData.imagePrompts.filter(prompt => 
-      storyData.generatedImages?.find(img => img.originalPrompt === prompt)
+    const alreadyGenerated = (storyData.actionPrompts || []).filter((actionPrompt: ActionPrompt) =>
+      storyData.generatedImages?.find(img => img.originalPrompt === actionPrompt.originalPrompt)
     ).length;
     
     setImageGenerationProgress({
-      total: storyData.imagePrompts.length,
+      total: storyData.actionPrompts?.length || 0,
       completed: alreadyGenerated,
       generating: []
     });
@@ -314,7 +327,7 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
     let errorCount = 0;
     let currentStoryData = storyData;
     
-    for (let i = 0; i < storyData.imagePrompts.length; i++) {
+    for (let i = 0; i < (storyData.actionPrompts?.length || 0); i++) {
       // Check if user stopped generation
       if (isGenerationStoppedRef.current) {
         toast({
@@ -326,17 +339,20 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
         return; // Exit the function completely
       }
       
-      const prompt = storyData.imagePrompts[i];
+      const actionPrompt = storyData.actionPrompts![i];
+      const prompt = actionPrompt.originalPrompt;
       
       // Skip if already generated
       if (currentStoryData.generatedImages?.find(img => img.originalPrompt === prompt)) {
         continue;
       }
       
-      setImageGenerationProgress(prev => ({
-        ...prev,
-        generating: [i]
-      }));
+      setImageGenerationProgress({
+        ...imageGenerationProgress, // Use current state from storyState
+        generating: [i],
+        total: imageGenerationProgress.total || 0,
+        completed: imageGenerationProgress.completed || 0,
+      });
       
       const styleId = storyData.imageStyleId || DEFAULT_STYLE_ID;
       const result = await generateImageFromPrompt(prompt, storyData.userId, storyData.id, imageProvider, styleId);
@@ -346,6 +362,8 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
           originalPrompt: prompt,
           requestPrompt: result.requestPrompt,
           imageUrl: result.imageUrl,
+          chunkId: actionPrompt.chunkId,
+          chunkIndex: actionPrompt.chunkIndex,
         };
         
         const updatedImages = [
@@ -422,11 +440,12 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
         }
       }
       
-      setImageGenerationProgress(prev => ({
-        ...prev,
-        completed: prev.completed + 1,
-        generating: []
-      }));
+      setImageGenerationProgress({
+        ...imageGenerationProgress, // Use current state from storyState
+        completed: (imageGenerationProgress.completed || 0) + 1,
+        generating: [],
+        total: imageGenerationProgress.total || 0,
+      });
     }
     
     if (!isGenerationStoppedRef.current) {

@@ -9,7 +9,8 @@ export interface ParsedPrompt {
 
 // Helper function to convert names to @ reference format
 export const nameToReference = (name: string): string => {
-  return '@' + name.replace(/\s+/g, '').replace(/[^A-Za-z0-9]/g, '');
+  // Allow alphanumeric characters and dots in references
+  return '@' + name.replace(/\s+/g, '').replace(/[^A-Za-z0-9.]/g, '');
 };
 
 // Helper function to extract entity names from prompts
@@ -121,7 +122,8 @@ export const parseEntityReferences = (prompt: string, storyData: Story | null): 
   if (!storyData) return prompt;
   
   // Extract all @Entity references
-  const entityReferences = prompt.match(/@[A-Za-z0-9]+/g) || [];
+  // Allow alphanumeric characters and dots in entity references
+  const entityReferences = prompt.match(/@[A-Za-z0-9.]+/g) || [];
   let parsedPrompt = prompt;
 
   console.log("[parseEntityReferences] Entity references found:", entityReferences);

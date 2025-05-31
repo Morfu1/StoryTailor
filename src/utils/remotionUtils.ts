@@ -316,6 +316,12 @@ export const downloadAssetsForRendering = async (
           console.warn(`No URL for image ${index}, skipping`);
           return 'remotion-assets/placeholder.jpg';
         }
+
+        // Ensure imageUrl is a string before using string methods
+        if (typeof imageUrl !== 'string') {
+          console.warn(`Image URL for image ${index} is not a string, using placeholder. Received:`, imageUrl);
+          return 'remotion-assets/placeholder.jpg';
+        }
         
         // If the image is already a relative path in the public folder, use it directly
         if (imageUrl.startsWith('remotion-assets/')) {

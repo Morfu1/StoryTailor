@@ -2,12 +2,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import { CheckCircle, AlertCircle, Film, VideoIcon, Download } from 'lucide-react';
+import { CheckCircle, AlertCircle, Film, VideoIcon, Download, RefreshCw, XCircle } from 'lucide-react';
 import { ImageCategorizer } from './ImageCategorizer';
 import { countSceneImages, countDetailImages } from '@/utils/storyHelpers';
 import type { UseStoryStateReturn } from '@/hooks/useStoryState';
 import { useState, useEffect } from 'react';
 import { NarrationChunk } from '@/types/narration';
+import { GeneratedImage } from '@/types/story';
 
 interface FinalReviewStepProps {
   storyState: UseStoryStateReturn;
@@ -254,33 +255,32 @@ function RenderVideoButton({ storyData }: { storyData: UseStoryStateReturn['stor
     setVideoUrl(null);
 
     try {
-      // Order images by their original prompts to match Step 4 sequence
-      let sceneImages: string[] = [];
+      // Order images by their original prompts to match Step 4 sequence (preserve GeneratedImage objects)
+      let sceneImages: GeneratedImage[] = [];
       
       if (storyData.imagePrompts && storyData.generatedImages) {
-        // Create a map of prompt to image URL for fast lookup
-        const imageMap = new Map<string, string>();
+        // Create a map of prompt to GeneratedImage for fast lookup
+        const imageMap = new Map<string, GeneratedImage>();
         storyData.generatedImages
           .filter(image => image.imageUrl && image.originalPrompt)
           .forEach(image => {
-            imageMap.set(image.originalPrompt, image.imageUrl);
+            imageMap.set(image.originalPrompt, image);
           });
         
         // Order images by imagePrompts sequence (Step 4 order)
         sceneImages = storyData.imagePrompts
           .map(prompt => imageMap.get(prompt))
-          .filter(url => url !== undefined) as string[];
+          .filter(image => image !== undefined) as GeneratedImage[];
       }
 
       // If no ordered images found, fall back to any images with URLs
       if (sceneImages.length === 0) {
         console.log('No prompt-ordered images found, falling back to all images');
         sceneImages = storyData.generatedImages
-          ?.filter(image => image.imageUrl)
-          .map(image => image.imageUrl) || [];
+          ?.filter(image => image.imageUrl) || [];
       }
 
-      console.log('Scene images for video:', sceneImages);
+      console.log('Scene images for video:', sceneImages.length, 'images with chunk metadata');
       
       // Validate that we have images to work with
       if (sceneImages.length === 0) {
@@ -317,8 +317,20 @@ function RenderVideoButton({ storyData }: { storyData: UseStoryStateReturn['stor
       }
 
       // Prepare request payload
+      // Ensure that 'images' is an array of URL strings
+      const imageUrls = sceneImages.map(img => img.imageUrl).filter(url => typeof url === 'string') as string[];
+
+      if (imageUrls.length !== sceneImages.length) {
+        console.warn("Some images were filtered out due to missing or invalid imageUrls.");
+      }
+      
+      if (imageUrls.length === 0 && sceneImages.length > 0) {
+        throw new Error('No valid image URLs available for video rendering after filtering.');
+      }
+
+
       const payload = {
-        images: sceneImages,
+        images: imageUrls, // Send only the array of imageUrl strings
         audioChunks,
         storyTitle: storyData.title || 'Untitled Story',
         storyId: storyData.id || `story-${Date.now()}`
@@ -364,21 +376,54 @@ function RenderVideoButton({ storyData }: { storyData: UseStoryStateReturn['stor
     }
   };
 
+  const handleStopRendering = async () => {
+    if (!jobId) {
+      setError("No active job to stop.");
+      setIsRendering(false);
+      return;
+    }
+    console.log(`Attempting to stop rendering for job: ${jobId}`);
+    try {
+      const response = await fetch(`/api/video-job/${jobId}`, {
+        method: 'DELETE',
+      });
+      const data = await response.json();
+      if (response.ok) {
+        setError('Rendering cancelled by user.');
+        setIsRendering(false);
+        setVideoUrl(null); // Clear video URL as it's no longer valid
+        // setJobId(null); // JobId is cleared by pollJobStatus or if it was never set
+        setProgress(0);
+        setEstimatedTimeRemaining(null);
+         // Explicitly set jobId to null here as polling will stop
+        setJobId(null);
+      } else {
+        setError(data.error || 'Failed to stop rendering.');
+        // Keep isRendering true if stop failed, or let polling handle it
+      }
+    } catch (err) {
+      console.error('Error stopping rendering:', err);
+      setError('An error occurred while trying to stop rendering.');
+      // Potentially keep isRendering true, or let polling sort it out
+    }
+  };
+
   return (
     <div className="flex flex-col items-center space-y-4">
-      {!videoUrl && !isRendering && (
+      {/* Render/Render Again Button (shown if not rendering) */}
+      {!isRendering && (
         <Button
           onClick={handleRenderVideo}
           className="flex items-center gap-2"
-          disabled={isRendering}
         >
-          <VideoIcon className="h-4 w-4" />
-          Generate Video
+          {videoUrl ? <RefreshCw className="h-4 w-4" /> : <VideoIcon className="h-4 w-4" />}
+          {videoUrl ? "Render Again" : "Generate Video"}
         </Button>
       )}
 
+      {/* Progress Bar and Stop Button (shown when rendering) */}
       {isRendering && (
-        <div className="space-y-4">
+        <div className="space-y-4 w-full max-w-md"> {/* Added w-full and max-w-md for better layout */}
           <div className="text-center">
             <div className="text-sm font-medium text-gray-700 mb-2">
               Rendering your video...
@@ -438,10 +483,20 @@ function RenderVideoButton({ storyData }: { storyData: UseStoryStateReturn['stor
               <div className="w-2 h-2 bg-indigo-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
             </div>
           </div>
+          <Button
+            variant="destructive"
+            onClick={handleStopRendering}
+            className="w-full flex items-center gap-2"
+            disabled={!jobId} // Disable if no jobId (e.g., initial phase before jobId is set)
+          >
+            <XCircle className="h-4 w-4" />
+            Stop Rendering
+          </Button>
         </div>
       )}
 
-      {videoUrl && (
+      {/* Download Button and Success Message (shown if videoUrl exists and not rendering) */}
+      {videoUrl && !isRendering && (
         <div className="flex flex-col items-center gap-2">
           <span className="text-green-600 text-sm font-medium">Video rendered successfully!</span>
           <Button asChild variant="outline" className="flex items-center gap-2">
@@ -453,7 +508,8 @@ function RenderVideoButton({ storyData }: { storyData: UseStoryStateReturn['stor
         </div>
       )}
 
-      {error && (
+      {/* Error Message */}
+      {error && !isRendering && (
         <div className="text-red-500 text-sm">
           Error: {error}
         </div>
