@@ -158,22 +158,28 @@ export async function downloadStoryAsZip(storyData: Story) {
 
   // 3. Scene_Images folder
   const sceneImagesFolder = zip.folder('Scene_Images');
-  if (sceneImagesFolder && storyData.generatedImages) {
-    // Filter for scene images - these are images whose originalPrompt matches the imagePrompts array
-    const scenePrompts = storyData.imagePrompts || [];
-    const sceneImages = storyData.generatedImages.filter(image => 
-      image.originalPrompt && scenePrompts.includes(image.originalPrompt)
-    );
-    
-    for (let i = 0; i < sceneImages.length; i++) {
-      const image = sceneImages[i];
-      if (image.imageUrl) {
-        const imageBlob = await fetchFile(image.imageUrl);
+  if (sceneImagesFolder && storyData.imagePrompts && storyData.generatedImages) {
+    const allGeneratedImages = storyData.generatedImages;
+
+    for (let sceneIndex = 0; sceneIndex < storyData.imagePrompts.length; sceneIndex++) {
+      const currentScenePrompt = storyData.imagePrompts[sceneIndex];
+      
+      // Find the image that matches this specific scene prompt.
+      // This assumes that 'originalPrompt' on a GeneratedImage is the main scene prompt from Step 4.
+      const imageForScene = allGeneratedImages.find(img => img.originalPrompt === currentScenePrompt);
+
+      if (imageForScene && imageForScene.imageUrl) {
+        const imageBlob = await fetchFile(imageForScene.imageUrl);
         if (imageBlob) {
-          const filename = getFilenameFromUrl(image.imageUrl, `scene_${i + 1}.jpg`);
-          const chapterInfo = image.chapterNumber ? `_chapter_${image.chapterNumber}` : '';
-          sceneImagesFolder.file(`scene_${i + 1}${chapterInfo}_${filename}`, imageBlob);
+          const baseFilename = getFilenameFromUrl(imageForScene.imageUrl, `image.jpg`);
+          const chapterInfo = imageForScene.chapterNumber ? `_chapter_${imageForScene.chapterNumber}` : '';
+          // Use sceneIndex + 1 for 1-based scene numbering in filename, ensuring correct order
+          sceneImagesFolder.file(`scene_${sceneIndex + 1}${chapterInfo}_${baseFilename}`, imageBlob);
         }
+      } else {
+        // Log a warning if an image for a specific scene prompt isn't found.
+        // This helps in debugging but doesn't stop the zip creation for other available images.
+        console.warn(`[DownloadZip] No image found for scene ${sceneIndex + 1} (prompt: "${currentScenePrompt.substring(0, 50)}...")`);
       }
     }
   }
@@ -186,6 +192,21 @@ export async function downloadStoryAsZip(storyData: Story) {
       scenePrompts += `Scene ${index + 1}:\n${prompt}\n\n`;
     });
     scenePromptsFolder.file('scene_image_prompts.txt', scenePrompts);
+  }
+
+  // NEW: Action_Prompts folder
+  const actionPromptsFolder = zip.folder('Action_prompts');
+  if (actionPromptsFolder && storyData.actionPrompts && storyData.actionPrompts.length > 0) {
+    let actionPromptsText = '=== ACTION PROMPTS ===\n\n';
+    storyData.actionPrompts.forEach((prompt, index) => {
+      // Assuming sceneIndex in ActionPrompt is 0-based, so adding 1 for display
+      // Or if actionPrompts are already ordered, use the loop index.
+      // The ActionPrompt interface has sceneIndex, let's use that if available and reliable,
+      // otherwise, the array index + 1 is a good fallback.
+      // For now, using index + 1 as a simple approach.
+      actionPromptsText += `Scene ${prompt.sceneIndex !== undefined ? prompt.sceneIndex + 1 : index + 1}:\n${prompt.actionDescription}\n\n`;
+    });
+    actionPromptsFolder.file('action_prompts.txt', actionPromptsText);
   }
 
   // 5. Scene_Audio folder
