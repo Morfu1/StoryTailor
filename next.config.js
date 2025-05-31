@@ -1,3 +1,4 @@
+
 const path = require('path');
 
 /** @type {import('next').NextConfig} */
@@ -34,12 +35,17 @@ const nextConfig = {
         port: '',
         pathname: '/**',
       },
+      { // Added from next.config.ts for completeness, if next.config.js is the source of truth
+        protocol: 'https',
+        hostname: 'placehold.co',
+        port: '',
+        pathname: '/**',
+      }
     ],
   },
   // Add transpilePackages to handle Remotion properly
   transpilePackages: ['@remotion/cli', '@remotion/bundler', '@remotion/renderer', '@remotion/player'],
   
-  // Configure webpack to handle TypeScript declaration files properly
   webpack: (config, { isServer }) => {
     // Ignore TypeScript declaration files from esbuild that cause parsing errors
     config.module.rules.push({
@@ -47,10 +53,10 @@ const nextConfig = {
       loader: 'ignore-loader',
     });
 
-    // Resolve Remotion platform-specific modules to our mock implementation
-    // This prevents errors when modules for other platforms are imported
+    // Add handlebars alias (from next.config.ts)
     config.resolve.alias = {
       ...config.resolve.alias,
+      'handlebars': 'handlebars/dist/handlebars.js', // Added alias
       // Use our mocks for the platform-specific modules that are causing errors
       '@remotion/compositor-win32-x64-msvc': path.resolve(__dirname, 'src/mocks/compositor-win32-x64-msvc.js'),
       '@remotion/compositor-linux-x64-musl': path.resolve(__dirname, 'src/mocks/compositor-linux-x64-musl.js'),
@@ -69,6 +75,17 @@ const nextConfig = {
       '@remotion/compositor-linux-arm64-gnu': false,
       '@remotion/compositor-linux-arm64-musl': false,
     };
+
+    // Add noParse rule for problematic Remotion files
+    // These regexes target the specific files mentioned in your build error.
+    config.module.noParse = [
+      ...(config.module.noParse || []), // Keep existing noParse rules if any
+      /node_modules\/@remotion\/licensing\/dist\/register-usage-point\.js$/,
+      /node_modules\/@remotion\/media-parser\/dist\/aac-codecprivate\.js$/,
+      /node_modules\/@remotion\/media-parser\/dist\/containers\/flac\/parse-flac-frame\.js$/,
+      /node_modules\/@remotion\/media-parser\/dist\/containers\/iso-base-media\/esds\/esds-descriptors\.js$/,
+      /node_modules\/@remotion\/media-parser\/dist\/containers\/iso-base-media\/find-track-to-seek\.js$/,
+    ];
 
     return config;
   },
