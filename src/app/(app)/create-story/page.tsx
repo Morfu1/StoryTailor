@@ -61,37 +61,37 @@ export default function CreateStoryPage() {
     setUploadedAudioFileName,
     setIsImagePromptEditing,
     handleSetLoading,
-    userApiKeys, // Get from storyState
-    setUserApiKeys, // Setter for storyState
-    apiKeysLoading, // Loading state for API keys from storyState
-    setApiKeysLoading // Setter for loading state
+    userApiKeys, 
+    setUserApiKeys, 
+    apiKeysLoading, 
+    setApiKeysLoading 
   } = storyState;
 
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
 
   // Fetch User API Keys
   useEffect(() => {
-    if (user && !userApiKeys && !apiKeysLoading) {
-      setApiKeysLoading(true);
-      handleSetLoading('userApiKeys', true); // Use a specific loading key if preferred
+    if (user && !userApiKeys && !apiKeysLoading) { 
+      setApiKeysLoading(true); 
       getUserApiKeys(user.uid).then(result => {
         if (result.success && result.data) {
           setUserApiKeys(result.data);
         } else {
-          setUserApiKeys({}); // Set to empty object if fetch fails or no keys
+          setUserApiKeys({}); 
           toast({ title: "Could not load your API keys", description: result.error || "Please configure them in Account Settings.", variant: "default" });
         }
-        setApiKeysLoading(false);
-        handleSetLoading('userApiKeys', false);
       }).catch(err => {
         console.error("Error fetching user API keys:", err);
         setUserApiKeys({});
-        setApiKeysLoading(false);
-        handleSetLoading('userApiKeys', false);
         toast({ title: "Error Loading API Keys", description: "An unexpected error occurred.", variant: "destructive" });
+      }).finally(() => {
+        setApiKeysLoading(false); 
       });
+    } else if (!user && userApiKeys) {
+      // Clear API keys if user logs out
+      setUserApiKeys(null);
     }
-  }, [user, userApiKeys, apiKeysLoading, setUserApiKeys, setApiKeysLoading, handleSetLoading, toast]);
+  }, [user, userApiKeys, apiKeysLoading, setUserApiKeys, setApiKeysLoading, toast]);
 
 
   // Handle authentication and story loading
@@ -291,12 +291,12 @@ export default function CreateStoryPage() {
     setIsDeleteConfirmOpen(false);
   };
 
-  if (authLoading || pageLoading || apiKeysLoading) { // Added apiKeysLoading
+  if (authLoading || pageLoading || apiKeysLoading) { 
     return (
       <div className="container mx-auto px-4 py-8">
         <div className="flex items-center justify-center h-64">
           <Loader2 className="h-8 w-8 animate-spin" />
-          <p className="ml-2">{apiKeysLoading ? "Loading API key status..." : "Loading story..."}</p>
+          <p className="ml-2">{apiKeysLoading ? "Loading API key status..." : authLoading ? "Authenticating..." : "Loading story..."}</p>
         </div>
       </div>
     );

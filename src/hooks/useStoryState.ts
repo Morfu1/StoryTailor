@@ -118,7 +118,7 @@ export const useStoryState = (userId?: string): UseStoryStateReturn => {
   }>({ total: 0, completed: 0, generating: [] });
 
   const [userApiKeys, setUserApiKeysState] = useState<UserApiKeys | null>(null);
-  const [apiKeysLoading, setApiKeysLoadingState] = useState<boolean>(true);
+  const [apiKeysLoading, setApiKeysLoadingState] = useState<boolean>(false); // Changed initial to false
 
 
   const updateStoryData = useCallback((updates: Partial<Story>) => {
