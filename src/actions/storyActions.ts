@@ -7,20 +7,20 @@ import { z } from 'zod';
 
 // Import Input/Output schemas from the original flow files - STATIC IMPORTS
 import {
-  GenerateCharacterPromptsInputSchema as AICharacterPromptsInputSchema,
-  GenerateCharacterPromptsOutputSchema as AICharacterPromptsOutputSchema
+  GenerateCharacterPromptsInputSchema as AICharacterPromptsInputSchemaOriginal,
+  GenerateCharacterPromptsOutputSchema as AICharacterPromptsOutputSchemaOriginal
 } from '@/ai/flows/generate-character-prompts';
 
 import {
-  GenerateImagePromptsInputSchema as AIImagePromptsInputSchema,
-  GenerateImagePromptsOutputSchema as AIImagePromptsOutputSchema
+  GenerateImagePromptsInputSchema as AIImagePromptsInputSchemaOriginal,
+  GenerateImagePromptsOutputSchema as AIImagePromptsOutputSchemaOriginal
 } from '@/ai/flows/generate-image-prompts';
 
 import {
-  GenerateNarrationAudioInputSchema as AINarrationAudioInputSchema, // Note: This flow still exists but storyActions also implements direct calls
-  GenerateNarrationAudioOutputSchema as AINarrationAudioOutputSchema, // Renamed to avoid conflict for direct calls
-  type GenerateNarrationAudioInput as AINarrationAudioInputType, // Type for the flow
-  type GenerateNarrationAudioOutput as AINarrationAudioOutputType // Type for the flow
+  GenerateNarrationAudioInputSchema as AINarrationAudioInputSchemaFlow,
+  GenerateNarrationAudioOutputSchema as AINarrationAudioOutputSchemaFlow,
+  type GenerateNarrationAudioInput as AINarrationAudioInputType,
+  type GenerateNarrationAudioOutput as AINarrationAudioOutputType
 } from '@/ai/flows/generate-narration-audio';
 
 
@@ -46,281 +46,277 @@ import type { Timestamp as AdminTimestamp } from 'firebase-admin/firestore';
 import { getStorage as getAdminStorage } from 'firebase-admin/storage';
 import { revalidatePath } from 'next/cache';
 import { getUserApiKeys } from './apiKeyActions';
-import type { UserApiKeys } from '@/types/apiKeys'; // For API key types
+import type { UserApiKeys } from '@/types/apiKeys';
 
-// Schemas to be used in server actions, possibly extended if needed
-// Add checks for undefined schemas, though static imports should prevent this.
-const AITitleInputSchema = AITitleInputSchemaOriginal || z.object({ userPrompt: z.string() });
-const AITitleOutputSchema = AITitleOutputSchemaOriginal || z.object({ title: z.string() });
+// Schemas to be used in server actions, possibly extended if needed.
+// Provide fallbacks for all imported schemas before they are extended.
+
+const AITitleInputSchema = AITitleInputSchemaOriginal || z.object({
+  userPrompt: z.string().describe('The user-provided prompt or summary of the story idea.')
+});
+const AITitleOutputSchema = AITitleOutputSchemaOriginal || z.object({
+  title: z.string().describe('A short, catchy, and relevant title for the story, under 10 words.')
+});
 const GenerateTitleInputServerSchema = AITitleInputSchema.extend({ userId: z.string() });
 export type GenerateTitleInput = z.infer<typeof GenerateTitleInputServerSchema>;
 
-const AIScriptInputSchema = AIScriptInputSchemaOriginal || z.object({ prompt: z.string() });
-const AIScriptOutputSchema = AIScriptOutputSchemaOriginal || z.object({ script: z.string() });
+
+const AIScriptInputSchema = AIScriptInputSchemaOriginal || z.object({
+  prompt: z.string().describe('A detailed prompt including themes, character descriptions, and story twists for the animated video script.')
+});
+const AIScriptOutputSchema = AIScriptOutputSchemaOriginal || z.object({
+  script: z.string().describe('The generated script for the animated video, tailored for children and adults, and narrated by a single voice.')
+});
 const GenerateScriptInputServerSchema = AIScriptInputSchema.extend({ userId: z.string() });
 export type GenerateScriptInput = z.infer<typeof GenerateScriptInputServerSchema>;
 
-// AICharacterPromptsInputSchema is already imported and named
+
+const AICharacterPromptsInputSchema = AICharacterPromptsInputSchemaOriginal || z.object({
+  script: z.string().describe('The main script of the story.'),
+  imageStyleId: z.string().optional().describe('The image style ID to apply to the visual descriptions.'),
+  imageProvider: z.enum(['picsart', 'gemini', 'imagen3']).default('picsart').describe('The AI provider for image generation to tailor style prompts.'),
+});
+const AICharacterPromptsOutputSchema = AICharacterPromptsOutputSchemaOriginal || z.object({
+  characterPrompts: z.string().describe('Visual descriptions for characters.'),
+  itemPrompts: z.string().describe('Visual descriptions for items.'),
+  locationPrompts: z.string().describe('Visual descriptions for locations.'),
+});
 const GenerateCharacterPromptsInputServerSchema = AICharacterPromptsInputSchema.extend({ userId: z.string() });
 export type GenerateCharacterPromptsInput = z.infer<typeof GenerateCharacterPromptsInputServerSchema>;
 
-// AIImagePromptsInputSchema is already imported and named
+
+const AIImagePromptsInputSchema = AIImagePromptsInputSchemaOriginal || z.object({
+  script: z.string().describe('The animation script to base the image prompts on.'),
+  characterPrompts: z.string().describe('Prompts describing all characters.'),
+  locationPrompts: z.string().describe('Prompts describing all locations.'),
+  itemPrompts: z.string().describe('Prompts describing all items.'),
+  audioDurationSeconds: z.number().describe('The duration of the narration audio in seconds.'),
+  narrationChunks: z.array(z.object({
+    text: z.string(),
+    duration: z.number(),
+    audioUrl: z.string().optional(),
+  })).optional().describe('Array of narration chunks with text and duration.'),
+  imageProvider: z.enum(['picsart', 'gemini', 'imagen3']).default('picsart').describe('The AI provider for image generation.'),
+  isPicsart: z.boolean().optional().describe('Whether the image provider is PicsArt.'),
+});
+const AIImagePromptsOutputSchema = AIImagePromptsOutputSchemaOriginal || z.object({
+  imagePrompts: z.array(z.string()).describe('The generated image prompts as an array of strings.'),
+  actionPrompts: z.array(z.string()).describe('Simple action descriptions for character movements in each scene.'),
+});
 const GenerateImagePromptsInputServerSchema = AIImagePromptsInputSchema.extend({ userId: z.string() });
 export type GenerateImagePromptsInput = z.infer<typeof GenerateImagePromptsInputServerSchema>;
 
-const AIScriptChunksInputSchema = AIScriptChunksInputSchemaOriginal || z.object({ script: z.string() });
-const AIScriptChunksOutputSchema = AIScriptChunksOutputSchemaOriginal || z.object({ scriptChunks: z.array(z.string()), error: z.string().optional() });
+
+const AIScriptChunksInputSchema = AIScriptChunksInputSchemaOriginal || z.object({
+  script: z.string().describe('The full story script to be split into chunks.')
+});
+const AIScriptChunksOutputSchema = AIScriptChunksOutputSchemaOriginal || z.object({
+  scriptChunks: z.array(z.string()).describe('An array of script chunks, where each chunk is a string.'),
+  error: z.string().optional().describe('An error message if splitting failed.')
+});
 const GenerateScriptChunksInputServerSchema = AIScriptChunksInputSchema.extend({ userId: z.string() });
 export type GenerateScriptChunksInput = z.infer<typeof GenerateScriptChunksInputServerSchema>;
 
 
 // Prompt templates (extracted or simplified from original flow files)
-const titlePromptTemplate = `You are an expert at creating catchy and concise titles for stories.
-Based on the user's story prompt, generate a short title (ideally 3-7 words, maximum 10 words) that captures the essence of the story.
-User Prompt: "{{userPrompt}}"
-Generated Title:`;
+const titlePromptTemplate = 'You are an expert at creating catchy and concise titles for stories.\n' +
+'Based on the user\'s story prompt, generate a short title (ideally 3-7 words, maximum 10 words) that captures the essence of the story.\n' +
+'User Prompt: "{{userPrompt}}"\n' +
+'Generated Title:';
 
-const scriptPromptTemplate = `You are a script writer for animated videos. Your task is to generate a script based on the user's prompt.
-The script should be engaging for both children and adults, and should follow the themes, character descriptions, and story twists provided in the prompt.
-Importantly, the entire script must be written from the perspective of a single narrator. Do not include character dialogues unless the narrator is quoting them. The narrative should flow as if one person is telling the entire story.
-Ensure the script maintains a specific word count for optimal engagement.
-User Prompt: {{{prompt}}}
-Generated Script (for single narrator):`;
+const scriptPromptTemplate = 'You are a script writer for animated videos. Your task is to generate a script based on the user\'s prompt.\n' +
+'The script should be engaging for both children and adults, and should follow the themes, character descriptions, and story twists provided in the prompt.\n' +
+'Importantly, the entire script must be written from the perspective of a single narrator. Do not include character dialogues unless the narrator is quoting them. The narrative should flow as if one person is telling the entire story.\n' +
+'Ensure the script maintains a specific word count for optimal engagement.\n' +
+'User Prompt: {{{prompt}}}\n' +
+'Generated Script (for single narrator):';
 
-const characterPromptsPromptTemplate = `You are an expert prompt engineer specializing in creating descriptions for text-to-image AI models (like DALL-E, Midjourney, or Flux Dex model).
-Based on the following story script, generate detailed visual descriptions for the main characters, key items, and important locations.
-These descriptions will be used as prompts for an AI image generator to create visuals for the story.
+const characterPromptsPromptTemplate = 'You are an expert prompt engineer specializing in creating descriptions for text-to-image AI models (like DALL-E, Midjourney, or Flux Dex model).\n' +
+'Based on the following story script, generate detailed visual descriptions for the main characters, key items, and important locations.\n' +
+'These descriptions will be used as prompts for an AI image generator to create visuals for the story.\n\n' +
+'{{#if stylePrompt}}\n' +
+'**ARTISTIC STYLE REQUIREMENTS:**\n' +
+'Incorporate these style characteristics into all descriptions: {{{stylePrompt}}}\n' +
+'Ensure that character, item, and location descriptions align with this artistic style while maintaining their unique features.\n' +
+'{{/if}}\n\n' +
+'Script:\n' +
+'{{{script}}}\n\n' +
+'Instructions for output:\n' +
+'1.  For each category (Characters, Items, Locations), provide a heading (e.g., "Character Prompts:", "Item Prompts:", "Location Prompts:"). This heading MUST be part of the string for that category and appear at the very beginning of that category\'s section.\n' +
+'2.  Under each heading, list the entities. For each entity:\n' +
+'    *   **First line:** The name of the character, item, or location. Names should be easy to convert to @ references (e.g., "Rosie Recycle" → @RosieRecycle, "Old Man Grumbles" → @OldManGrumbles, "Magic Sword" → @MagicSword).\n' +
+'    *   **Subsequent lines:** Starting on the line immediately following the name, provide a detailed visual description suitable for a text-to-image model. This description MUST:\n' +
+'        *   Be entirely in **lowercase**.\n' +
+'        *   Be a **single sentence**.\n' +
+'        *   **Not end** with any punctuation marks like \'.\', \'?\', or \'!\'.\n' +
+'        *   **MANDATORY for characters**: Include specific physical traits for consistency:\n' +
+'            - Hair color and style (e.g., "brown hair", "blonde hair", "curly red hair", "long black hair")\n' +
+'            - Eye color (e.g., "blue eyes", "green eyes", "brown eyes")\n' +
+'            - Skin tone if relevant (e.g., "pale skin", "tan skin", "dark skin")\n' +
+'            - Age descriptors (e.g., "young girl", "elderly man", "teenage boy")\n' +
+'            - Key identifying features (clothing, accessories, distinctive marks)\n' +
+'        *   Focus on visual attributes: appearance, attire, textures, colors, age, mood, specific features, and any other visual details. Be descriptive and evocative.\n' +
+'3.  Ensure **exactly one blank line** separates each complete entity\'s entry (name + description) from the next entity within the same category. Do not use more than one blank line.\n\n' +
+'Example of desired output format and style (the content below is an example of the style and formatting you should follow, generate your own content based on the script):\n\n' +
+'Character Prompts:\n' +
+'Ember\n' +
+'a tiny house cat-sized dragon with dull smoky grey scales, large hopeful bright orange eyes, small crumpled wings, a perpetually worried expression, blunt claws and tiny teeth\n\n' +
+'Ignis\n' +
+'an ancient wise dragon with cooled lava-colored scales cracked and weathered with age, glowing inner fire eyes, long braided beard with glittering obsidian beads, carrying a gnarled staff of petrified wood\n\n' +
+'Rosie Recycle\n' +
+'a young girl with curly brown hair and bright green eyes, wearing goggles made from repurposed clear soda bottles, a cape fashioned from colorful recycled newspapers, pale skin with a determined expression and her outfit adorned with recycling symbols\n\n' +
+'Item Prompts:\n' +
+'Gnarled Staff\n' +
+'a staff made of dark petrified wood gnarled and twisted with age it might have a faintly glowing crystal or ancient rune carved at its tip emitting a soft light\n\n' +
+'Obsidian Beads\n' +
+'small polished beads of pure black obsidian reflecting light with a glassy sheen they could be intricately braided into a character\'s beard or hair or part of a necklace\n\n' +
+'Location Prompts:\n' +
+'Desolate Village\n' +
+'a small somber village with simple run-down huts made of rough-hewn wood and deteriorating thatch the surrounding landscape is barren and dusty perhaps with a few dead trees a sense of gloom and despair hangs heavy in the air colors are muted primarily browns greys and faded earth tones\n\n' +
+'Volcanic Peak\n' +
+'a towering jagged mountain its peak perpetually wreathed in thick dark smoke and a faint ominous red glow from within the slopes are steep and treacherous covered in loose scree sharp volcanic rock and patches of grey ash no vegetation is visible\n\n' +
+'Now, generate the character, item, and location prompts based on the provided script, adhering strictly to the format, style, and level of detail exemplified above. For characters, ensure you include specific physical traits (hair color/style, eye color, skin tone, age) for consistency across image generations. Use lowercase, single-sentence, no-punctuation-ending descriptions.\n';
 
-{{#if stylePrompt}}
-**ARTISTIC STYLE REQUIREMENTS:**
-Incorporate these style characteristics into all descriptions: {{{stylePrompt}}}
-Ensure that character, item, and location descriptions align with this artistic style while maintaining their unique features.
-{{/if}}
 
-Script:
-{{{script}}}
+const imagePromptsPromptTemplate = 'You are an expert at creating detailed image prompts optimized for FLUX AI model through PicsArt API. Your goal is to generate prompts that correlate with narration chunks using FLUX-specific techniques.\n\n' +
+'{{#if chunksData}}\n' +
+'**SOUND CHUNK CORRELATION MODE:**\n' +
+'You must generate prompts that correlate with the provided narration chunks. Each chunk has:\n' +
+'- Text content to analyze\n' +
+'- Duration in seconds\n' +
+'- Required number of prompts based on duration\n\n' +
+'Chunk Details:\n' +
+'{{#each chunksData}}\n' +
+'Chunk {{@index}}: "{{text}}" (Duration: {{duration}}s, Required prompts: {{promptCount}})\n' +
+'{{/each}}\n\n' +
+'{{#if isPicsart}}\n' +
+'**FLUX DEV OPTIMIZED PROMPTING FOR PICSART:**\n' +
+'FLUX is exceptionally good at understanding natural language. Use this structure with entity references:\n\n' +
+'1. **Entity Reference System**: Use \'@\' prefix for all characters, locations, and items (e.g., @CharacterName, @LocationName, @ItemName)\n' +
+'2. **Natural Language Approach**: Write prompts as if describing a scene to a human\n' +
+'3. **Subject-Action-Environment Pattern**: Start with the main subject, describe what they\'re doing, then the environment\n' +
+'4. **Specific Visual Details**: Include lighting, camera angles, and artistic style\n\n' +
+'**Flux-Optimized Structure with Entity References:**\n' +
+'"[Camera shot] of @CharacterName [action/emotion/pose] in @LocationName. [Interaction with @ItemName if relevant]. [Lighting description]. [Additional details]."\n\n' +
+'**Example:**\n' +
+'"Close-up shot of @Luna looking up in wonder at floating golden sparkles around her. She\'s standing in @EnchantedForest clearing with dappled sunlight filtering through ancient oak trees. @MagicalSparkles dance around her hands. Warm, magical lighting with soft shadows."\n\n' +
+'**Character Consistency Examples:**\n' +
+'- "@Whiskers sits alertly"\n' +
+'- "@Fuzzy bounces playfully"\n\n' +
+'**CRITICAL REQUIREMENTS:**\n' +
+'- Always use \'@\' prefix before character names (e.g., @Luna, @Hero, @Villain)\n' +
+'- Always use \'@\' prefix before location names (e.g., @Castle, @Forest, @Bedroom)\n' +
+'- Always use \'@\' prefix before important item names (e.g., @Sword, @Crown, @Book)\n' +
+'- Extract character, location, and item names from the provided reference descriptions\n' +
+'- NEVER include character/item/location descriptions when using @placeholders - the @placeholder will be expanded with the full description automatically\n' +
+'- Use present tense for actions\n' +
+'- Be specific about emotions and expressions\n' +
+'- Include environmental context and lighting\n\n' +
+'**ABSOLUTELY FORBIDDEN - DO NOT INCLUDE:**\n' +
+'- Any artistic style descriptors (NO "Digital painting style", "3D rendered", "cartoon style", etc.)\n' +
+'- Art medium references (NO "watercolor", "oil painting", "comic book style", etc.)\n' +
+'- Software references (NO "Unreal Engine", "Blender", "Photoshop", etc.)\n' +
+'- Quality descriptors (NO "highly detailed", "8K", "photorealistic", etc.)\n' +
+'- The artistic style will be handled separately by the system through model configuration, NOT in the prompt text\n\n' +
+'**STYLE HANDLING PHILOSOPHY:**\n' +
+'Style is applied systematically through the imageStyleUtils system after prompt generation. This ensures scene prompts remain clean and focused on content while style is consistently applied across all generated images.\n\n' +
+'{{else}}\n' +
+'**GOOGLE/GEMINI PROMPTING STRUCTURE:**\n' +
+'For Google providers, use more detailed cinematic descriptions with:\n' +
+'- Camera angles and shot types\n' +
+'- Lighting and mood descriptions\n' +
+'- Detailed scene composition\n' +
+'- Character emotions and expressions\n' +
+'{{/if}}\n\n' +
+'{{else}}\n' +
+'**FALLBACK MODE (when no chunks provided):**\n' +
+'Analyze the script and identify {{numImages}} key scenes that need visualization using FLUX-optimized natural language descriptions.\n' +
+'{{/if}}\n\n' +
+'**CHARACTER REFERENCE:**\n' +
+'{{{characterPrompts}}}\n\n' +
+'**CRITICAL NAMING CONSISTENCY:**\n' +
+'When referencing characters, items, or locations in your image prompts, you MUST ONLY use entities that exist in the reference sections above, prefixed with @.\n\n' +
+'MANDATORY RULES:\n' +
+'1. ONLY use @placeholders for entities listed in the CHARACTER REFERENCE, LOCATION REFERENCE, and ITEM REFERENCE sections\n' +
+'2. NEVER create @placeholders for entities not in these reference sections\n' +
+'3. Convert entity names to PascalCase when creating @references (e.g., "Old Man Grumbles" becomes @OldManGrumbles)\n' +
+'4. Do NOT include descriptions alongside @placeholders - they will be expanded automatically\n\n' +
+'For example, if the character reference shows:\n' +
+'"Rosie Recycle\n' +
+'a young girl with..."\n\n' +
+'Then use: @RosieRecycle (no description needed)\n\n' +
+'If the character reference shows:\n' +
+'"Old Man Grumbles\n' +
+'an elderly man with..."\n\n' +
+'Then use: @OldManGrumbles (no description needed)\n\n' +
+'**CHARACTER CONSISTENCY REQUIREMENTS:**\n' +
+'- Character descriptions are automatically provided through @placeholders\n' +
+'- Focus on character actions, emotions, and interactions with environment\n' +
+'- Use @placeholders for all characters, items, and locations from the reference sections\n' +
+'- Do not duplicate descriptions that are already in the @placeholder expansions\n\n' +
+'**REGENERATION NOTICE:**\n' +
+'⚠️ After implementing these character consistency requirements, you MUST regenerate:\n' +
+'1. All character prompt descriptions to include specific physical traits\n' +
+'2. All character reference images with consistent visual features\n' +
+'3. All location and item images to match the updated style\n' +
+'4. Existing story content to use the new consistent character descriptions\n\n' +
+'**LOCATION REFERENCE:**\n' +
+'{{{locationPrompts}}}\n\n' +
+'**ITEM REFERENCE:**\n' +
+'{{{itemPrompts}}}\n\n' +
+'**STORY SCRIPT:**\n' +
+'{{{script}}}\n\n' +
+'{{#if chunksData}}\n' +
+'**INSTRUCTIONS:**\n' +
+'For each narration chunk, create {{#each chunksData}}{{promptCount}} prompt(s) for chunk {{@index}}, {{/each}} ensuring they match the narrative content and flow smoothly between scenes. Focus on key emotional moments, character interactions, and scene transitions.\n\n' +
+'Total prompts needed: {{numImages}}\n\n' +
+'**ALSO GENERATE ACTION PROMPTS:**\n' +
+'For each image prompt, create a corresponding simple action description that describes the specific movements/actions characters perform in that scene. These are for animation purposes.\n\n' +
+'Action prompts should be:\n' +
+'- Simple, clear descriptions of character movements\n' +
+'- Focus on physical actions (walking, jumping, blinking, tail wagging, etc.)\n' +
+'- Describe what each character does in that specific scene\n' +
+'- Keep them concise and animation-focused\n\n' +
+'Examples:\n' +
+'- "The kitten\'s fur gently rises and falls as it sleeps."\n' +
+'- "The kitten leaps forward and waves its paws."\n' +
+'- "The white kitten takes a few steps forward and wags its tail. The grey cat blinks and turns its head."\n\n' +
+'{{else}}\n' +
+'Generate exactly {{numImages}} FLUX-optimized image prompts based on the script\'s key visual moments.\n' +
+'{{/if}}\n\n' +
+'**OUTPUT FORMAT:**\n' +
+'Return your response as a JSON object with two keys:\n' +
+'1. "imagePrompts": An array of exactly {{numImages}} strings, each optimized for FLUX AI model\n' +
+'2. "actionPrompts": An array of exactly {{numImages}} strings, each describing simple character movements for that scene';
 
-Instructions for output:
-1.  For each category (Characters, Items, Locations), provide a heading (e.g., "Character Prompts:", "Item Prompts:", "Location Prompts:"). This heading MUST be part of the string for that category and appear at the very beginning of that category's section.
-2.  Under each heading, list the entities. For each entity:
-    *   **First line:** The name of the character, item, or location. Names should be easy to convert to @ references (e.g., "Rosie Recycle" → @RosieRecycle, "Old Man Grumbles" → @OldManGrumbles, "Magic Sword" → @MagicSword).
-    *   **Subsequent lines:** Starting on the line immediately following the name, provide a detailed visual description suitable for a text-to-image model. This description MUST:
-        *   Be entirely in **lowercase**.
-        *   Be a **single sentence**.
-        *   **Not end** with any punctuation marks like '.', '?', or '!'.
-        *   **MANDATORY for characters**: Include specific physical traits for consistency:
-            - Hair color and style (e.g., "brown hair", "blonde hair", "curly red hair", "long black hair")
-            - Eye color (e.g., "blue eyes", "green eyes", "brown eyes")
-            - Skin tone if relevant (e.g., "pale skin", "tan skin", "dark skin")
-            - Age descriptors (e.g., "young girl", "elderly man", "teenage boy")
-            - Key identifying features (clothing, accessories, distinctive marks)
-        *   Focus on visual attributes: appearance, attire, textures, colors, age, mood, specific features, and any other visual details. Be descriptive and evocative.
-3.  Ensure **exactly one blank line** separates each complete entity's entry (name + description) from the next entity within the same category. Do not use more than one blank line.
-
-Example of desired output format and style (the content below is an example of the style and formatting you should follow, generate your own content based on the script):
-
-Character Prompts:
-Ember
-a tiny house cat-sized dragon with dull smoky grey scales, large hopeful bright orange eyes, small crumpled wings, a perpetually worried expression, blunt claws and tiny teeth
-
-Ignis
-an ancient wise dragon with cooled lava-colored scales cracked and weathered with age, glowing inner fire eyes, long braided beard with glittering obsidian beads, carrying a gnarled staff of petrified wood
-
-Rosie Recycle
-a young girl with curly brown hair and bright green eyes, wearing goggles made from repurposed clear soda bottles, a cape fashioned from colorful recycled newspapers, pale skin with a determined expression and her outfit adorned with recycling symbols
-
-Item Prompts:
-Gnarled Staff
-a staff made of dark petrified wood gnarled and twisted with age it might have a faintly glowing crystal or ancient rune carved at its tip emitting a soft light
-
-Obsidian Beads
-small polished beads of pure black obsidian reflecting light with a glassy sheen they could be intricately braided into a character's beard or hair or part of a necklace
-
-Location Prompts:
-Desolate Village
-a small somber village with simple run-down huts made of rough-hewn wood and deteriorating thatch the surrounding landscape is barren and dusty perhaps with a few dead trees a sense of gloom and despair hangs heavy in the air colors are muted primarily browns greys and faded earth tones
-
-Volcanic Peak
-a towering jagged mountain its peak perpetually wreathed in thick dark smoke and a faint ominous red glow from within the slopes are steep and treacherous covered in loose scree sharp volcanic rock and patches of grey ash no vegetation is visible
-
-Now, generate the character, item, and location prompts based on the provided script, adhering strictly to the format, style, and level of detail exemplified above. For characters, ensure you include specific physical traits (hair color/style, eye color, skin tone, age) for consistency across image generations. Use lowercase, single-sentence, no-punctuation-ending descriptions.
-`;
-
-const imagePromptsPromptTemplate = `You are an expert at creating detailed image prompts optimized for FLUX AI model through PicsArt API. Your goal is to generate prompts that correlate with narration chunks using FLUX-specific techniques.
-
-{{#if chunksData}}
-**SOUND CHUNK CORRELATION MODE:**
-You must generate prompts that correlate with the provided narration chunks. Each chunk has:
-- Text content to analyze
-- Duration in seconds
-- Required number of prompts based on duration
-
-Chunk Details:
-{{#each chunksData}}
-Chunk {{@index}}: "{{text}}" (Duration: {{duration}}s, Required prompts: {{promptCount}})
-{{/each}}
-
-{{#if isPicsart}}
-**FLUX DEV OPTIMIZED PROMPTING FOR PICSART:**
-FLUX is exceptionally good at understanding natural language. Use this structure with entity references:
-
-1. **Entity Reference System**: Use '@' prefix for all characters, locations, and items (e.g., @CharacterName, @LocationName, @ItemName)
-2. **Natural Language Approach**: Write prompts as if describing a scene to a human
-3. **Subject-Action-Environment Pattern**: Start with the main subject, describe what they're doing, then the environment
-4. **Specific Visual Details**: Include lighting, camera angles, and artistic style
-
-**Flux-Optimized Structure with Entity References:**
-"[Camera shot] of @CharacterName [action/emotion/pose] in @LocationName. [Interaction with @ItemName if relevant]. [Lighting description]. [Additional details]."
-
-**Example:**
-"Close-up shot of @Luna looking up in wonder at floating golden sparkles around her. She's standing in @EnchantedForest clearing with dappled sunlight filtering through ancient oak trees. @MagicalSparkles dance around her hands. Warm, magical lighting with soft shadows."
-
-**Character Consistency Examples:**
-- "@Whiskers sits alertly"
-- "@Fuzzy bounces playfully"
-
-**CRITICAL REQUIREMENTS:**
-- Always use '@' prefix before character names (e.g., @Luna, @Hero, @Villain)
-- Always use '@' prefix before location names (e.g., @Castle, @Forest, @Bedroom)
-- Always use '@' prefix before important item names (e.g., @Sword, @Crown, @Book)
-- Extract character, location, and item names from the provided reference descriptions
-- NEVER include character/item/location descriptions when using @placeholders - the @placeholder will be expanded with the full description automatically
-- Use present tense for actions
-- Be specific about emotions and expressions
-- Include environmental context and lighting
-
-**ABSOLUTELY FORBIDDEN - DO NOT INCLUDE:**
-- Any artistic style descriptors (NO "Digital painting style", "3D rendered", "cartoon style", etc.)
-- Art medium references (NO "watercolor", "oil painting", "comic book style", etc.)
-- Software references (NO "Unreal Engine", "Blender", "Photoshop", etc.)
-- Quality descriptors (NO "highly detailed", "8K", "photorealistic", etc.)
-- The artistic style will be handled separately by the system through model configuration, NOT in the prompt text
-
-**STYLE HANDLING PHILOSOPHY:**
-Style is applied systematically through the imageStyleUtils system after prompt generation. This ensures scene prompts remain clean and focused on content while style is consistently applied across all generated images.
-
-{{else}}
-**GOOGLE/GEMINI PROMPTING STRUCTURE:**
-For Google providers, use more detailed cinematic descriptions with:
-- Camera angles and shot types
-- Lighting and mood descriptions
-- Detailed scene composition
-- Character emotions and expressions
-{{/if}}
-
-{{else}}
-**FALLBACK MODE (when no chunks provided):**
-Analyze the script and identify {{numImages}} key scenes that need visualization using FLUX-optimized natural language descriptions.
-{{/if}}
-
-**CHARACTER REFERENCE:**
-{{{characterPrompts}}}
-
-**CRITICAL NAMING CONSISTENCY:**
-When referencing characters, items, or locations in your image prompts, you MUST ONLY use entities that exist in the reference sections above, prefixed with @. 
-
-MANDATORY RULES:
-1. ONLY use @placeholders for entities listed in the CHARACTER REFERENCE, LOCATION REFERENCE, and ITEM REFERENCE sections
-2. NEVER create @placeholders for entities not in these reference sections
-3. Convert entity names to PascalCase when creating @references (e.g., "Old Man Grumbles" becomes @OldManGrumbles)
-4. Do NOT include descriptions alongside @placeholders - they will be expanded automatically
-
-For example, if the character reference shows:
-"Rosie Recycle
-a young girl with..."
-
-Then use: @RosieRecycle (no description needed)
-
-If the character reference shows:
-"Old Man Grumbles  
-an elderly man with..."
-
-Then use: @OldManGrumbles (no description needed)
-
-**CHARACTER CONSISTENCY REQUIREMENTS:**
-- Character descriptions are automatically provided through @placeholders
-- Focus on character actions, emotions, and interactions with environment
-- Use @placeholders for all characters, items, and locations from the reference sections
-- Do not duplicate descriptions that are already in the @placeholder expansions
-
-**REGENERATION NOTICE:**
-⚠️ After implementing these character consistency requirements, you MUST regenerate:
-1. All character prompt descriptions to include specific physical traits
-2. All character reference images with consistent visual features
-3. All location and item images to match the updated style
-4. Existing story content to use the new consistent character descriptions
-
-**LOCATION REFERENCE:**
-{{{locationPrompts}}}
-
-**ITEM REFERENCE:**
-{{{itemPrompts}}}
-
-**STORY SCRIPT:**
-{{{script}}}
-
-{{#if chunksData}}
-**INSTRUCTIONS:**
-For each narration chunk, create {{#each chunksData}}{{promptCount}} prompt(s) for chunk {{@index}}, {{/each}} ensuring they match the narrative content and flow smoothly between scenes. Focus on key emotional moments, character interactions, and scene transitions.
-
-Total prompts needed: {{numImages}}
-
-**ALSO GENERATE ACTION PROMPTS:**
-For each image prompt, create a corresponding simple action description that describes the specific movements/actions characters perform in that scene. These are for animation purposes.
-
-Action prompts should be:
-- Simple, clear descriptions of character movements
-- Focus on physical actions (walking, jumping, blinking, tail wagging, etc.)
-- Describe what each character does in that specific scene
-- Keep them concise and animation-focused
-
-Examples:
-- "The kitten's fur gently rises and falls as it sleeps."
-- "The kitten leaps forward and waves its paws."
-- "The white kitten takes a few steps forward and wags its tail. The grey cat blinks and turns its head."
-
-{{else}}
-Generate exactly {{numImages}} FLUX-optimized image prompts based on the script's key visual moments.
-{{/if}}
-
-**OUTPUT FORMAT:**
-Return your response as a JSON object with two keys:
-1. "imagePrompts": An array of exactly {{numImages}} strings, each optimized for FLUX AI model
-2. "actionPrompts": An array of exactly {{numImages}} strings, each describing simple character movements for that scene`;
-
-const scriptChunksPromptTemplate = `You are a movie director and script editor who thinks visually. Your task is to split the following story script into meaningful visual scenes/chunks. Each chunk will have a corresponding image generated and narration audio, so think like you're creating an animated storybook.
-
-Think like a movie director analyzing a script:
-- What would each scene look like visually?
-- Where are the natural visual transitions?
-- What moments need their own "frame" or "shot"?
-- How can you group sentences that paint the same visual picture?
-
-Instructions:
-1. Read the entire script and visualize it as an animated story with scenes.
-2. Split into chunks that represent distinct visual scenes or moments - NOT sentence by sentence.
-3. Each chunk should paint a clear, cohesive visual picture that an AI can generate as a single image.
-4. Group related sentences together if they describe the same scene, character introduction, or visual moment.
-5. Aim for chunks that are suitable for a single narration segment and a single accompanying image. This means chunks shouldn't be too long or too short.
-6. Each chunk should be 1-3 sentences, but prioritize visual coherence over sentence count.
-
-Script to split:
-{{{script}}}
-
-Return your response as a JSON object with a single key "scriptChunks". The value of "scriptChunks" MUST be an array of strings, where each string is one of the generated script chunks. Do not include numbering or any other formatting within the chunk strings themselves.
-Example of a good split for a segment:
-Original: "Lilly's eyes sparkled. 'Does the Rainbow Route have puddles?!' 'Oh, yes,' Mama Duck chuckled, 'plenty of puddles. But it’s also full of surprises.'"
-Split into:
-- "Lilly’s eyes sparkled. ‘Does the Rainbow Route have puddles?!’"
-- "‘Oh, yes,’ Mama Duck chuckled, ‘plenty of puddles. But it’s also full of surprises.’"
-`;
+const scriptChunksPromptTemplate = 'You are a movie director and script editor who thinks visually. Your task is to split the following story script into meaningful visual scenes/chunks. Each chunk will have a corresponding image generated and narration audio, so think like you\'re creating an animated storybook.\n\n' +
+'Think like a movie director analyzing a script:\n' +
+'- What would each scene look like visually?\n' +
+'- Where are the natural visual transitions?\n' +
+'- What moments need their own "frame" or "shot"?\n' +
+'- How can you group sentences that paint the same visual picture?\n\n' +
+'Instructions:\n' +
+'1. Read the entire script and visualize it as an animated story with scenes.\n' +
+'2. Split into chunks that represent distinct visual scenes or moments - NOT sentence by sentence.\n' +
+'3. Each chunk should paint a clear, cohesive visual picture that an AI can generate as a single image.\n' +
+'4. Group related sentences together if they describe the same scene, character introduction, or visual moment.\n' +
+'5. Aim for chunks that are suitable for a single narration segment and a single accompanying image. This means chunks shouldn\'t be too long or too short.\n' +
+'6. Each chunk should be 1-3 sentences, but prioritize visual coherence over sentence count.\n\n' +
+'Script to split:\n' +
+'{{{script}}}\n\n' +
+'Return your response as a JSON object with a single key "scriptChunks". The value of "scriptChunks" MUST be an array of strings, where each string is one of the generated script chunks. Do not include numbering or any other formatting within the chunk strings themselves.\n' +
+'Example of a good split for a segment:\n' +
+'Original: "Lilly\'s eyes sparkled. \'Does the Rainbow Route have puddles?!\' \'Oh, yes,\' Mama Duck chuckled, \'plenty of puddles. But it’s also full of surprises.\'"\n' +
+'Split into:\n' +
+'- "Lilly’s eyes sparkled. ‘Does the Rainbow Route have puddles?!’"\n' +
+'- "‘Oh, yes,’ Mama Duck chuckled, ‘plenty of puddles. But it’s also full of surprises.’"\n';
 
 
 function getStorageBucket(): string | undefined {
   return process.env?.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET;
 }
 
-export async function generateTitle(input: GenerateTitleInput): Promise<{ success: boolean, data?: AITitleOutputSchemaOriginal, error?: string }> {
+export async function generateTitle(input: GenerateTitleInput): Promise<{ success: boolean, data?: z.infer<typeof AITitleOutputSchema>, error?: string }> {
   const userKeysResult = await getUserApiKeys(input.userId);
   if (!userKeysResult.success || !userKeysResult.data?.googleApiKey) {
     return { success: false, error: "Google API key not configured by user. Please set it in Account Settings." };
@@ -331,7 +327,7 @@ export async function generateTitle(input: GenerateTitleInput): Promise<{ succes
     const localAi = genkit({ plugins: [googleAI({ apiKey: userGoogleKey })], model: 'googleai/gemini-2.0-flash' });
     const prompt = titlePromptTemplate.replace('{{userPrompt}}', input.userPrompt);
     const { output } = await localAi.generate({ prompt, output: { schema: AITitleOutputSchema, format: 'json' } });
-    
+
     if (!output?.title) {
       const promptWords = input.userPrompt.split(' ').slice(0, 5).join(' ');
       return { success: true, data: { title: `${promptWords}... (Draft)` } };
@@ -343,7 +339,7 @@ export async function generateTitle(input: GenerateTitleInput): Promise<{ succes
   }
 }
 
-export async function generateScript(input: GenerateScriptInput): Promise<{ success: boolean, data?: AIScriptOutputSchemaOriginal, error?: string }> {
+export async function generateScript(input: GenerateScriptInput): Promise<{ success: boolean, data?: z.infer<typeof AIScriptOutputSchema>, error?: string }> {
   const userKeysResult = await getUserApiKeys(input.userId);
   if (!userKeysResult.success || !userKeysResult.data?.googleApiKey) {
     return { success: false, error: "Google API key not configured by user. Please set it in Account Settings." };
@@ -361,7 +357,7 @@ export async function generateScript(input: GenerateScriptInput): Promise<{ succ
   }
 }
 
-export async function generateCharacterPrompts(input: GenerateCharacterPromptsInput): Promise<{ success: boolean, data?: AICharacterPromptsOutputSchema, error?: string }> {
+export async function generateCharacterPrompts(input: GenerateCharacterPromptsInput): Promise<{ success: boolean, data?: z.infer<typeof AICharacterPromptsOutputSchema>, error?: string }> {
   const userKeysResult = await getUserApiKeys(input.userId);
   if (!userKeysResult.success || !userKeysResult.data?.googleApiKey) {
     return { success: false, error: "Google API key not configured by user. Please set it in Account Settings." };
@@ -370,7 +366,7 @@ export async function generateCharacterPrompts(input: GenerateCharacterPromptsIn
 
   try {
     const localAi = genkit({ plugins: [googleAI({ apiKey: userGoogleKey })], model: 'googleai/gemini-2.0-flash' });
-    
+
     let stylePromptText: string | undefined;
     if (input.imageStyleId) {
       try {
@@ -387,7 +383,7 @@ export async function generateCharacterPrompts(input: GenerateCharacterPromptsIn
     } else {
         finalPrompt = finalPrompt.replace('{{#if stylePrompt}}**ARTISTIC STYLE REQUIREMENTS:** {{{stylePrompt}}}{{/if}}', '');
     }
-    
+
     const { output } = await localAi.generate({ prompt: finalPrompt, output: { schema: AICharacterPromptsOutputSchema, format: 'json' } });
     return { success: true, data: output! };
   } catch (error) {
@@ -409,10 +405,10 @@ function getMp3DurationFromDataUri(dataUri: string): number {
       estimatedBytesPerSecond = (estimatedBitrateKbps * 1000) / 8;
     } else if (dataUri.startsWith('data:audio/wav;base64,')) {
       base64Data = dataUri.substring('data:audio/wav;base64,'.length);
-      estimatedBytesPerSecond = 48000; 
+      estimatedBytesPerSecond = 48000;
     } else {
       console.warn('Cannot estimate duration: Unsupported audio format in data URI.');
-      return 30; 
+      return 30;
     }
 
     const binaryData = Buffer.from(base64Data, 'base64');
@@ -422,20 +418,20 @@ function getMp3DurationFromDataUri(dataUri: string): number {
         console.warn('Placeholder WAV audio detected, setting duration to 1s.');
         return 1;
     }
-    if (binaryData.length < 1000 && durationSeconds < 1) { 
+    if (binaryData.length < 1000 && durationSeconds < 1) {
         console.warn('Very short audio detected, possibly placeholder or error. Setting duration to 1s.');
         return 1;
     }
 
-    return Math.max(1, parseFloat(durationSeconds.toFixed(2))); 
+    return Math.max(1, parseFloat(durationSeconds.toFixed(2)));
   } catch (e) {
     console.error('Error estimating MP3 duration:', e);
     return 30;
   }
 }
 
-export interface GenerateNarrationAudioActionInput extends AINarrationAudioInputType { // Use flow's input type
-  userId?: string; 
+export interface GenerateNarrationAudioActionInput extends AINarrationAudioInputType {
+  userId?: string;
   storyId?: string;
   chunkId?: string;
 }
@@ -461,27 +457,23 @@ export async function generateNarrationAudio(actionInput: GenerateNarrationAudio
         return { success: false, error: "ElevenLabs API key not configured by user. Please set it in Account Settings." };
       }
     } else if (modelToUse === 'google') {
-      // For Google TTS, ensure the Google API key (often used for Gemini) is available
-      serviceApiKey = userApiKeys.googleApiKey || userApiKeys.geminiApiKey; 
+      serviceApiKey = userApiKeys.googleApiKey || userApiKeys.geminiApiKey;
       if (!serviceApiKey) {
         return { success: false, error: "Google API key for TTS not configured by user. Please set it in Account Settings." };
       }
     }
 
-    // Construct the input for the original flow, ensuring 'apiKey' is part of the schema or handled within the flow.
-    // The flow 'generate-narration-audio' should be adapted to use the apiKey passed in its input.
     const aiFlowInput: AINarrationAudioInputType = {
       script: actionInput.script,
       voiceId: actionInput.voiceId,
       ttsModel: modelToUse,
       googleApiModel: actionInput.googleApiModel,
       languageCode: actionInput.languageCode,
-      apiKey: serviceApiKey // Pass the user's key to the flow
+      apiKey: serviceApiKey
     };
-    
-    // Call the original flow
-    const { generateNarrationAudio: aiGenerateNarrationAudio } = await import('@/ai/flows/generate-narration-audio');
-    const result: AINarrationAudioOutputType = await aiGenerateNarrationAudio(aiFlowInput);
+
+    const { generateNarrationAudio: aiGenerateNarrationAudioFlow } = await import('@/ai/flows/generate-narration-audio');
+    const result: AINarrationAudioOutputType = await aiGenerateNarrationAudioFlow(aiFlowInput);
 
 
     if (result.error) {
@@ -503,14 +495,14 @@ export async function generateNarrationAudio(actionInput: GenerateNarrationAudio
         }
       } else {
         console.warn("generateNarrationAudio action: audioDataUri present but missing userId, storyId, or chunkId for storage.");
-        return { success: true, data: { audioStorageUrl: result.audioDataUri, duration } }; 
+        return { success: true, data: { audioStorageUrl: result.audioDataUri, duration } };
       }
     }
-    
-    if (result.voices) { 
+
+    if (result.voices) {
       return { success: true, data: { voices: result.voices as ElevenLabsVoice[] } };
     }
-    
+
     return { success: false, error: "Unknown error from narration generation." };
 
   } catch (error) {
@@ -532,7 +524,7 @@ export async function generateVoicePreview(input: VoicePreviewInput): Promise<{ 
   if (!input.userId) {
     return { success: false, error: "User ID is required for voice preview." };
   }
-  
+
   try {
     const userKeysResult = await getUserApiKeys(input.userId);
     if (!userKeysResult.success || !userKeysResult.data) {
@@ -554,7 +546,7 @@ export async function generateVoicePreview(input: VoicePreviewInput): Promise<{ 
     }
 
     const demoText = input.demoText || "Hello! This is a preview of how this voice sounds. I hope you like it!";
-    
+
     const aiFlowInput: AINarrationAudioInputType = {
       script: demoText,
       voiceId: input.voiceId,
@@ -564,8 +556,8 @@ export async function generateVoicePreview(input: VoicePreviewInput): Promise<{ 
       apiKey: serviceApiKey,
     };
 
-    const { generateNarrationAudio: aiGenerateNarrationAudio } = await import('@/ai/flows/generate-narration-audio');
-    const result: AINarrationAudioOutputType = await aiGenerateNarrationAudio(aiFlowInput);
+    const { generateNarrationAudio: aiGenerateNarrationAudioFlow } = await import('@/ai/flows/generate-narration-audio');
+    const result: AINarrationAudioOutputType = await aiGenerateNarrationAudioFlow(aiFlowInput);
 
     if (result.error) {
       return { success: false, error: result.error };
@@ -583,16 +575,16 @@ export async function generateVoicePreview(input: VoicePreviewInput): Promise<{ 
 }
 
 
-export async function generateImagePrompts(input: GenerateImagePromptsInput): Promise<{ success: boolean, data?: AIImagePromptsOutputSchema, error?: string }> {
+export async function generateImagePrompts(input: GenerateImagePromptsInput): Promise<{ success: boolean, data?: z.infer<typeof AIImagePromptsOutputSchema>, error?: string }> {
     const userKeysResult = await getUserApiKeys(input.userId);
-    if (!userKeysResult.success || !userKeysResult.data?.googleApiKey) { // Uses Google API key for prompt generation
+    if (!userKeysResult.success || !userKeysResult.data?.googleApiKey) {
       return { success: false, error: "Google API key for prompt generation not configured by user. Please set it in Account Settings." };
     }
     const userGoogleKey = userKeysResult.data.googleApiKey;
 
     try {
         const localAi = genkit({ plugins: [googleAI({ apiKey: userGoogleKey })], model: 'googleai/gemini-2.0-flash', })
-        
+
         let numImages: number;
         let chunksDataForPrompt: Array<{text: string; duration: number; promptCount: number}> | undefined;
 
@@ -615,14 +607,17 @@ export async function generateImagePrompts(input: GenerateImagePromptsInput): Pr
             .replace('{{{locationPrompts}}}', input.locationPrompts || '')
             .replace('{{{itemPrompts}}}', input.itemPrompts || '')
             .replace('{{{script}}}', input.script);
-        
+
         if (chunksDataForPrompt) {
-            const chunkDetailsText = chunksDataForPrompt.map((c, i) => `Chunk ${i}: "${c.text}" (Duration: ${c.duration}s, Required prompts: ${c.promptCount})`).join('\n');
-            finalPrompt = finalPrompt.replace('{{#if chunksData}}Chunk Details:{{#each chunksData}}...{{/each}}{{else}}Fallback Mode{{/if}}', `Chunk Details:\n${chunkDetailsText}`);
+            const chunkDetailsText = chunksDataForPrompt.map((c, i) => `Chunk ${i}: "${c.text}" (Duration: ${c.duration}s, Required prompts: ${c.promptCount})`).join('\\n');
+            finalPrompt = finalPrompt.replace('{{#if chunksData}}Chunk Details:{{#each chunksData}}...{{/each}}{{else}}Fallback Mode{{/if}}', `Chunk Details:\\n${chunkDetailsText}`);
         } else {
             finalPrompt = finalPrompt.replace('{{#if chunksData}}Chunk Details:{{#each chunksData}}...{{/each}}{{else}}Fallback Mode{{/if}}', `Fallback Mode: Analyze the script and identify ${numImages} key scenes...`);
         }
-        finalPrompt = finalPrompt.replace('{{numImages}}', numImages.toString());
+        // Replace numImages in the prompt body and isPicsart condition
+        finalPrompt = finalPrompt.replace(/{{numImages}}/g, numImages.toString());
+        finalPrompt = finalPrompt.replace('{{#if isPicsart}}', input.isPicsart ? '' : '{{#if false}}'); // Effectively remove picsart block if not isPicsart
+        finalPrompt = finalPrompt.replace('{{/if}}', input.isPicsart ? '' : '{{/if}}');
 
 
         const { output } = await localAi.generate({
@@ -635,7 +630,7 @@ export async function generateImagePrompts(input: GenerateImagePromptsInput): Pr
           console.warn("Image prompt generation did not return the expected array structure. Output:", output);
           return { success: false, error: "AI did not return valid image prompts." };
         }
-        
+
         return { success: true, data: output };
     } catch (error) {
         console.error("Error in generateImagePrompts AI call:", error);
@@ -643,7 +638,7 @@ export async function generateImagePrompts(input: GenerateImagePromptsInput): Pr
     }
 }
 
-export async function generateScriptChunks(input: GenerateScriptChunksInput): Promise<{ success: boolean, data?: Omit<AIScriptChunksOutputSchemaOriginal, 'error'>, error?: string }> {
+export async function generateScriptChunks(input: GenerateScriptChunksInput): Promise<{ success: boolean, data?: Omit<z.infer<typeof AIScriptChunksOutputSchema>, 'error'>, error?: string }> {
     const userKeysResult = await getUserApiKeys(input.userId);
     if (!userKeysResult.success || !userKeysResult.data?.googleApiKey) {
       return { success: false, error: "Google API key not configured by user. Please set it in Account Settings." };
@@ -680,22 +675,22 @@ interface FirebaseErrorWithCode extends Error {
 
 async function refreshFirebaseStorageUrl(url: string, userId: string, storyId: string, filePath?: string): Promise<string | null> {
   if (!url || typeof url !== 'string') return null;
-  
+
   const bucketName = getStorageBucket();
   if (!bucketName || !url.includes(bucketName)) return null;
-  
+
   try {
     console.log(`[refreshFirebaseStorageUrl] Refreshing signed URL for: ${url}`);
-    
+
     if (!firebaseAdmin.apps.length || !firebaseAdmin.app()) {
       console.error("[refreshFirebaseStorageUrl] Firebase Admin SDK app is not initialized.");
       return null;
     }
-    
+
     const adminAppInstance = firebaseAdmin.app();
     const storage = getAdminStorage(adminAppInstance);
     const bucket = storage.bucket(bucketName);
-    
+
     if (!filePath) {
       try {
         const urlObj = new URL(url);
@@ -712,20 +707,20 @@ async function refreshFirebaseStorageUrl(url: string, userId: string, storyId: s
         return null;
       }
     }
-    
+
     const file = bucket.file(filePath);
-    
+
     const [exists] = await file.exists();
     if (!exists) {
       console.warn(`[refreshFirebaseStorageUrl] File does not exist at path: ${filePath}`);
       return null;
     }
-    
+
     const [signedUrl] = await file.getSignedUrl({
       action: 'read',
-      expires: Date.now() + 1000 * 60 * 60 * 24 * 7 
+      expires: Date.now() + 1000 * 60 * 60 * 24 * 7
     });
-    
+
     console.log(`[refreshFirebaseStorageUrl] Generated new signed URL valid for 7 days: ${signedUrl}`);
     return signedUrl;
   } catch (error) {
@@ -747,7 +742,7 @@ export async function getStory(storyId: string, userId: string): Promise<{ succe
     const timeoutPromise = new Promise<never>((_, reject) => {
       setTimeout(() => reject(new Error("Firebase connection timeout")), 10000);
     });
-    
+
     const fetchPromise = async () => {
       if (!dbAdmin) {
         throw new Error("Firebase Admin SDK not initialized");
@@ -756,13 +751,13 @@ export async function getStory(storyId: string, userId: string): Promise<{ succe
       const docSnap = await storyRef.get();
       return { docSnap, storyRef };
     };
-    
+
     const { docSnap, storyRef } = await Promise.race([fetchPromise(), timeoutPromise]);
 
     if (docSnap.exists) {
       const storyData = docSnap.data();
       const story = { id: docSnap.id, ...storyData } as Story;
-      
+
       if (story.userId !== userId && storyData?.['_testMarker'] !== "BASIC_SAVE_TEST_DOCUMENT_V2") {
         console.warn(`[getStory Action] User ${userId} fetched story ${storyId} belonging to ${story.userId}. This is expected if rules permit or for admin access.`);
       }
@@ -773,7 +768,7 @@ export async function getStory(storyId: string, userId: string): Promise<{ succe
       if (story.updatedAt && typeof (story.updatedAt as any).toDate === 'function') {
         story.updatedAt = (story.updatedAt as AdminTimestamp).toDate();
       }
-      
+
       if (story.narrationAudioUrl) {
         const refreshedUrl = await refreshFirebaseStorageUrl(story.narrationAudioUrl, userId, storyId);
         if (refreshedUrl) {
@@ -782,7 +777,7 @@ export async function getStory(storyId: string, userId: string): Promise<{ succe
           await storyRef.update({ narrationAudioUrl: refreshedUrl });
         }
       }
-      
+
       if (story.narrationChunks && Array.isArray(story.narrationChunks) && story.narrationChunks.length > 0) {
         let hasUpdatedChunks = false;
         const refreshedChunks = await Promise.all(story.narrationChunks.map(async (chunk) => {
@@ -796,13 +791,13 @@ export async function getStory(storyId: string, userId: string): Promise<{ succe
           }
           return chunk;
         }));
-        
+
         if (hasUpdatedChunks) {
           story.narrationChunks = refreshedChunks;
           await storyRef.update({ narrationChunks: refreshedChunks });
         }
       }
-      
+
       if (story.generatedImages && Array.isArray(story.generatedImages) && story.generatedImages.length > 0) {
         let hasUpdatedImages = false;
         const refreshedImages = await Promise.all(story.generatedImages.map(async (image) => {
@@ -816,13 +811,13 @@ export async function getStory(storyId: string, userId: string): Promise<{ succe
           }
           return image;
         }));
-        
+
         if (hasUpdatedImages) {
           story.generatedImages = refreshedImages;
           await storyRef.update({ generatedImages: refreshedImages });
         }
       }
-      
+
       return { success: true, data: story };
     } else {
       return { success: false, error: "Story not found." };
@@ -831,7 +826,7 @@ export async function getStory(storyId: string, userId: string): Promise<{ succe
     console.error("[getStory Action] Error fetching story from Firestore (Admin SDK):", error);
     let errorMessage = "Failed to fetch story.";
     const firebaseError = error as FirebaseErrorWithCode;
-    
+
     if (error instanceof Error && error.message === "Firebase connection timeout") {
       console.error("[getStory Action] Firebase connection timed out. Possible network or ad blocker issue.");
       return {
@@ -866,7 +861,7 @@ export async function getStory(storyId: string, userId: string): Promise<{ succe
 
 export async function generateImageFromGemini(
   originalPrompt: string,
-  userId: string, 
+  userId: string,
   storyId?: string
 ): Promise<{ success: boolean; imageUrl?: string; error?: string; requestPrompt?: string }> {
   const userKeysResult = await getUserApiKeys(userId);
@@ -880,7 +875,7 @@ export async function generateImageFromGemini(
 
   try {
     console.log(`Calling Gemini API with prompt: "${requestPrompt}" using user's key.`);
-    
+
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-preview-image-generation:generateContent?key=${apiKey}`, {
       method: "POST",
       headers: {
@@ -905,7 +900,7 @@ export async function generateImageFromGemini(
     const result = await response.json();
     const candidate = result.candidates?.[0];
     const parts = candidate?.content?.parts || [];
-    
+
     let imageData = null;
     for (const part of parts) {
       if (part.inlineData && part.inlineData.data) {
@@ -939,7 +934,7 @@ export async function generateImageFromGemini(
 
 export async function generateImageFromImagen3(
   originalPrompt: string,
-  userId: string, 
+  userId: string,
   storyId?: string,
   styleId?: string
 ): Promise<{ success: boolean; imageUrl?: string; error?: string; requestPrompt?: string }> {
@@ -947,7 +942,7 @@ export async function generateImageFromImagen3(
   if (!userKeysResult.success || !userKeysResult.data?.googleApiKey) {
     return { success: false, error: "Google API key for Imagen3 not configured by user. Please set it in Account Settings." };
   }
-  const apiKey = userKeysResult.data.googleApiKey; 
+  const apiKey = userKeysResult.data.googleApiKey;
 
   let requestPrompt = originalPrompt;
   if (userId && storyId) {
@@ -968,10 +963,10 @@ export async function generateImageFromImagen3(
             if (!actualEntityName) { for (const locationName of entityNames.locations) { if (nameToReference(locationName) === ref) { actualEntityName = locationName; entityType = 'location'; break; } } }
             if (actualEntityName && entityType) {
               const promptsSection = entityType === 'character' ? storyResult.data.detailsPrompts?.characterPrompts || '' : entityType === 'item' ? storyResult.data.detailsPrompts?.itemPrompts || '' : storyResult.data.detailsPrompts?.locationPrompts || '';
-              const entityPattern = new RegExp(actualEntityName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + "\\s*\\n+(.*?)(?=\\n\\n|$)", "s");
+              const entityPattern = new RegExp(actualEntityName.replace(/[.*+?^${}()|[\]\\]/g, '\\\\$&') + "\\\\s*\\\\n+(.*?)(?=\\\\n\\\\n|$)", "s");
               const entityMatch = promptsSection.match(entityPattern);
               if (entityMatch && entityMatch[1]) {
-                placeholderDescriptions += `${actualEntityName}, ${entityMatch[1].trim()}\n-----------\n`;
+                placeholderDescriptions += `${actualEntityName}, ${entityMatch[1].trim()}\\n-----------\\n`;
               }
             }
           }
@@ -980,7 +975,7 @@ export async function generateImageFromImagen3(
       }
     } catch (error) { console.warn("[generateImageFromImagen3] Error processing placeholders:", error); }
   }
-  
+
   if (styleId) {
     try {
       const { applyStyleToPrompt } = await import('@/utils/imageStyleUtils');
@@ -1043,7 +1038,7 @@ export async function generateImageFromImagen3(
 
 export async function generateImageFromPrompt(
   originalPrompt: string,
-  userId: string, 
+  userId: string,
   storyId?: string,
   provider: 'picsart' | 'gemini' | 'imagen3' = 'picsart',
   styleId?: string
@@ -1051,11 +1046,11 @@ export async function generateImageFromPrompt(
   if (provider === 'gemini') {
     return generateImageFromGemini(originalPrompt, userId, storyId);
   }
-  
+
   if (provider === 'imagen3') {
     return generateImageFromImagen3(originalPrompt, userId, storyId, styleId);
   }
-  
+
   const userKeysResult = await getUserApiKeys(userId);
   if (!userKeysResult.success || !userKeysResult.data?.picsartApiKey) {
     return { success: false, error: "Picsart API key not configured by user. Please set it in Account Settings." };
@@ -1088,7 +1083,7 @@ export async function generateImageFromPrompt(
       }
     } catch (error) { console.warn("Failed to apply style from story:", error); }
   }
-  
+
   const requestPrompt = finalPrompt;
   const negativePrompt = "ugly, tiling, poorly drawn hands, poorly drawn feet, poorly drawn face, out of frame, extra limbs, disfigured, deformed, body out of frame, blurry, bad anatomy, blurred, watermark, grainy, signature, cut off, draft, low quality, worst quality, SFW, text, words, letters, nsfw, nude";
   const width = 1024; const height = 576; const count = 1;
@@ -1166,10 +1161,10 @@ async function pollForPicsArtImage(
       }
       if (response.status === 200) {
         let imageUrl: string | undefined;
-        if (result.data && result.data.url) { imageUrl = result.data.url; } 
-        else if (result.data && Array.isArray(result.data) && result.data.length > 0 && result.data[0].url) { imageUrl = result.data[0].url; } 
+        if (result.data && result.data.url) { imageUrl = result.data.url; }
+        else if (result.data && Array.isArray(result.data) && result.data.length > 0 && result.data[0].url) { imageUrl = result.data[0].url; }
         else if (result.url) { imageUrl = result.url; }
-        if (imageUrl) { return { success: true, imageUrl, requestPrompt }; } 
+        if (imageUrl) { return { success: true, imageUrl, requestPrompt }; }
         else { return { success: false, error: "PicsArt Polling: Image success (200 OK) but no URL found.", requestPrompt }; }
       } else if (response.status === 202) {
         if (attempt < maxAttempts) { await new Promise(resolve => setTimeout(resolve, delayMs)); }
@@ -1228,8 +1223,8 @@ async function uploadAudioToFirebaseStorage(audioDataUri: string, userId: string
   if (!bucketName) { throw new Error("Firebase Storage bucket name not configured."); }
   const bucket = storage.bucket(bucketName);
   let base64Data: string; let contentType: string;
-  if (audioDataUri.startsWith('data:audio/mpeg;base64,')) { base64Data = audioDataUri.substring('data:audio/mpeg;base64,'.length); contentType = 'audio/mpeg'; } 
-  else if (audioDataUri.startsWith('data:audio/wav;base64,')) { base64Data = audioDataUri.substring('data:audio/wav;base64,'.length); contentType = 'audio/wav'; } 
+  if (audioDataUri.startsWith('data:audio/mpeg;base64,')) { base64Data = audioDataUri.substring('data:audio/mpeg;base64,'.length); contentType = 'audio/mpeg'; }
+  else if (audioDataUri.startsWith('data:audio/wav;base64,')) { base64Data = audioDataUri.substring('data:audio/wav;base64,'.length); contentType = 'audio/wav'; }
   else { throw new Error('Invalid audio data URI format.'); }
   const audioBuffer = Buffer.from(base64Data, 'base64');
   const filePath = `users/${userId}/stories/${storyId}/narration_chunks/${filename}`;
@@ -1273,7 +1268,7 @@ export async function cleanupBrokenImages(storyId: string, userId: string): Prom
 export async function saveStory(storyData: Story, userId: string): Promise<{ success: boolean; storyId?: string; error?: string, data?: { narrationAudioUrl?: string} }> {
   if (!dbAdmin) { return { success: false, error: "Server configuration error: Database connection (dbAdmin) is not available." }; }
   if (!userId || typeof userId !== 'string' || userId.trim() === '') { return { success: false, error: "User not authenticated or user ID is invalid." }; }
-  const storyIdForPath = storyData.id || dbAdmin.collection("stories").doc().id; 
+  const storyIdForPath = storyData.id || dbAdmin.collection("stories").doc().id;
   const processedStoryData = { ...storyData };
   let newNarrationUrl: string | undefined = undefined;
   if (processedStoryData.narrationAudioUrl && processedStoryData.narrationAudioUrl.startsWith('data:audio/mpeg;base64,')) {
@@ -1284,7 +1279,7 @@ export async function saveStory(storyData: Story, userId: string): Promise<{ suc
       newNarrationUrl = storageUrl;
     } catch (uploadError: any) {
       let detailedErrorMessage = `Failed to upload narration audio: ${uploadError.message || String(uploadError)}`;
-      if (uploadError.errors && Array.isArray(uploadError.errors) && uploadError.errors.length > 0) { detailedErrorMessage += ` Details: ${uploadError.errors.map((e: any) => e.message || JSON.stringify(e)).join(', ')}`; } 
+      if (uploadError.errors && Array.isArray(uploadError.errors) && uploadError.errors.length > 0) { detailedErrorMessage += ` Details: ${uploadError.errors.map((e: any) => e.message || JSON.stringify(e)).join(', ')}`; }
       else if (uploadError.code) { detailedErrorMessage += ` (Code: ${uploadError.code})`; }
       return { success: false, error: detailedErrorMessage };
     }
@@ -1292,14 +1287,14 @@ export async function saveStory(storyData: Story, userId: string): Promise<{ suc
   const dataToSave: any = { ...processedStoryData, userId: userId, updatedAt: firebaseAdmin.firestore.FieldValue.serverTimestamp() };
   if (dataToSave.id) { delete dataToSave.id; }
   if (dataToSave.createdAt && dataToSave.createdAt instanceof Date) { dataToSave.createdAt = firebaseAdmin.firestore.Timestamp.fromDate(dataToSave.createdAt); }
-  if (dataToSave.detailsPrompts && Object.keys(dataToSave.detailsPrompts).length === 0) { delete dataToSave.detailsPrompts; } 
+  if (dataToSave.detailsPrompts && Object.keys(dataToSave.detailsPrompts).length === 0) { delete dataToSave.detailsPrompts; }
   else if (dataToSave.detailsPrompts === undefined) { delete dataToSave.detailsPrompts; }
-  if (dataToSave.imagePrompts === undefined) delete dataToSave.imagePrompts; else if (!Array.isArray(dataToSave.imagePrompts)) dataToSave.imagePrompts = []; 
-  if (dataToSave.generatedImages === undefined) delete dataToSave.generatedImages; else if (!Array.isArray(dataToSave.generatedImages)) dataToSave.generatedImages = []; 
+  if (dataToSave.imagePrompts === undefined) delete dataToSave.imagePrompts; else if (!Array.isArray(dataToSave.imagePrompts)) dataToSave.imagePrompts = [];
+  if (dataToSave.generatedImages === undefined) delete dataToSave.generatedImages; else if (!Array.isArray(dataToSave.generatedImages)) dataToSave.generatedImages = [];
   if (dataToSave.elevenLabsVoiceId === undefined) { delete dataToSave.elevenLabsVoiceId; }
   Object.keys(dataToSave).forEach(key => { if (dataToSave[key] === undefined) { delete dataToSave[key]; } });
   try {
-    if (storyData.id) { 
+    if (storyData.id) {
       const storyRef = dbAdmin.collection("stories").doc(storyData.id);
       const docSnap = await storyRef.get();
       if (!docSnap.exists) { return { success: false, error: "Story not found. Cannot update." }; }
@@ -1311,7 +1306,7 @@ export async function saveStory(storyData: Story, userId: string): Promise<{ suc
       revalidatePath(`/create-story?storyId=${storyData.id}`);
       return { success: true, storyId: storyData.id, data: { narrationAudioUrl: newNarrationUrl || storyData.narrationAudioUrl } };
     } else {
-      dataToSave.createdAt = firebaseAdmin.firestore.FieldValue.serverTimestamp(); 
+      dataToSave.createdAt = firebaseAdmin.firestore.FieldValue.serverTimestamp();
       const storyRef = dbAdmin.collection("stories").doc(storyIdForPath);
       await storyRef.set(dataToSave);
       revalidatePath('/dashboard');
@@ -1320,7 +1315,7 @@ export async function saveStory(storyData: Story, userId: string): Promise<{ suc
   } catch (error) {
     let errorMessage = "Failed to save story.";
     const firebaseError = error as FirebaseErrorWithCode;
-    if (firebaseError && firebaseError.code) { errorMessage = `Failed to save story (Firestore Error): ${firebaseError.message} (Code: ${firebaseError.code})`; } 
+    if (firebaseError && firebaseError.code) { errorMessage = `Failed to save story (Firestore Error): ${firebaseError.message} (Code: ${firebaseError.code})`; }
     else if (error instanceof Error) { errorMessage = `Failed to save story: ${error.message}`; }
     return { success: false, error: errorMessage };
   }
@@ -1348,7 +1343,7 @@ export async function updateStoryTimeline(
   } catch (error) {
     let errorMessage = "Failed to update story timeline.";
     const firebaseError = error as FirebaseErrorWithCode;
-    if (firebaseError && firebaseError.code) { errorMessage = `Failed to update story timeline (Firestore Error): ${firebaseError.message} (Code: ${firebaseError.code})`; } 
+    if (firebaseError && firebaseError.code) { errorMessage = `Failed to update story timeline (Firestore Error): ${firebaseError.message} (Code: ${firebaseError.code})`; }
     else if (error instanceof Error) { errorMessage = `Failed to update story timeline: ${error.message}`; }
     return { success: false, error: errorMessage };
   }
@@ -1387,11 +1382,12 @@ export async function deleteStory(
   } catch (error) {
     let errorMessage = "Failed to delete story.";
     const firebaseError = error as FirebaseErrorWithCode;
-    if (firebaseError && firebaseError.code) { errorMessage = `Failed to delete story (Firestore Error): ${firebaseError.message} (Code: ${firebaseError.code})`; } 
+    if (firebaseError && firebaseError.code) { errorMessage = `Failed to delete story (Firestore Error): ${firebaseError.message} (Code: ${firebaseError.code})`; }
     else if (error instanceof Error) { errorMessage = `Failed to delete story: ${error.message}`; }
     return { success: false, error: errorMessage };
   }
 }
+
     
 
     
