@@ -1,4 +1,4 @@
-# StoryTailor - AI Animated Story Generator
+l# StoryTailor - AI Animated Story Generator
 
 This is a Next.js application, StoryTailor, that allows users to generate animated video scripts, narration audio, image prompts, and eventually videos, using AI. It features user authentication and stores story data in Firebase Firestore.
 

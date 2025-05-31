@@ -11,5 +11,15 @@ service cloud.firestore {
       allow read, update, delete: if request.auth != null && request.auth.uid == resource.data.userId;
       allow create: if request.auth != null && request.auth.uid == request.resource.data.userId;
     }
+
+    // User API Keys:
+    // - Authenticated users can create, read, and update their own API keys document.
+    // - No one can read/write API keys of other users.
+    // - Deletion is typically not allowed or restricted to prevent accidental loss.
+    match /userApiKeys/{userId} {
+      allow read, create, update: if request.auth != null && request.auth.uid == userId;
+      // Consider if delete is needed or should be handled differently
+      // allow delete: if request.auth != null && request.auth.uid == userId;
+    }
   }
 }
