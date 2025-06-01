@@ -1,5 +1,5 @@
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import type { Story, ElevenLabsVoice } from '@/types/story';
 import { initialStoryState } from '@/constants/storyDefaults';
 import type { UserApiKeys } from '@/types/apiKeys';
@@ -86,8 +86,11 @@ export interface UseStoryStateReturn {
   setApiKeysLoading: (loading: boolean) => void;
 }
 
-export const useStoryState = (userId?: string): UseStoryStateReturn => {
-  const [storyData, setStoryDataState] = useState<Story>(initialStoryState);
+export const useStoryState = (passedUserId?: string): UseStoryStateReturn => {
+  const [storyData, setStoryDataState] = useState<Story>(() => ({
+    ...initialStoryState,
+    userId: passedUserId || '', 
+  }));
   const [isLoading, setIsLoading] = useState<Record<string, boolean>>({});
   const [currentStep, setCurrentStep] = useState(1);
   const [activeAccordionItem, setActiveAccordionItem] = useState<string | undefined>(`step-${currentStep}`);
@@ -118,7 +121,19 @@ export const useStoryState = (userId?: string): UseStoryStateReturn => {
   }>({ total: 0, completed: 0, generating: [] });
 
   const [userApiKeys, setUserApiKeysState] = useState<UserApiKeys | null>(null);
-  const [apiKeysLoading, setApiKeysLoadingState] = useState<boolean>(false); // Changed initial to false
+  const [apiKeysLoading, setApiKeysLoadingState] = useState<boolean>(false);
+
+
+  useEffect(() => {
+    if (passedUserId && storyData.userId !== passedUserId) {
+      setStoryDataState(prev => ({ ...prev, userId: passedUserId }));
+      console.log('[useStoryState] Updated storyData.userId to:', passedUserId);
+    } else if (!passedUserId && storyData.userId) {
+      // User logged out or became undefined
+      setStoryDataState(prev => ({ ...prev, userId: '' }));
+      console.log('[useStoryState] Cleared storyData.userId as passedUserId is now undefined.');
+    }
+  }, [passedUserId, storyData.userId]);
 
 
   const updateStoryData = useCallback((updates: Partial<Story>) => {
@@ -140,11 +155,6 @@ export const useStoryState = (userId?: string): UseStoryStateReturn => {
   const setApiKeysLoading = useCallback((loading: boolean) => {
     setApiKeysLoadingState(loading);
   }, []);
-
-  // Initialize userId if provided
-  if (userId && !storyData.userId) {
-    updateStoryData({ userId });
-  }
 
   return {
     storyData,

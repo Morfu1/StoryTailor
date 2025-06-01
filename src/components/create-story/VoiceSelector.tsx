@@ -1,3 +1,4 @@
+
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
@@ -36,7 +37,7 @@ export function VoiceSelector({ storyState }: VoiceSelectorProps) {
     setUploadedAudioFileName,
     isLoading,
     handleSetLoading,
-    storyData
+    storyData // Ensure storyData is destructured
   } = storyState;
 
   // Voice preview state
@@ -45,31 +46,55 @@ export function VoiceSelector({ storyState }: VoiceSelectorProps) {
 
   // Effect to load ElevenLabs voices when the model is selected and voices aren't loaded
   useEffect(() => {
-    if (narrationSource === 'generate' && selectedTtsModel === 'elevenlabs' && elevenLabsVoices.length === 0 && !isLoading.voices) {
+    console.log('[VoiceSelector useEffect] Running. Dependencies affecting voice loading:', {
+      narrationSource,
+      selectedTtsModel,
+      elevenLabsVoicesLength: elevenLabsVoices.length,
+      isLoadingVoices: isLoading.voices,
+      storyDataUserId: storyData.userId, // Log the actual value
+    });
+
+    if (
+      narrationSource === 'generate' &&
+      selectedTtsModel === 'elevenlabs' &&
+      elevenLabsVoices.length === 0 &&
+      !isLoading.voices &&
+      storyData.userId && storyData.userId !== '' // More explicit check
+    ) {
       handleSetLoading('voices', true);
-      console.log("[useEffect] Attempting to load ElevenLabs voices...");
-      generateNarrationAudio({ script: "placeholder_for_voice_listing", ttsModel: 'elevenlabs' })
+      console.log(`[VoiceSelector useEffect] Conditions met for ElevenLabs voice loading. Calling generateNarrationAudio. UserID: '${storyData.userId}'`);
+      generateNarrationAudio({
+        script: "placeholder_for_voice_listing", // Script content doesn't matter for listing voices
+        ttsModel: 'elevenlabs',
+        userId: storyData.userId, // Pass the valid userId
+      })
         .then(response => {
           if (response.success && response.data?.voices) {
             setElevenLabsVoices(response.data.voices);
-            console.log(`[useEffect] Loaded ${response.data.voices.length} ElevenLabs voices.`);
+            console.log(`[VoiceSelector useEffect] Loaded ${response.data.voices.length} ElevenLabs voices.`);
             if (storyData.elevenLabsVoiceId && response.data.voices.some(v => v.voice_id === storyData.elevenLabsVoiceId)) {
               setSelectedVoiceId(storyData.elevenLabsVoiceId);
             }
           } else {
-            console.error("[useEffect] Error loading ElevenLabs voices:", response.error);
+            console.error("[VoiceSelector useEffect] Error loading ElevenLabs voices from action:", response.error);
             toast({ title: "Error Loading ElevenLabs Voices", description: response.error || "Could not fetch voices.", variant: "destructive" });
           }
         })
         .catch(error => {
-          console.error("[useEffect] Exception loading ElevenLabs voices:", error);
+          console.error("[VoiceSelector useEffect] Exception loading ElevenLabs voices:", error);
           toast({ title: "Error Loading ElevenLabs Voices", description: "Network error while fetching voices.", variant: "destructive" });
         })
         .finally(() => {
           handleSetLoading('voices', false);
         });
+    } else {
+      console.log('[VoiceSelector useEffect] Conditions NOT met for ElevenLabs voice loading. Skipping API call.');
+      if (!(storyData.userId && storyData.userId !== '')) {
+        console.log('[VoiceSelector useEffect] Reason: storyData.userId is invalid or empty.');
+      }
     }
-  }, [narrationSource, selectedTtsModel, elevenLabsVoices.length, isLoading.voices, storyData.elevenLabsVoiceId, toast, handleSetLoading, setElevenLabsVoices, setSelectedVoiceId]);
+  }, [narrationSource, selectedTtsModel, elevenLabsVoices.length, isLoading.voices, storyData.userId, toast, handleSetLoading, setElevenLabsVoices, setSelectedVoiceId, storyData.elevenLabsVoiceId]);
+
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -84,22 +109,28 @@ export function VoiceSelector({ storyState }: VoiceSelectorProps) {
     toast({ title: 'Audio Uploaded', description: `File "${file.name}" is ready.`, className: 'bg-primary text-primary-foreground' });
   };
 
-  const handleVoicePreview = async (voiceId: string, ttsModel: 'elevenlabs' | 'google') => {
-    // If preview already exists, don't regenerate
-    if (voicePreviews[voiceId]) return;
+  const handleVoicePreview = async (voiceIdToPreview: string, ttsModelToPreview: 'elevenlabs' | 'google') => {
+    if (voicePreviews[voiceIdToPreview]) return; // Don't regenerate if preview exists
+    
+    // Critical: Ensure userId is available for API key fetching by the action
+    if (!storyData.userId) {
+        toast({ title: 'User ID Missing', description: 'Cannot generate voice preview without a user ID.', variant: 'destructive' });
+        return;
+    }
 
-    setLoadingPreviews(prev => ({ ...prev, [voiceId]: true }));
+    setLoadingPreviews(prev => ({ ...prev, [voiceIdToPreview]: true }));
 
     try {
       const result = await generateVoicePreview({
-        voiceId,
-        ttsModel,
-        googleApiModel: selectedGoogleApiModel,
-        languageCode: selectedGoogleLanguage,
+        voiceId: voiceIdToPreview,
+        ttsModel: ttsModelToPreview,
+        googleApiModel: ttsModelToPreview === 'google' ? selectedGoogleApiModel : undefined,
+        languageCode: ttsModelToPreview === 'google' ? selectedGoogleLanguage : undefined,
+        userId: storyData.userId, // Pass userId here
       });
 
       if (result.success && result.audioDataUri) {
-        setVoicePreviews(prev => ({ ...prev, [voiceId]: result.audioDataUri! }));
+        setVoicePreviews(prev => ({ ...prev, [voiceIdToPreview]: result.audioDataUri! }));
       } else {
         toast({
           title: 'Preview Failed',
@@ -115,7 +146,7 @@ export function VoiceSelector({ storyState }: VoiceSelectorProps) {
         variant: 'destructive'
       });
     } finally {
-      setLoadingPreviews(prev => ({ ...prev, [voiceId]: false }));
+      setLoadingPreviews(prev => ({ ...prev, [voiceIdToPreview]: false }));
     }
   };
 
@@ -183,13 +214,12 @@ export function VoiceSelector({ storyState }: VoiceSelectorProps) {
                       </SelectContent>
                     </Select>
                     
-                    {/* Voice previews for ElevenLabs */}
                     {elevenLabsVoices.length > 0 && (
                       <div className="space-y-2">
                         <Label className="text-xs text-muted-foreground">Voice Previews</Label>
-                        <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto p-1">
                           {elevenLabsVoices.map((voice) => (
-                            <div key={voice.voice_id} className="flex items-center justify-between p-2 border rounded-md">
+                            <div key={voice.voice_id} className="flex items-center justify-between p-2 border rounded-md bg-muted/50">
                               <span className="text-sm font-medium truncate flex-1 mr-2">{voice.name}</span>
                               <VoicePreviewPlayer
                                 audioDataUri={voicePreviews[voice.voice_id]}
@@ -257,13 +287,12 @@ export function VoiceSelector({ storyState }: VoiceSelectorProps) {
                       </SelectContent>
                     </Select>
                     
-                    {/* Voice previews for Google TTS */}
                     {googleTtsVoices.length > 0 && selectedGoogleApiModel && selectedGoogleLanguage && (
                       <div className="space-y-2">
                         <Label className="text-xs text-muted-foreground">Voice Previews</Label>
-                        <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto p-1">
                           {googleTtsVoices.map((voice) => (
-                            <div key={voice.id} className="flex items-center justify-between p-2 border rounded-md">
+                            <div key={voice.id} className="flex items-center justify-between p-2 border rounded-md bg-muted/50">
                               <span className="text-sm font-medium truncate flex-1 mr-2">{voice.name}</span>
                               <VoicePreviewPlayer
                                 audioDataUri={voicePreviews[voice.id]}
@@ -310,3 +339,4 @@ export function VoiceSelector({ storyState }: VoiceSelectorProps) {
     </Card>
   );
 }
+
