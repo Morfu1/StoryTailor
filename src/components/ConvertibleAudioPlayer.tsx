@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState, useEffect } from 'react';
@@ -63,21 +64,21 @@ export function ConvertibleAudioPlayer({
 
     return () => {
       isMounted = false;
-      // Clean up blob URL if we created one
-      if (audioSrc !== src && audioSrc.startsWith('blob:')) {
-        URL.revokeObjectURL(audioSrc);
-      }
+      // Cleanup logic is handled by the second useEffect
     };
-  }, [src, chunkId, onError, audioSrc]); // Added audioSrc to dependency array
+  }, [src, chunkId, onError]); // Removed audioSrc from this dependency array
 
-  // Cleanup blob URL on unmount
+  // Cleanup blob URL when audioSrc changes or component unmounts
   useEffect(() => {
+    const currentAudioSrcForCleanup = audioSrc; // Capture current value for cleanup
     return () => {
-      if (audioSrc !== src && audioSrc.startsWith('blob:')) {
-        URL.revokeObjectURL(audioSrc);
+      // Only revoke if it's a blob URL and not the original src prop
+      if (currentAudioSrcForCleanup && currentAudioSrcForCleanup !== src && currentAudioSrcForCleanup.startsWith('blob:')) {
+        console.log(`Revoking blob URL: ${currentAudioSrcForCleanup} for chunk ${chunkId}`);
+        URL.revokeObjectURL(currentAudioSrcForCleanup);
       }
     };
-  }, [audioSrc, src]);
+  }, [audioSrc, src, chunkId]); // This effect correctly depends on audioSrc and src for cleanup
 
   if (isConverting) {
     return (
@@ -123,20 +124,15 @@ export function ConvertibleAudioPlayer({
           const errorMsg = `Audio error ${errorCode}: ${errorMessage}`;
           console.error(`Audio loading error for chunk: ${chunkId}`, errorMsg, 'URL:', audioSrc);
           
-          // Check if this is a DEMUXER_ERROR_COULD_NOT_OPEN, which often happens when:
-          // 1. The story wasn't saved properly and audio URL is malformed
-          // 2. Ad blockers are blocking Firebase Storage connections
           if (errorMsg.includes("DEMUXER_ERROR_COULD_NOT_OPEN")) {
             console.warn(`Possible reasons for audio error:
               1. Story may not have been saved before generating audio (should be fixed now)
               2. Ad blocker or privacy extension might be blocking Firebase Storage
               3. The audio file might be corrupted or in an unsupported format`);
             
-            // If URL starts with https://storage.googleapis.com, it might be blocked
             if (audioSrc.includes('storage.googleapis.com')) {
               console.warn('Firebase Storage URL detected. This might be blocked by ad blockers or privacy extensions.');
               
-              // Set a more helpful error message
               setConversionError(
                 `Audio failed to load. This may be caused by an ad blocker or privacy extension
                 blocking Firebase Storage connections. Try disabling them temporarily for this site.`
@@ -145,7 +141,6 @@ export function ConvertibleAudioPlayer({
             }
           }
           
-          // Set a general error message
           setConversionError(`Failed to load audio: ${errorMessage}`);
           onError?.(errorMsg);
         }}
