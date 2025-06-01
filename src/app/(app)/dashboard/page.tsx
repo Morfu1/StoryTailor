@@ -24,7 +24,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-
+import { deleteStory } from '@/actions/firestoreStoryActions'; // Corrected import path
 
 export default function DashboardPage() {
   const { user } = useAuth();
@@ -65,7 +65,7 @@ export default function DashboardPage() {
     setDeletingStoryId(storyId);
     
     try {
-      const { deleteStory } = await import('@/actions/firestoreStoryActions'); // Updated import
+      // The import for deleteStory is now at the top of the file
       const result = await deleteStory(storyId, user.uid);
       
       if (result.success) {
@@ -75,7 +75,6 @@ export default function DashboardPage() {
           className: 'bg-green-500 text-white' 
         });
         
-        // Remove the story from the local state
         setStories(prevStories => prevStories.filter(story => story.id !== storyId));
       } else {
         toast({ 
@@ -154,7 +153,6 @@ export default function DashboardPage() {
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {stories.map((story, index) => (
             <Card key={story.id} className="flex flex-col overflow-hidden shadow-lg hover:shadow-xl transition-shadow duration-300 bg-card relative">
-            {/* Delete button in top right corner */}
             <div className="absolute top-2 right-2 z-10">
             <AlertDialog>
             <AlertDialogTrigger asChild>
@@ -195,12 +193,13 @@ export default function DashboardPage() {
                <CardHeader>
                   <div className="aspect-[16/9] bg-muted rounded-t-md overflow-hidden relative">
                    <Image 
-                     src={story.generatedImages?.[0]?.imageUrl || "https://picsum.photos/400/225"} 
+                     src={story.generatedImages?.[0]?.imageUrl || "https://placehold.co/400x225.png"} 
                      alt={story.title || "Story image"} 
                      fill
                      style={{ objectFit: "cover" }}
-                     priority={index === 0} // Add priority to the first image
-                     sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, (max-width: 1280px) 33vw, 25vw" // Add sizes prop
+                     priority={index === 0}
+                     sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, (max-width: 1280px) 33vw, 25vw"
+                     data-ai-hint="story cover"
                    />
                  </div>
                 <CardTitle className="mt-4 text-xl font-semibold text-foreground truncate">
@@ -238,6 +237,3 @@ export default function DashboardPage() {
     </div>
   );
 }
-
-
-    
