@@ -24,7 +24,8 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { deleteStory } from '@/actions/firestoreStoryActions'; // Corrected import path
+// Corrected import path using alias
+import { deleteStory } from '@/actions/firestoreStoryActions';
 
 export default function DashboardPage() {
   const { user } = useAuth();
@@ -65,7 +66,6 @@ export default function DashboardPage() {
     setDeletingStoryId(storyId);
     
     try {
-      // The import for deleteStory is now at the top of the file
       const result = await deleteStory(storyId, user.uid);
       
       if (result.success) {
@@ -198,7 +198,7 @@ export default function DashboardPage() {
                      fill
                      style={{ objectFit: "cover" }}
                      priority={index === 0}
-                     sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, (max-width: 1280px) 33vw, 25vw"
+                     sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw, 25vw"
                      data-ai-hint="story cover"
                    />
                  </div>
