@@ -1,4 +1,3 @@
-
 "use server";
 
 import { genkit } from 'genkit';
@@ -43,10 +42,15 @@ import {
 import { firebaseAdmin, dbAdmin } from '@/lib/firebaseAdmin';
 import type { Story, ElevenLabsVoice, GeneratedImage } from '@/types/story';
 import type { Timestamp as AdminTimestamp } from 'firebase-admin/firestore';
-import { getStorage as getAdminStorage } from 'firebase-admin/storage';
+// import { getStorage as getAdminStorage } from 'firebase-admin/storage'; Removed unused import
 import { revalidatePath } from 'next/cache';
 import { getUserApiKeys } from './apiKeyActions';
 import type { UserApiKeys } from '@/types/apiKeys';
+import { 
+  uploadAudioToFirebaseStorage, 
+  uploadImageToFirebaseStorage, 
+  uploadImageBufferToFirebaseStorage 
+} from './firebaseStorageActions'; // Import necessary storage actions
 
 // Schemas to be used in server actions, possibly extended if needed.
 // Provide fallbacks for all imported schemas before they are extended.
@@ -311,10 +315,6 @@ const scriptChunksPromptTemplate = 'You are a movie director and script editor w
 '- "Lilly’s eyes sparkled. ‘Does the Rainbow Route have puddles?!’"\n' +
 '- "‘Oh, yes,’ Mama Duck chuckled, ‘plenty of puddles. But it’s also full of surprises.’"\n';
 
-
-function getStorageBucket(): string | undefined {
-  return process.env?.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET;
-}
 
 export async function generateTitle(input: GenerateTitleInput): Promise<{ success: boolean, data?: z.infer<typeof AITitleOutputSchema>, error?: string }> {
   const userKeysResult = await getUserApiKeys(input.userId);
@@ -673,192 +673,6 @@ interface FirebaseErrorWithCode extends Error {
 }
 
 
-async function refreshFirebaseStorageUrl(url: string, userId: string, storyId: string, filePath?: string): Promise<string | null> {
-  if (!url || typeof url !== 'string') return null;
-
-  const bucketName = getStorageBucket();
-  if (!bucketName || !url.includes(bucketName)) return null;
-
-  try {
-    console.log(`[refreshFirebaseStorageUrl] Refreshing signed URL for: ${url}`);
-
-    if (!firebaseAdmin.apps.length || !firebaseAdmin.app()) {
-      console.error("[refreshFirebaseStorageUrl] Firebase Admin SDK app is not initialized.");
-      return null;
-    }
-
-    const adminAppInstance = firebaseAdmin.app();
-    const storage = getAdminStorage(adminAppInstance);
-    const bucket = storage.bucket(bucketName);
-
-    if (!filePath) {
-      try {
-        const urlObj = new URL(url);
-        const pathMatch = urlObj.pathname.match(/\/o\/(.+?)(?:\?|$)/);
-        if (pathMatch && pathMatch[1]) {
-          filePath = decodeURIComponent(pathMatch[1]);
-          console.log(`[refreshFirebaseStorageUrl] Extracted file path from URL: ${filePath}`);
-        } else {
-          console.warn(`[refreshFirebaseStorageUrl] Unable to extract file path from URL: ${url}`);
-          return null;
-        }
-      } catch (error) {
-        console.warn(`[refreshFirebaseStorageUrl] URL parsing failed for: ${url}`, error);
-        return null;
-      }
-    }
-
-    const file = bucket.file(filePath);
-
-    const [exists] = await file.exists();
-    if (!exists) {
-      console.warn(`[refreshFirebaseStorageUrl] File does not exist at path: ${filePath}`);
-      return null;
-    }
-
-    const [signedUrl] = await file.getSignedUrl({
-      action: 'read',
-      expires: Date.now() + 1000 * 60 * 60 * 24 * 7
-    });
-
-    console.log(`[refreshFirebaseStorageUrl] Generated new signed URL valid for 7 days: ${signedUrl}`);
-    return signedUrl;
-  } catch (error) {
-    console.error("[refreshFirebaseStorageUrl] Error refreshing signed URL:", error);
-    return null;
-  }
-}
-
-export async function getStory(storyId: string, userId: string): Promise<{ success: boolean; data?: Story; error?: string }> {
-  if (!dbAdmin) {
-    console.error("[getStory Action] Firebase Admin SDK (dbAdmin) is not initialized. Cannot fetch story. Check server logs for firebaseAdmin.ts output.");
-    return { success: false, error: "Server configuration error: Database connection not available. Please contact support or check server logs." };
-  }
-  if (!userId) {
-    console.warn("[getStory Action] Attempt to fetch story without userId.");
-    return { success: false, error: "User not authenticated." };
-  }
-  try {
-    const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => reject(new Error("Firebase connection timeout")), 10000);
-    });
-
-    const fetchPromise = async () => {
-      if (!dbAdmin) {
-        throw new Error("Firebase Admin SDK not initialized");
-      }
-      const storyRef = dbAdmin.collection("stories").doc(storyId);
-      const docSnap = await storyRef.get();
-      return { docSnap, storyRef };
-    };
-
-    const { docSnap, storyRef } = await Promise.race([fetchPromise(), timeoutPromise]);
-
-    if (docSnap.exists) {
-      const storyData = docSnap.data();
-      const story = { id: docSnap.id, ...storyData } as Story;
-
-      if (story.userId !== userId && storyData?.['_testMarker'] !== "BASIC_SAVE_TEST_DOCUMENT_V2") {
-        console.warn(`[getStory Action] User ${userId} fetched story ${storyId} belonging to ${story.userId}. This is expected if rules permit or for admin access.`);
-      }
-
-      if (story.createdAt && typeof (story.createdAt as any).toDate === 'function') {
-        story.createdAt = (story.createdAt as AdminTimestamp).toDate();
-      }
-      if (story.updatedAt && typeof (story.updatedAt as any).toDate === 'function') {
-        story.updatedAt = (story.updatedAt as AdminTimestamp).toDate();
-      }
-
-      if (story.narrationAudioUrl) {
-        const refreshedUrl = await refreshFirebaseStorageUrl(story.narrationAudioUrl, userId, storyId);
-        if (refreshedUrl) {
-          console.log(`[getStory Action] Refreshed narrationAudioUrl from: ${story.narrationAudioUrl} to: ${refreshedUrl}`);
-          story.narrationAudioUrl = refreshedUrl;
-          await storyRef.update({ narrationAudioUrl: refreshedUrl });
-        }
-      }
-
-      if (story.narrationChunks && Array.isArray(story.narrationChunks) && story.narrationChunks.length > 0) {
-        let hasUpdatedChunks = false;
-        const refreshedChunks = await Promise.all(story.narrationChunks.map(async (chunk) => {
-          if (chunk && chunk.audioUrl) {
-            const refreshedUrl = await refreshFirebaseStorageUrl(chunk.audioUrl, userId, storyId);
-            if (refreshedUrl) {
-              console.log(`[getStory Action] Refreshed chunk audio URL from: ${chunk.audioUrl} to: ${refreshedUrl}`);
-              hasUpdatedChunks = true;
-              return { ...chunk, audioUrl: refreshedUrl };
-            }
-          }
-          return chunk;
-        }));
-
-        if (hasUpdatedChunks) {
-          story.narrationChunks = refreshedChunks;
-          await storyRef.update({ narrationChunks: refreshedChunks });
-        }
-      }
-
-      if (story.generatedImages && Array.isArray(story.generatedImages) && story.generatedImages.length > 0) {
-        let hasUpdatedImages = false;
-        const refreshedImages = await Promise.all(story.generatedImages.map(async (image) => {
-          if (image && image.imageUrl) {
-            const refreshedUrl = await refreshFirebaseStorageUrl(image.imageUrl, userId, storyId);
-            if (refreshedUrl) {
-              console.log(`[getStory Action] Refreshed image URL from: ${image.imageUrl} to: ${refreshedUrl}`);
-              hasUpdatedImages = true;
-              return { ...image, imageUrl: refreshedUrl };
-            }
-          }
-          return image;
-        }));
-
-        if (hasUpdatedImages) {
-          story.generatedImages = refreshedImages;
-          await storyRef.update({ generatedImages: refreshedImages });
-        }
-      }
-
-      return { success: true, data: story };
-    } else {
-      return { success: false, error: "Story not found." };
-    }
-  } catch (error) {
-    console.error("[getStory Action] Error fetching story from Firestore (Admin SDK):", error);
-    let errorMessage = "Failed to fetch story.";
-    const firebaseError = error as FirebaseErrorWithCode;
-
-    if (error instanceof Error && error.message === "Firebase connection timeout") {
-      console.error("[getStory Action] Firebase connection timed out. Possible network or ad blocker issue.");
-      return {
-        success: false,
-        error: "Connection to Firebase timed out. If you're using an ad blocker or privacy extension, please disable it for this site."
-      };
-    } else if (firebaseError && firebaseError.code) {
-      errorMessage = `Failed to fetch story (Admin SDK): ${firebaseError.message} (Code: ${firebaseError.code})`;
-      if (firebaseError.code === 'permission-denied' || (typeof firebaseError.code === 'number' && firebaseError.code === 7)) {
-        console.error("[getStory Action] PERMISSION DENIED while fetching. Check Firestore rules and IAM for service account.");
-      } else if (firebaseError.code === 'unavailable' || firebaseError.code === 'resource-exhausted') {
-        return {
-          success: false,
-          error: "Firebase connection unavailable. If you're using an ad blocker or privacy extension, please disable it for this site."
-        };
-      }
-    } else if (error instanceof Error) {
-      errorMessage = `Failed to fetch story (Admin SDK): ${error.message}`;
-      if (error.message.includes('network') ||
-          error.message.includes('connection') ||
-          error.message.includes('ERR_BLOCKED_BY_CLIENT') ||
-          error.message.includes('ERR_HTTP2_PROTOCOL_ERROR')) {
-        return {
-          success: false,
-          error: "Firebase connection failed. If you're using an ad blocker or privacy extension, please disable it for this site."
-        };
-      }
-    }
-    return { success: false, error: errorMessage };
-  }
-}
-
 export async function generateImageFromGemini(
   originalPrompt: string,
   userId: string,
@@ -947,6 +761,7 @@ export async function generateImageFromImagen3(
   let requestPrompt = originalPrompt;
   if (userId && storyId) {
     try {
+      const { getStory } = await import('@/actions/firestoreStoryActions'); // Local import for cyclic dep avoidance
       const storyResult = await getStory(storyId, userId);
       if (storyResult.success && storyResult.data) {
         const { nameToReference, extractEntityNames } = await import('@/app/(app)/assemble-video/utils');
@@ -983,6 +798,7 @@ export async function generateImageFromImagen3(
     } catch (error) { console.warn("[generateImageFromImagen3] Failed to apply style:", error); }
   } else if (userId && storyId) {
     try {
+      const { getStory } = await import('@/actions/firestoreStoryActions'); // Local import
       const storyResult = await getStory(storyId, userId);
       if (storyResult.success && storyResult.data?.imageStyleId) {
         const { applyStyleToPrompt } = await import('@/utils/imageStyleUtils');
@@ -1060,6 +876,7 @@ export async function generateImageFromPrompt(
   let processedPrompt = originalPrompt;
   if (userId && storyId) {
     try {
+      const { getStory } = await import('@/actions/firestoreStoryActions'); // Local import for cyclic dep avoidance
       const storyResult = await getStory(storyId, userId);
       if (storyResult.success && storyResult.data) {
         const { parseEntityReferences } = await import('@/app/(app)/assemble-video/utils');
@@ -1076,6 +893,7 @@ export async function generateImageFromPrompt(
     } catch (error) { console.warn("Failed to apply style:", error); }
   } else if (userId && storyId) {
     try {
+      const { getStory } = await import('@/actions/firestoreStoryActions'); // Local import
       const storyResult = await getStory(storyId, userId);
       if (storyResult.success && storyResult.data?.imageStyleId) {
         const { applyStyleToPrompt } = await import('@/utils/imageStyleUtils');
@@ -1178,216 +996,3 @@ async function pollForPicsArtImage(
   }
   return { success: false, error: "Image generation timed out after polling.", requestPrompt };
 }
-
-async function uploadImageToFirebaseStorage(imageUrl: string, userId: string, storyId: string, imageName: string): Promise<string> {
-  if (!firebaseAdmin.apps.length || !firebaseAdmin.app()) { throw new Error("Firebase Admin SDK app not initialized."); }
-  const adminAppInstance = firebaseAdmin.app();
-  const storage = getAdminStorage(adminAppInstance);
-  const bucketName = getStorageBucket();
-  if (!bucketName) { throw new Error("Firebase Storage bucket name not configured."); }
-  const bucket = storage.bucket(bucketName);
-  try {
-    const response = await fetch(imageUrl);
-    if (!response.ok) { throw new Error(`Failed to fetch image from URL: ${response.statusText}`); }
-    const imageBuffer = Buffer.from(await response.arrayBuffer());
-    const contentType = response.headers.get('content-type') || 'image/jpeg';
-    const filePath = `users/${userId}/stories/${storyId}/images/${imageName}.jpg`;
-    const file = bucket.file(filePath);
-    await file.save(imageBuffer, { metadata: { contentType: contentType } });
-    const [signedUrl] = await file.getSignedUrl({ action: 'read', expires: Date.now() + 1000 * 60 * 60 * 24 * 7 });
-    return signedUrl;
-  } catch (error) { throw error; }
-}
-
-async function uploadImageBufferToFirebaseStorage(imageBuffer: Buffer, userId: string, storyId: string, imageName: string, contentType: string): Promise<string> {
-  if (!firebaseAdmin.apps.length || !firebaseAdmin.app()) { throw new Error("Firebase Admin SDK app not initialized."); }
-  const adminAppInstance = firebaseAdmin.app();
-  const storage = getAdminStorage(adminAppInstance);
-  const bucketName = getStorageBucket();
-  if (!bucketName) { throw new Error("Firebase Storage bucket name not configured."); }
-  const bucket = storage.bucket(bucketName);
-  try {
-    const filePath = `users/${userId}/stories/${storyId}/images/${imageName}.png`;
-    const file = bucket.file(filePath);
-    await file.save(imageBuffer, { metadata: { contentType: contentType } });
-    const [signedUrl] = await file.getSignedUrl({ action: 'read', expires: Date.now() + 1000 * 60 * 60 * 24 * 7 });
-    return signedUrl;
-  } catch (error) { throw error; }
-}
-
-async function uploadAudioToFirebaseStorage(audioDataUri: string, userId: string, storyId: string, filename: string): Promise<string> {
-  if (!firebaseAdmin.apps.length || !firebaseAdmin.app()) { throw new Error("Firebase Admin SDK app not initialized."); }
-  const adminAppInstance = firebaseAdmin.app();
-  const storage = getAdminStorage(adminAppInstance);
-  const bucketName = getStorageBucket();
-  if (!bucketName) { throw new Error("Firebase Storage bucket name not configured."); }
-  const bucket = storage.bucket(bucketName);
-  let base64Data: string; let contentType: string;
-  if (audioDataUri.startsWith('data:audio/mpeg;base64,')) { base64Data = audioDataUri.substring('data:audio/mpeg;base64,'.length); contentType = 'audio/mpeg'; }
-  else if (audioDataUri.startsWith('data:audio/wav;base64,')) { base64Data = audioDataUri.substring('data:audio/wav;base64,'.length); contentType = 'audio/wav'; }
-  else { throw new Error('Invalid audio data URI format.'); }
-  const audioBuffer = Buffer.from(base64Data, 'base64');
-  const filePath = `users/${userId}/stories/${storyId}/narration_chunks/${filename}`;
-  const file = bucket.file(filePath);
-  await file.save(audioBuffer, { metadata: { contentType: contentType } });
-  const [signedUrl] = await file.getSignedUrl({ action: 'read', expires: Date.now() + 1000 * 60 * 60 * 24 * 7 });
-  return signedUrl;
-}
-
-export async function cleanupBrokenImages(storyId: string, userId: string): Promise<{ success: boolean; error?: string }> {
-  if (!dbAdmin) { return { success: false, error: "Database connection not available" }; }
-  try {
-    const storyRef = dbAdmin.collection('stories').doc(storyId);
-    const storyDoc = await storyRef.get();
-    if (!storyDoc.exists) { return { success: false, error: "Story not found" }; }
-    const storyData = storyDoc.data() as any;
-    let updated = false; const updateData: any = {};
-    if (storyData.generatedImages && Array.isArray(storyData.generatedImages)) {
-      const cleanGeneratedImages = storyData.generatedImages.filter((img: any) => {
-        if (img.imageUrl && img.imageUrl.includes('aicdn.picsart.com')) { return false; }
-        if (img.imageUrl && img.imageUrl.includes('.mp3')) { return false; }
-        return true;
-      });
-      if (cleanGeneratedImages.length !== storyData.generatedImages.length) { updateData.generatedImages = cleanGeneratedImages; updated = true; }
-    }
-    if (storyData.detailImages && Array.isArray(storyData.detailImages)) {
-      const cleanDetailImages = storyData.detailImages.filter((img: any) => {
-        if (img.imageUrl && img.imageUrl.includes('aicdn.picsart.com')) { return false; }
-        return true;
-      });
-      if (cleanDetailImages.length !== storyData.detailImages.length) { updateData.detailImages = cleanDetailImages; updated = true; }
-    }
-    if (updated) {
-      updateData.updatedAt = firebaseAdmin.firestore.FieldValue.serverTimestamp();
-      await storyRef.update(updateData);
-    }
-    return { success: true };
-  } catch (error) { return { success: false, error: `Failed to cleanup broken images: ${error}` }; }
-}
-
-export async function saveStory(storyData: Story, userId: string): Promise<{ success: boolean; storyId?: string; error?: string, data?: { narrationAudioUrl?: string} }> {
-  if (!dbAdmin) { return { success: false, error: "Server configuration error: Database connection (dbAdmin) is not available." }; }
-  if (!userId || typeof userId !== 'string' || userId.trim() === '') { return { success: false, error: "User not authenticated or user ID is invalid." }; }
-  const storyIdForPath = storyData.id || dbAdmin.collection("stories").doc().id;
-  const processedStoryData = { ...storyData };
-  let newNarrationUrl: string | undefined = undefined;
-  if (processedStoryData.narrationAudioUrl && processedStoryData.narrationAudioUrl.startsWith('data:audio/mpeg;base64,')) {
-    try {
-      const defaultFilename = "uploaded_narration.mp3";
-      const storageUrl = await uploadAudioToFirebaseStorage(processedStoryData.narrationAudioUrl, userId, storyIdForPath, defaultFilename);
-      processedStoryData.narrationAudioUrl = storageUrl;
-      newNarrationUrl = storageUrl;
-    } catch (uploadError: any) {
-      let detailedErrorMessage = `Failed to upload narration audio: ${uploadError.message || String(uploadError)}`;
-      if (uploadError.errors && Array.isArray(uploadError.errors) && uploadError.errors.length > 0) { detailedErrorMessage += ` Details: ${uploadError.errors.map((e: any) => e.message || JSON.stringify(e)).join(', ')}`; }
-      else if (uploadError.code) { detailedErrorMessage += ` (Code: ${uploadError.code})`; }
-      return { success: false, error: detailedErrorMessage };
-    }
-  }
-  const dataToSave: any = { ...processedStoryData, userId: userId, updatedAt: firebaseAdmin.firestore.FieldValue.serverTimestamp() };
-  if (dataToSave.id) { delete dataToSave.id; }
-  if (dataToSave.createdAt && dataToSave.createdAt instanceof Date) { dataToSave.createdAt = firebaseAdmin.firestore.Timestamp.fromDate(dataToSave.createdAt); }
-  if (dataToSave.detailsPrompts && Object.keys(dataToSave.detailsPrompts).length === 0) { delete dataToSave.detailsPrompts; }
-  else if (dataToSave.detailsPrompts === undefined) { delete dataToSave.detailsPrompts; }
-  if (dataToSave.imagePrompts === undefined) delete dataToSave.imagePrompts; else if (!Array.isArray(dataToSave.imagePrompts)) dataToSave.imagePrompts = [];
-  if (dataToSave.generatedImages === undefined) delete dataToSave.generatedImages; else if (!Array.isArray(dataToSave.generatedImages)) dataToSave.generatedImages = [];
-  if (dataToSave.elevenLabsVoiceId === undefined) { delete dataToSave.elevenLabsVoiceId; }
-  Object.keys(dataToSave).forEach(key => { if (dataToSave[key] === undefined) { delete dataToSave[key]; } });
-  try {
-    if (storyData.id) {
-      const storyRef = dbAdmin.collection("stories").doc(storyData.id);
-      const docSnap = await storyRef.get();
-      if (!docSnap.exists) { return { success: false, error: "Story not found. Cannot update." }; }
-      const existingStoryData = docSnap.data();
-      if (existingStoryData?.userId !== userId) { return { success: false, error: "Unauthorized: You can only update your own stories." }; }
-      if ('createdAt' in dataToSave && existingStoryData?.createdAt) { delete dataToSave.createdAt; }
-      await storyRef.update(dataToSave);
-      revalidatePath('/dashboard');
-      revalidatePath(`/create-story?storyId=${storyData.id}`);
-      return { success: true, storyId: storyData.id, data: { narrationAudioUrl: newNarrationUrl || storyData.narrationAudioUrl } };
-    } else {
-      dataToSave.createdAt = firebaseAdmin.firestore.FieldValue.serverTimestamp();
-      const storyRef = dbAdmin.collection("stories").doc(storyIdForPath);
-      await storyRef.set(dataToSave);
-      revalidatePath('/dashboard');
-      return { success: true, storyId: storyIdForPath, data: { narrationAudioUrl: newNarrationUrl } };
-    }
-  } catch (error) {
-    let errorMessage = "Failed to save story.";
-    const firebaseError = error as FirebaseErrorWithCode;
-    if (firebaseError && firebaseError.code) { errorMessage = `Failed to save story (Firestore Error): ${firebaseError.message} (Code: ${firebaseError.code})`; }
-    else if (error instanceof Error) { errorMessage = `Failed to save story: ${error.message}`; }
-    return { success: false, error: errorMessage };
-  }
-}
-
-export async function updateStoryTimeline(
-  storyId: string,
-  userId: string,
-  timelineTracks: Story['timelineTracks']
-): Promise<{ success: boolean; error?: string }> {
-  if (!dbAdmin) { return { success: false, error: "Server configuration error: Database connection (dbAdmin) is not available." }; }
-  if (!userId || typeof userId !== 'string' || userId.trim() === '') { return { success: false, error: "User not authenticated or user ID is invalid." }; }
-  if (!storyId) { return { success: false, error: "Story ID is required to update the timeline." }; }
-  try {
-    const storyRef = dbAdmin.collection("stories").doc(storyId);
-    const docSnap = await storyRef.get();
-    if (!docSnap.exists) { return { success: false, error: "Story not found. Cannot update timeline." }; }
-    const existingStoryData = docSnap.data();
-    if (existingStoryData?.userId !== userId) { return { success: false, error: "Unauthorized: You can only update the timeline of your own stories." }; }
-    const dataToUpdate = { timelineTracks: timelineTracks, updatedAt: firebaseAdmin.firestore.FieldValue.serverTimestamp() };
-    await storyRef.update(dataToUpdate);
-    revalidatePath(`/assemble-video?storyId=${storyId}`);
-    revalidatePath('/dashboard');
-    return { success: true };
-  } catch (error) {
-    let errorMessage = "Failed to update story timeline.";
-    const firebaseError = error as FirebaseErrorWithCode;
-    if (firebaseError && firebaseError.code) { errorMessage = `Failed to update story timeline (Firestore Error): ${firebaseError.message} (Code: ${firebaseError.code})`; }
-    else if (error instanceof Error) { errorMessage = `Failed to update story timeline: ${error.message}`; }
-    return { success: false, error: errorMessage };
-  }
-}
-
-export async function deleteStory(
-  storyId: string,
-  userId: string
-): Promise<{ success: boolean; error?: string }> {
-  if (!dbAdmin) { return { success: false, error: "Server configuration error: Database connection (dbAdmin) is not available." }; }
-  if (!userId || typeof userId !== 'string' || userId.trim() === '') { return { success: false, error: "User not authenticated or user ID is invalid." }; }
-  if (!storyId) { return { success: false, error: "Story ID is required to delete the story." }; }
-  try {
-    const storyRef = dbAdmin.collection("stories").doc(storyId);
-    const docSnap = await storyRef.get();
-    if (!docSnap.exists) { return { success: false, error: "Story not found." }; }
-    const existingStoryData = docSnap.data();
-    if (existingStoryData?.userId !== userId) { return { success: false, error: "Unauthorized: You can only delete your own stories." }; }
-    const bucketName = getStorageBucket();
-    if (!bucketName) { return { success: false, error: "Firebase Storage bucket name is not configured." }; }
-    const adminAppInstance = firebaseAdmin.app();
-    const storage = getAdminStorage(adminAppInstance);
-    const bucket = storage.bucket(bucketName);
-    const storageBasePath = `users/${userId}/stories/${storyId}`;
-    try {
-      const [files] = await bucket.getFiles({ prefix: storageBasePath });
-      if (files.length > 0) {
-        const deletePromises = files.map(file => file.delete().catch(error => console.error(`Failed to delete file ${file.name}:`, error)));
-        await Promise.all(deletePromises);
-      }
-    } catch (storageError) { console.error(`Error deleting storage files for story ${storyId}:`, storageError); }
-    await storyRef.delete();
-    revalidatePath('/dashboard');
-    revalidatePath(`/create-story?storyId=${storyId}`);
-    return { success: true };
-  } catch (error) {
-    let errorMessage = "Failed to delete story.";
-    const firebaseError = error as FirebaseErrorWithCode;
-    if (firebaseError && firebaseError.code) { errorMessage = `Failed to delete story (Firestore Error): ${firebaseError.message} (Code: ${firebaseError.code})`; }
-    else if (error instanceof Error) { errorMessage = `Failed to delete story: ${error.message}`; }
-    return { success: false, error: errorMessage };
-  }
-}
-
-    
-
-    

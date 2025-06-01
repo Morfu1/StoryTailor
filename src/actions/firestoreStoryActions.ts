@@ -1,11 +1,16 @@
-
 "use server";
 
 import { firebaseAdmin, dbAdmin } from '@/lib/firebaseAdmin';
 import type { Story, PageTimelineTrack } from '@/types/story'; // Ensure PageTimelineTrack is correctly typed if used
 import { Timestamp as AdminTimestamp } from 'firebase-admin/firestore';
 import { revalidatePath } from 'next/cache';
-import { getStorageBucket, uploadAudioToFirebaseStorage, refreshFirebaseStorageUrl, uploadImageToFirebaseStorage, deleteFolderFromFirebaseStorage } from './firebaseStorageActions'; // Correctly import deleteFolderFromFirebaseStorage
+import { 
+  getStorageBucket, 
+  uploadAudioToFirebaseStorage, 
+  refreshFirebaseStorageUrl, 
+  uploadImageToFirebaseStorage, 
+  deleteFolderFromFirebaseStorage 
+} from './firebaseStorageActions'; 
 
 
 interface FirebaseErrorWithCode extends Error {
@@ -189,7 +194,7 @@ export async function saveStory(storyData: Story, userId: string): Promise<{ suc
   
   if (dataToSave.createdAt && dataToSave.createdAt instanceof Date) {
     dataToSave.createdAt = firebaseAdmin.firestore.Timestamp.fromDate(dataToSave.createdAt);
-  } else if (!dataToSave.id && !dataToSave.createdAt) { // Only set createdAt on new document creation
+  } else if (!storyData.id && !dataToSave.createdAt) { // Only set createdAt on new document creation
     dataToSave.createdAt = firebaseAdmin.firestore.FieldValue.serverTimestamp();
   }
   
