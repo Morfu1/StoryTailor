@@ -8,35 +8,58 @@ import { z } from 'zod';
 import {
   GenerateCharacterPromptsInputSchema as AICharacterPromptsInputSchemaOriginal,
   GenerateCharacterPromptsOutputSchema as AICharacterPromptsOutputSchemaOriginal
-} from '@/ai/flows/generate-character-prompts';
+} from '@/ai/flows/generate-character-prompts-types';
 
 import {
   GenerateImagePromptsInputSchema as AIImagePromptsInputSchemaOriginal,
   GenerateImagePromptsOutputSchema as AIImagePromptsOutputSchemaOriginal
-} from '@/ai/flows/generate-image-prompts';
+} from '@/ai/flows/generate-image-prompts-types';
 
 import {
-  GenerateNarrationAudioInputSchema as AINarrationAudioInputSchemaFlow,
-  GenerateNarrationAudioOutputSchema as AINarrationAudioOutputSchemaFlow,
+  GenerateNarrationAudioInputSchema as AINarrationAudioInputSchemaFlow, // Renaming to match schema convention
+  GenerateNarrationAudioOutputSchema as AINarrationAudioOutputSchemaFlow, // Renaming to match schema convention
   type GenerateNarrationAudioInput as AINarrationAudioInputType,
   type GenerateNarrationAudioOutput as AINarrationAudioOutputType
-} from '@/ai/flows/generate-narration-audio';
+} from '@/ai/flows/generate-narration-audio-types';
 
 
 import {
   GenerateScriptInputSchema as AIScriptInputSchemaOriginal,
   GenerateScriptOutputSchema as AIScriptOutputSchemaOriginal
-} from '@/ai/flows/generate-script';
+} from '@/ai/flows/generate-script-types';
 
 import {
   GenerateTitleInputSchema as AITitleInputSchemaOriginal,
   GenerateTitleOutputSchema as AITitleOutputSchemaOriginal
-} from '@/ai/flows/generate-title';
+} from '@/ai/flows/generate-title-types';
 
 import {
   GenerateScriptChunksInputSchema as AIScriptChunksInputSchemaOriginal,
   GenerateScriptChunksOutputSchema as AIScriptChunksOutputSchemaOriginal
-} from '@/ai/flows/generate-script-chunks';
+} from '@/ai/flows/generate-script-chunks-types';
+
+import {
+  AITitleInputSchema,
+  AITitleOutputSchema,
+  GenerateTitleInputServerSchema,
+  type GenerateTitleInput,
+  AIScriptInputSchema,
+  AIScriptOutputSchema,
+  GenerateScriptInputServerSchema,
+  type GenerateScriptInput,
+  AICharacterPromptsInputSchema,
+  AICharacterPromptsOutputSchema,
+  GenerateCharacterPromptsInputServerSchema,
+  type GenerateCharacterPromptsInput,
+  AIImagePromptsInputSchema,
+  AIImagePromptsOutputSchema,
+  GenerateImagePromptsInputServerSchema,
+  type GenerateImagePromptsInput,
+  AIScriptChunksInputSchema,
+  AIScriptChunksOutputSchema,
+  GenerateScriptChunksInputServerSchema,
+  type GenerateScriptChunksInput
+} from './storyActionSchemas';
 
 
 import { firebaseAdmin, dbAdmin } from '@/lib/firebaseAdmin';
@@ -51,76 +74,6 @@ import {
   uploadImageToFirebaseStorage, 
   uploadImageBufferToFirebaseStorage 
 } from './firebaseStorageActions'; // Import necessary storage actions
-
-// Schemas to be used in server actions, possibly extended if needed.
-// Provide fallbacks for all imported schemas before they are extended.
-
-const AITitleInputSchema = AITitleInputSchemaOriginal || z.object({
-  userPrompt: z.string().describe('The user-provided prompt or summary of the story idea.')
-});
-const AITitleOutputSchema = AITitleOutputSchemaOriginal || z.object({
-  title: z.string().describe('A short, catchy, and relevant title for the story, under 10 words.')
-});
-const GenerateTitleInputServerSchema = AITitleInputSchema.extend({ userId: z.string() });
-export type GenerateTitleInput = z.infer<typeof GenerateTitleInputServerSchema>;
-
-
-const AIScriptInputSchema = AIScriptInputSchemaOriginal || z.object({
-  prompt: z.string().describe('A detailed prompt including themes, character descriptions, and story twists for the animated video script.')
-});
-const AIScriptOutputSchema = AIScriptOutputSchemaOriginal || z.object({
-  script: z.string().describe('The generated script for the animated video, tailored for children and adults, and narrated by a single voice.')
-});
-const GenerateScriptInputServerSchema = AIScriptInputSchema.extend({ userId: z.string() });
-export type GenerateScriptInput = z.infer<typeof GenerateScriptInputServerSchema>;
-
-
-const AICharacterPromptsInputSchema = AICharacterPromptsInputSchemaOriginal || z.object({
-  script: z.string().describe('The main script of the story.'),
-  imageStyleId: z.string().optional().describe('The image style ID to apply to the visual descriptions.'),
-  imageProvider: z.enum(['picsart', 'gemini', 'imagen3']).default('picsart').describe('The AI provider for image generation to tailor style prompts.'),
-});
-const AICharacterPromptsOutputSchema = AICharacterPromptsOutputSchemaOriginal || z.object({
-  characterPrompts: z.string().describe('Visual descriptions for characters.'),
-  itemPrompts: z.string().describe('Visual descriptions for items.'),
-  locationPrompts: z.string().describe('Visual descriptions for locations.'),
-});
-const GenerateCharacterPromptsInputServerSchema = AICharacterPromptsInputSchema.extend({ userId: z.string() });
-export type GenerateCharacterPromptsInput = z.infer<typeof GenerateCharacterPromptsInputServerSchema>;
-
-
-const AIImagePromptsInputSchema = AIImagePromptsInputSchemaOriginal || z.object({
-  script: z.string().describe('The animation script to base the image prompts on.'),
-  characterPrompts: z.string().describe('Prompts describing all characters.'),
-  locationPrompts: z.string().describe('Prompts describing all locations.'),
-  itemPrompts: z.string().describe('Prompts describing all items.'),
-  audioDurationSeconds: z.number().describe('The duration of the narration audio in seconds.'),
-  narrationChunks: z.array(z.object({
-    text: z.string(),
-    duration: z.number(),
-    audioUrl: z.string().optional(),
-  })).optional().describe('Array of narration chunks with text and duration.'),
-  imageProvider: z.enum(['picsart', 'gemini', 'imagen3']).default('picsart').describe('The AI provider for image generation.'),
-  isPicsart: z.boolean().optional().describe('Whether the image provider is PicsArt.'),
-});
-const AIImagePromptsOutputSchema = AIImagePromptsOutputSchemaOriginal || z.object({
-  imagePrompts: z.array(z.string()).describe('The generated image prompts as an array of strings.'),
-  actionPrompts: z.array(z.string()).describe('Simple action descriptions for character movements in each scene.'),
-});
-const GenerateImagePromptsInputServerSchema = AIImagePromptsInputSchema.extend({ userId: z.string() });
-export type GenerateImagePromptsInput = z.infer<typeof GenerateImagePromptsInputServerSchema>;
-
-
-const AIScriptChunksInputSchema = AIScriptChunksInputSchemaOriginal || z.object({
-  script: z.string().describe('The full story script to be split into chunks.')
-});
-const AIScriptChunksOutputSchema = AIScriptChunksOutputSchemaOriginal || z.object({
-  scriptChunks: z.array(z.string()).describe('An array of script chunks, where each chunk is a string.'),
-  error: z.string().optional().describe('An error message if splitting failed.')
-});
-const GenerateScriptChunksInputServerSchema = AIScriptChunksInputSchema.extend({ userId: z.string() });
-export type GenerateScriptChunksInput = z.infer<typeof GenerateScriptChunksInputServerSchema>;
-
 
 // Prompt templates (extracted or simplified from original flow files)
 const titlePromptTemplate = 'You are an expert at creating catchy and concise titles for stories.\n' +
@@ -589,7 +542,7 @@ export async function generateImagePrompts(input: GenerateImagePromptsInput): Pr
         let chunksDataForPrompt: Array<{text: string; duration: number; promptCount: number}> | undefined;
 
         if (input.narrationChunks && input.narrationChunks.length > 0) {
-            chunksDataForPrompt = input.narrationChunks.map(chunk => {
+            chunksDataForPrompt = input.narrationChunks.map((chunk: { text: string; duration: number; audioUrl?: string }) => {
                 let promptCount: number;
                 if (chunk.duration <= 5) promptCount = 1;
                 else if (chunk.duration <= 10) promptCount = chunk.text.length > 100 ? 2 : 1;
@@ -597,7 +550,7 @@ export async function generateImagePrompts(input: GenerateImagePromptsInput): Pr
                 else promptCount = 3;
                 return { text: chunk.text, duration: chunk.duration, promptCount };
             });
-            numImages = chunksDataForPrompt.reduce((total, chunk) => total + chunk.promptCount, 0);
+            numImages = chunksDataForPrompt!.reduce((total, chunk) => total + chunk.promptCount, 0);
         } else {
             numImages = Math.max(1, Math.ceil(input.audioDurationSeconds * (5 / 60)));
         }
@@ -656,7 +609,7 @@ export async function generateScriptChunks(input: GenerateScriptChunksInput): Pr
         });
 
         if (output && output.scriptChunks && Array.isArray(output.scriptChunks)) {
-          const nonEmptyChunks = output.scriptChunks.filter(chunk => chunk.trim().length > 0);
+          const nonEmptyChunks = output.scriptChunks.filter((chunk: string) => chunk.trim().length > 0);
           return { success: true, data: { scriptChunks: nonEmptyChunks } };
         }
         console.error('AI did not return the expected scriptChunks array:', output);
