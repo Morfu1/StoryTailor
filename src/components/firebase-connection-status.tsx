@@ -1,9 +1,10 @@
+
 "use client";
 
-import { useEffect, useState } from 'react';
-import { AlertCircle, Wifi, WifiOff } from 'lucide-react';
+import { useEffect, useState, useRef } from 'react';
+import { AlertCircle, WifiOff } from 'lucide-react';
 import { db } from '@/lib/firebase';
-import { collection, getDocs, limit, query } from 'firebase/firestore';
+import { collection, getDocs, limit, query, onSnapshot, Unsubscribe } from 'firebase/firestore'; // Added onSnapshot and Unsubscribe
 import { useToast } from '@/hooks/use-toast';
 import { FirebaseTroubleshooter } from './firebase-troubleshooter';
 
@@ -12,105 +13,150 @@ export function FirebaseConnectionStatus() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [showTroubleshooter, setShowTroubleshooter] = useState(false);
   const { toast } = useToast();
+  const rpcErrorCount = useRef(0);
+  const rpcErrorTimer = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     let isMounted = true;
     let retryCount = 0;
     const maxRetries = 3;
-    
+    let unsubscribeTestListener: Unsubscribe | null = null;
+
+    // Monitor console for specific RPC Listen errors
+    const originalConsoleError = console.error;
+    console.error = (...args: any[]) => {
+      if (isMounted && typeof args[0] === 'string' && args[0].includes("WebChannelConnection RPC 'Listen' stream") && args[0].includes("transport errored")) {
+        rpcErrorCount.current++;
+        // If multiple RPC errors occur quickly, flag it as a potential persistent issue
+        if (rpcErrorTimer.current) clearTimeout(rpcErrorTimer.current);
+        rpcErrorTimer.current = setTimeout(() => {
+          if (isMounted && rpcErrorCount.current >= 3) { // Threshold for concern
+            if (connectionStatus !== 'error') { // Only show if not already in general error state
+                setConnectionStatus('error');
+                setErrorMessage('Persistent Firebase real-time connection errors detected. This might be due to ad blockers, privacy extensions, or network issues.');
+                setShowTroubleshooter(true);
+                toast({
+                    title: 'Firebase Real-time Issue',
+                    description: 'Having trouble with live data updates. Check for ad blockers or network problems.',
+                    variant: 'destructive',
+                    duration: 10000
+                });
+            }
+          }
+          rpcErrorCount.current = 0; // Reset count after timeout
+        }, 5000); // Check over a 5-second window
+      }
+      originalConsoleError.apply(console, args);
+    };
+
     const checkConnection = async () => {
+      if (!isMounted) return;
       try {
-        // Try to make a simple query to Firestore
+        // Test basic read
         const testQuery = query(collection(db, 'stories'), limit(1));
         await getDocs(testQuery);
+
+        // Test real-time listener briefly
+        // Note: This will attempt to establish a listener.
+        // If this itself is blocked, it might throw an error caught below.
+        // If it succeeds but later RPC errors occur, the console.error override will catch them.
+        if (unsubscribeTestListener) unsubscribeTestListener(); // Clean up previous listener
+        unsubscribeTestListener = onSnapshot(testQuery, 
+          (snapshot) => { // Success callback
+            if (isMounted && connectionStatus !== 'error') { // Don't override if already in RPC error state
+              setConnectionStatus('connected');
+              setErrorMessage(null);
+              setShowTroubleshooter(false); // Hide troubleshooter if connection recovers
+            }
+            if (unsubscribeTestListener) unsubscribeTestListener(); // Unsubscribe immediately after success
+            retryCount = 0; // Reset retries on success
+          },
+          (error) => { // Error callback for onSnapshot
+            if (!isMounted) return;
+            console.warn('Firebase onSnapshot test listener error:', error);
+            // This error is for the listener setup itself, not necessarily a transport error
+            // but could indicate a problem. Let the main catch block handle general errors.
+            // We won't immediately set to 'error' state from here unless it's a persistent failure in the main try-catch.
+          }
+        );
         
-        if (isMounted) {
-          setConnectionStatus('connected');
-          setErrorMessage(null);
-          setShowTroubleshooter(false);
-          retryCount = 0;
-        }
       } catch (error: any) {
-        // Check for permission errors first - these are expected when not logged in
+        if (!isMounted) return;
+        // Handle permission errors silently for this check as they are expected if not logged in
         if (error.code === 'permission-denied' || error.message?.includes('Missing or insufficient permissions')) {
-          // This is normal when not logged in - don't show an error
-          console.log('Firebase permissions error - this is expected when not logged in');
-          if (isMounted) {
-            setConnectionStatus('connected'); // Don't show error for permission issues
+          if (connectionStatus !== 'error') { // Don't override if already in RPC error state
+            setConnectionStatus('connected'); 
             setErrorMessage(null);
             setShowTroubleshooter(false);
-            retryCount = 0;
           }
-          return; // Exit early, don't count as a retry
+          retryCount = 0;
+          return;
         }
         
-        // For other errors, log as error
         console.error('Firebase connection test failed:', error);
+        retryCount++;
         
-        if (isMounted) {
-          retryCount++;
-          
-          if (retryCount >= maxRetries) {
-            setConnectionStatus('error');
-            setShowTroubleshooter(true);
-            
-            // Determine the type of error
-            if (
-              error.code === 'unavailable' ||
-              error.message?.includes('network') ||
-              error.message?.includes('ERR_BLOCKED_BY_CLIENT') ||
-              error.message?.includes('ERR_HTTP2_PROTOCOL_ERROR') ||
-              error.message?.includes('failed to fetch')
-            ) {
-              // Likely an ad blocker or network issue
-              setErrorMessage('Connection to Firebase blocked. Please disable any ad blockers or privacy extensions for this site.');
-              toast({
-                title: 'Connection Blocked',
-                description: 'Firebase connection appears to be blocked. Please disable ad blockers for this site.',
-                variant: 'destructive'
-              });
-            } else {
-              // Other Firebase errors
-              setErrorMessage(`Firebase connection error: ${error.message || 'Unknown error'}`);
-            }
+        if (retryCount >= maxRetries) {
+          setConnectionStatus('error');
+          setShowTroubleshooter(true);
+          if (error.code === 'unavailable' || error.message?.includes('network') || error.message?.includes('ERR_BLOCKED_BY_CLIENT') || error.message?.includes('ERR_HTTP2_PROTOCOL_ERROR') || error.message?.includes('failed to fetch')) {
+            setErrorMessage('Connection to Firebase blocked. Please disable any ad blockers or privacy extensions for this site.');
+            toast({
+              title: 'Connection Blocked',
+              description: 'Firebase connection appears to be blocked. Please disable ad blockers for this site.',
+              variant: 'destructive',
+              duration: 10000
+            });
           } else {
-            // Still in retry phase, don't show error yet
-            console.log(`Firebase connection retry ${retryCount}/${maxRetries}...`);
+            setErrorMessage(`Firebase connection error: ${error.message || 'Unknown error'}`);
           }
+        } else {
+          console.log(`Firebase connection retry ${retryCount}/${maxRetries}...`);
         }
       }
     };
 
-    // Check connection immediately and then every 30 seconds
-    checkConnection();
-    const interval = setInterval(checkConnection, 30000);
+    checkConnection(); // Initial check
+    const interval = setInterval(checkConnection, 30000); // Periodic check
 
     return () => {
       isMounted = false;
       clearInterval(interval);
+      console.error = originalConsoleError; // Restore original console.error
+      if (rpcErrorTimer.current) clearTimeout(rpcErrorTimer.current);
+      if (unsubscribeTestListener) unsubscribeTestListener(); // Cleanup listener
     };
-  }, [toast]);
+  }, [toast, connectionStatus]); // Added connectionStatus to deps to avoid stale closure issues
 
   if (connectionStatus === 'checking' || connectionStatus === 'connected') {
     return null;
   }
 
   return (
-    <div className="container mx-auto max-w-5xl px-4 py-2">
-      <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+    <div className="fixed bottom-0 left-0 right-0 z-50 p-4 sm:fixed sm:bottom-4 sm:right-4 sm:left-auto sm:max-w-md" role="alert">
+      <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-md shadow-lg">
         <div className="flex items-center">
-          <WifiOff className="h-5 w-5 mr-2 flex-shrink-0" />
-          <div>
+          <WifiOff className="h-5 w-5 mr-3 flex-shrink-0" />
+          <div className="flex-1">
             <p className="font-bold">Firebase Connection Issue</p>
-            <p>{errorMessage || 'Unable to connect to Firebase'}</p>
-            <p className="text-sm mt-1">
-              If you're using an ad blocker or privacy extension, please disable it for this site.
-            </p>
+            <p className="text-sm">{errorMessage || 'Unable to connect to Firebase or maintain a stable connection.'}</p>
+            {!showTroubleshooter && errorMessage && (
+              <button 
+                onClick={() => setShowTroubleshooter(true)} 
+                className="text-xs underline mt-1 hover:text-red-900"
+              >
+                Show troubleshooting steps
+              </button>
+            )}
           </div>
         </div>
+        {showTroubleshooter && (
+          <div className="mt-3 pt-3 border-t border-red-300">
+            <FirebaseTroubleshooter />
+          </div>
+        )}
       </div>
-      
-      {showTroubleshooter && <FirebaseTroubleshooter />}
     </div>
   );
 }
+
