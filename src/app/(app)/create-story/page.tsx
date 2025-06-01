@@ -16,8 +16,8 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from '@/components/ui/button';
-import { cleanupBrokenImages, getStory, deleteStory } from '@/actions/storyActions'; // Removed getUserApiKeys from here
-import { getUserApiKeys } from '@/actions/apiKeyActions'; // Added correct import for getUserApiKeys
+import { cleanupBrokenImages, getStory, deleteStory, saveStory } from '@/actions/firestoreStoryActions'; // Updated import
+import { getUserApiKeys } from '@/actions/apiKeyActions'; 
 import { prepareScriptChunksAI } from '@/utils/narrationUtils';
 import { determineCurrentStep } from '@/utils/storyHelpers';
 import { Loader2, RefreshCw, Trash2, Save, Film, Download, Settings } from 'lucide-react';
@@ -108,7 +108,7 @@ export default function CreateStoryPage() {
       setPageLoading(true);
       setFirebaseError(null);
       
-      getStory(storyId, user.uid)
+      getStory(storyId, user.uid) // Uses getStory from firestoreStoryActions
         .then(async response => {
           if (response.success && response.data) {
             let loadedStory = response.data;
@@ -452,7 +452,7 @@ export default function CreateStoryPage() {
               handleSetLoading('save', true);
               
               try {
-                const { saveStory } = await import('@/actions/storyActions');
+                // Use the statically imported saveStory from firestoreStoryActions
                 const result = await saveStory(storyData, storyData.userId);
                 if (result.success) {
                   toast({ 
@@ -611,5 +611,3 @@ export default function CreateStoryPage() {
   );
 }
 
-
-    

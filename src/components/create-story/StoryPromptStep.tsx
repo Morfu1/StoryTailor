@@ -5,9 +5,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Bot, Loader2, FileText, Edit3, Save, Settings } from 'lucide-react'; // Added Settings
-import Link from 'next/link'; // Added Link
-import { generateTitle, generateScript, saveStory } from '@/actions/storyActions';
+import { Bot, Loader2, FileText, Edit3, Save, Settings } from 'lucide-react'; 
+import Link from 'next/link'; 
+import { generateTitle, generateScript } from '@/actions/storyActions'; // Kept these
+import { saveStory } from '@/actions/firestoreStoryActions'; // Changed for saveStory
 import { prepareScriptChunksAI } from '@/utils/narrationUtils';
 import { useToast } from '@/hooks/use-toast';
 import { useState, useEffect, useCallback } from 'react';
@@ -28,8 +29,8 @@ export function StoryPromptStep({ storyState }: StoryPromptStepProps) {
     setCurrentStep,
     isScriptManuallyEditing,
     setIsScriptManuallyEditing,
-    userApiKeys, // Get userApiKeys from storyState
-    apiKeysLoading // Get apiKeysLoading from storyState
+    userApiKeys, 
+    apiKeysLoading 
   } = storyState;
 
   const [activeTab, setActiveTab] = useState('ai-generate');
@@ -41,7 +42,7 @@ export function StoryPromptStep({ storyState }: StoryPromptStepProps) {
   const autoSaveStory = useCallback(
     debounce(async (title: string, script: string) => {
       if (!title.trim() || !script.trim() || !storyData.userId) return;
-      if (googleKeyMissing && activeTab === 'ai-generate') return; // Don't autosave if key is missing for AI mode
+      if (googleKeyMissing && activeTab === 'ai-generate') return; 
 
       setIsAutoSaving(true);
       try {
@@ -54,7 +55,7 @@ export function StoryPromptStep({ storyState }: StoryPromptStepProps) {
           narrationChunks
         };
         
-        const saveResult = await saveStory(updatedStoryData, storyData.userId);
+        const saveResult = await saveStory(updatedStoryData, storyData.userId); // Uses saveStory from firestoreStoryActions
         
         if (saveResult.success) {
           if (saveResult.storyId && !storyData.id) {
@@ -157,7 +158,7 @@ export function StoryPromptStep({ storyState }: StoryPromptStepProps) {
       if (storyData.userId) {
         try {
           handleSetLoading('save', true);
-          const saveResult = await saveStory(updatedStoryData, storyData.userId);
+          const saveResult = await saveStory(updatedStoryData, storyData.userId); // Uses saveStory from firestoreStoryActions
           handleSetLoading('save', false);
           
           if (saveResult.success) {
@@ -191,7 +192,7 @@ export function StoryPromptStep({ storyState }: StoryPromptStepProps) {
   };
 
   const handleContinueWithManualScript = async () => {
-    if (googleKeyMissing) { // Also check for Google key for chunking
+    if (googleKeyMissing) { 
       toast({ title: 'API Key Required', description: 'Google API Key needed for script processing. Please set it in Account Settings.', variant: 'destructive' });
       return;
     }
@@ -222,7 +223,7 @@ export function StoryPromptStep({ storyState }: StoryPromptStepProps) {
           narrationChunks
         };
         
-        const saveResult = await saveStory(updatedStoryData, storyData.userId);
+        const saveResult = await saveStory(updatedStoryData, storyData.userId); // Uses saveStory from firestoreStoryActions
         handleSetLoading('save', false);
         
         if (saveResult.success && saveResult.storyId && !storyData.id) {
