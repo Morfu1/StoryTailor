@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react'; // Removed useState
 import Image from 'next/image';
 import { X, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';

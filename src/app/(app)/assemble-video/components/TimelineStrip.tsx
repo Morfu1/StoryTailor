@@ -1,11 +1,11 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
-import Image from "next/image";
+import React, { useState, useRef, useEffect, useMemo } from "react";
+// import Image from "next/image"; // Unused
 import { Button } from "@/components/ui/button";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import type { Story, GeneratedImage } from "@/types/story";
-import { Check, ImageIcon, Loader2, Film, MessageSquareText, Play, Pause, Scissors, Trash2, MousePointer2, Undo2, Redo2, ZoomIn, ZoomOut, Maximize2 } from "lucide-react"; // Removed Music2, Video as they are track-specific icons, useDroppable removed
+import { Film, Play, Pause, Scissors, Trash2, MousePointer2, Undo2, Redo2, ZoomIn, ZoomOut, Maximize2 } from "lucide-react"; // Removed unused Check, ImageIcon, Loader2, MessageSquareText
 import TrackLane from "./TrackLane"; // Import the new TrackLane component
 
 // Define types for tracks and media items that this component will receive
@@ -79,9 +79,11 @@ export default function TimelineStrip({
 
   const controlsHeight = "h-[40px]"; // Height for the new controls bar
 
-  const imagesToShow = storyData?.generatedImages?.filter( // This is used for audio sync logic.
-    (img): img is GeneratedImage => !!img && img.isChapterGenerated === true
-  ) || []; // Ensure it's an array even if storyData or generatedImages is null/undefined
+  const imagesToShow = useMemo(() => {
+    return storyData?.generatedImages?.filter( // This is used for audio sync logic.
+      (img): img is GeneratedImage => !!img && img.isChapterGenerated === true
+    ) || []; // Ensure it's an array even if storyData or generatedImages is null/undefined
+  }, [storyData?.generatedImages]);
 
   // Removed internal timelineTracks derivation (trackConfigs, getScriptSegmentForImage, React.useMemo for timelineTracks)
   // The `timelineTracks` prop is now the source of truth for rendering.
@@ -179,7 +181,7 @@ export default function TimelineStrip({
             audio.src = ""; // Clear src if no narration
         }
     }
-  }, [storyData?.narrationAudioUrl, imagesToShow, duration, isPlaying, setSelectedTimelineImage, selectedTimelineImage, timelineTracks]);
+  }, [storyData?.narrationAudioUrl, storyData?.generatedImages, imagesToShow, duration, isPlaying, setSelectedTimelineImage, selectedTimelineImage, timelineTracks, setSelectedTimelineItemKey]);
 
   const handlePlayPause = () => {
     if (audioRef.current) {
@@ -198,25 +200,25 @@ export default function TimelineStrip({
     return `${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
   };
 
-  const getScriptSegment = (
-    index: number,
-    totalImages: number,
-    script?: string
-  ): string => {
-    if (!script || totalImages === 0) {
-      return "Script not available.";
-    }
-    const scriptLength = script.length;
-    const segmentLength = Math.floor(scriptLength / totalImages);
-    const start = index * segmentLength;
-    const end = (index + 1) * segmentLength;
+  // const getScriptSegment = ( // Unused function
+  //   index: number,
+  //   totalImages: number,
+  //   script?: string
+  // ): string => {
+  //   if (!script || totalImages === 0) {
+  //     return "Script not available.";
+  //   }
+  //   const scriptLength = script.length;
+  //   const segmentLength = Math.floor(scriptLength / totalImages);
+  //   const start = index * segmentLength;
+  //   const end = (index + 1) * segmentLength;
 
-    if (index === totalImages - 1) {
-      // For the last segment, take all remaining text
-      return script.substring(start);
-    }
-    return script.substring(start, end) + (end < scriptLength ? "..." : "");
-  };
+  //   if (index === totalImages - 1) {
+  //     // For the last segment, take all remaining text
+  //     return script.substring(start);
+  //   }
+  //   return script.substring(start, end) + (end < scriptLength ? "..." : "");
+  // };
 
   const handleTimelineClick = (event: React.MouseEvent<HTMLDivElement>) => {
     if (!tracksContainerRef.current || !audioRef.current || duration <= 0) {

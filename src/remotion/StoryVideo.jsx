@@ -1,7 +1,8 @@
 "use client";
 
-const React = require('react');
-const {
+import React from 'react';
+import Image from 'next/image';
+import {
   Composition,
   getInputProps,
   AbsoluteFill,
@@ -11,7 +12,7 @@ const {
   Sequence,
   useCurrentFrame,
   useVideoConfig,
-} = require('remotion');
+} from 'remotion';
 
 // Calculate the duration for each image based on audio chunk duration
 const calculateImageDurations = (audioChunks) => {
@@ -43,14 +44,11 @@ const Scene = ({ image, index }) => {
       }}
     >
       {/* If the image is a local file path, use staticFile, otherwise use the URL directly */}
-      <img
+      <Image
         src={image.startsWith('http') ? image : staticFile(image)}
-        style={{
-          maxWidth: '100%',
-          maxHeight: '100%',
-          objectFit: 'contain',
-        }}
         alt={`Scene ${index + 1}`}
+        layout="fill"
+        objectFit="contain"
       />
     </AbsoluteFill>
   );
@@ -114,4 +112,4 @@ const StoryVideo = () => {
   );
 };
 
-module.exports = { StoryVideo, StoryVideoComponent };
+export { StoryVideo, StoryVideoComponent };

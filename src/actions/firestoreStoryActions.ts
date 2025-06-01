@@ -2,15 +2,13 @@
 
 import { firebaseAdmin, dbAdmin } from '@/lib/firebaseAdmin';
 import type { Story, PageTimelineTrack } from '@/types/story'; // Ensure PageTimelineTrack is correctly typed if used
-import { Timestamp as AdminTimestamp } from 'firebase-admin/firestore';
+import { Timestamp as AdminTimestamp, FieldValue } from 'firebase-admin/firestore';
 import { revalidatePath } from 'next/cache';
-import { 
-  getStorageBucket, 
-  uploadAudioToFirebaseStorage, 
-  refreshFirebaseStorageUrl, 
-  uploadImageToFirebaseStorage, 
-  deleteFolderFromFirebaseStorage 
-} from './firebaseStorageActions'; 
+import {
+  uploadAudioToFirebaseStorage,
+  refreshFirebaseStorageUrl,
+  deleteFolderFromFirebaseStorage
+} from './firebaseStorageActions';
 
 
 interface FirebaseErrorWithCode extends Error {
@@ -52,10 +50,10 @@ export async function getStory(storyId: string, userId: string): Promise<{ succe
       }
 
 
-      if (story.createdAt && typeof (story.createdAt as any).toDate === 'function') {
+      if (story.createdAt && typeof (story.createdAt as AdminTimestamp).toDate === 'function') {
         story.createdAt = (story.createdAt as AdminTimestamp).toDate();
       }
-      if (story.updatedAt && typeof (story.updatedAt as any).toDate === 'function') {
+      if (story.updatedAt && typeof (story.updatedAt as AdminTimestamp).toDate === 'function') {
         story.updatedAt = (story.updatedAt as AdminTimestamp).toDate();
       }
       
@@ -181,15 +179,27 @@ export async function saveStory(storyData: Story, userId: string): Promise<{ suc
       const storageUrl = await uploadAudioToFirebaseStorage(processedStoryData.narrationAudioUrl, userId, storyIdForPath, defaultFilename);
       processedStoryData.narrationAudioUrl = storageUrl;
       newNarrationUrl = storageUrl;
-    } catch (uploadError: any) {
-      let detailedErrorMessage = `Failed to upload narration audio: ${uploadError.message || String(uploadError)}`;
-      if (uploadError.errors && Array.isArray(uploadError.errors) && uploadError.errors.length > 0) { detailedErrorMessage += ` Details: ${uploadError.errors.map((e: any) => e.message || JSON.stringify(e)).join(', ')}`; }
-      else if (uploadError.code) { detailedErrorMessage += ` (Code: ${uploadError.code})`; }
+    } catch (uploadError: unknown) {
+      let detailedErrorMessage = "Failed to upload narration audio";
+      if (uploadError instanceof Error) {
+        detailedErrorMessage += `: ${uploadError.message}`;
+        const firebaseError = uploadError as FirebaseErrorWithCode;
+        if (firebaseError.code) {
+          detailedErrorMessage += ` (Code: ${firebaseError.code})`;
+        }
+        // Attempt to access 'errors' property if it exists
+        const errorWithDetails = uploadError as { errors?: Array<{ message?: string }> };
+        if (errorWithDetails.errors && Array.isArray(errorWithDetails.errors) && errorWithDetails.errors.length > 0) {
+          detailedErrorMessage += ` Details: ${errorWithDetails.errors.map((e) => e.message || JSON.stringify(e)).join(', ')}`;
+        }
+      } else {
+        detailedErrorMessage += `: ${String(uploadError)}`;
+      }
       return { success: false, error: detailedErrorMessage };
     }
   }
   
-  const dataToSave: any = { ...processedStoryData, userId: userId, updatedAt: firebaseAdmin.firestore.FieldValue.serverTimestamp() };
+  const dataToSave: Partial<Story> & { userId: string; updatedAt: FieldValue; createdAt?: AdminTimestamp | FieldValue | Date } = { ...processedStoryData, userId: userId, updatedAt: firebaseAdmin.firestore.FieldValue.serverTimestamp() };
   if (dataToSave.id) { delete dataToSave.id; }
   
   if (dataToSave.createdAt && dataToSave.createdAt instanceof Date) {
@@ -212,7 +222,7 @@ export async function saveStory(storyData: Story, userId: string): Promise<{ suc
   if (dataToSave.imageStyleId === undefined) { delete dataToSave.imageStyleId; }
 
 
-  Object.keys(dataToSave).forEach(key => { if (dataToSave[key] === undefined) { delete dataToSave[key]; } });
+  Object.keys(dataToSave).forEach(key => { if (dataToSave[key as keyof typeof dataToSave] === undefined) { delete dataToSave[key as keyof typeof dataToSave]; } });
   
   try {
     if (storyData.id) {
@@ -268,9 +278,9 @@ export async function updateStoryTimeline(
     const existingStoryData = docSnap.data();
     if (existingStoryData?.userId !== userId) { return { success: false, error: "Unauthorized: You can only update the timeline of your own stories." }; }
     
-    const dataToUpdate: Partial<Story> = { 
-      timelineTracks: timelineTracks, 
-      updatedAt: firebaseAdmin.firestore.FieldValue.serverTimestamp() as any // Cast to any to satisfy type mismatch
+    const dataToUpdate: Partial<Story> = {
+      timelineTracks: timelineTracks,
+      updatedAt: firebaseAdmin.firestore.FieldValue.serverTimestamp()
     };
     await storyRef.update(dataToUpdate);
     
@@ -321,7 +331,7 @@ export async function deleteStory(
   }
 }
 
-export async function cleanupBrokenImages(storyId: string, userId: string): Promise<{ success: boolean; error?: string }> {
+export async function cleanupBrokenImages(storyId: string): Promise<{ success: boolean; error?: string }> {
   if (!dbAdmin) { return { success: false, error: "Database connection not available" }; }
   try {
     const storyRef = dbAdmin.collection('stories').doc(storyId);
@@ -330,18 +340,20 @@ export async function cleanupBrokenImages(storyId: string, userId: string): Prom
     
     const storyData = storyDoc.data() as Story; // Type assertion
     
-    let updated = false; 
-    const updateData: Partial<Story> = {};
+    let updated = false;
+    const updateData: Partial<Story> & { updatedAt?: FirebaseFirestore.FieldValue } = {};
     
     if (storyData.generatedImages && Array.isArray(storyData.generatedImages)) {
-      const cleanGeneratedImages = storyData.generatedImages.filter((img: any) => {
-        if (img.imageUrl && img.imageUrl.includes('aicdn.picsart.com')) { return false; }
-        if (img.imageUrl && img.imageUrl.includes('.mp3')) { return false; }
+      const cleanGeneratedImages = storyData.generatedImages.filter((img: { imageUrl?: string }) => {
+        if (img && img.imageUrl && typeof img.imageUrl === 'string') {
+          if (img.imageUrl.includes('aicdn.picsart.com')) { return false; }
+          if (img.imageUrl.includes('.mp3')) { return false; }
+        }
         return true;
       });
-      if (cleanGeneratedImages.length !== storyData.generatedImages.length) { 
-        updateData.generatedImages = cleanGeneratedImages; 
-        updated = true; 
+      if (cleanGeneratedImages.length !== storyData.generatedImages.length) {
+        updateData.generatedImages = cleanGeneratedImages;
+        updated = true;
       }
     }
     
@@ -350,23 +362,29 @@ export async function cleanupBrokenImages(storyId: string, userId: string): Prom
     // For now, I'll comment it out as it's not in the Story type.
     /*
     if (storyData.detailImages && Array.isArray(storyData.detailImages)) {
-      const cleanDetailImages = storyData.detailImages.filter((img: any) => {
-        if (img.imageUrl && img.imageUrl.includes('aicdn.picsart.com')) { return false; }
+      const cleanDetailImages = storyData.detailImages.filter((img: { imageUrl?: string }) => {
+        if (img && img.imageUrl && img.imageUrl.includes('aicdn.picsart.com')) { return false; }
         return true;
       });
-      if (cleanDetailImages.length !== storyData.detailImages.length) { 
-        updateData.detailImages = cleanDetailImages; 
-        updated = true; 
+      if (cleanDetailImages.length !== storyData.detailImages.length) {
+        // updateData.detailImages = cleanDetailImages; // Assuming detailImages is part of Story type
+        updated = true;
       }
     }
     */
     
     if (updated) {
-      updateData.updatedAt = firebaseAdmin.firestore.FieldValue.serverTimestamp() as any; // Cast to any for FieldValue
+      updateData.updatedAt = firebaseAdmin.firestore.FieldValue.serverTimestamp();
       await storyRef.update(updateData);
     }
     return { success: true };
-  } catch (error: any) { // Catch as any to access error.message
-    return { success: false, error: `Failed to cleanup broken images: ${error.message || String(error)}` }; 
+  } catch (error: unknown) {
+    let errorMessage = "Failed to cleanup broken images";
+    if (error instanceof Error) {
+      errorMessage += `: ${error.message}`;
+    } else {
+      errorMessage += `: ${String(error)}`;
+    }
+    return { success: false, error: errorMessage };
   }
 }

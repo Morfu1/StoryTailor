@@ -2,7 +2,7 @@
 "use client";
 
 import { useEffect, useState, useRef } from 'react';
-import { AlertCircle, WifiOff } from 'lucide-react';
+import { WifiOff } from 'lucide-react'; // Removed AlertCircle
 import { db } from '@/lib/firebase';
 import { collection, getDocs, limit, query, onSnapshot, Unsubscribe } from 'firebase/firestore'; // Added onSnapshot and Unsubscribe
 import { useToast } from '@/hooks/use-toast';
@@ -24,7 +24,7 @@ export function FirebaseConnectionStatus() {
 
     // Monitor console for specific RPC Listen errors
     const originalConsoleError = console.error;
-    console.error = (...args: any[]) => {
+    console.error = (...args: unknown[]) => {
       if (isMounted && typeof args[0] === 'string' && args[0].includes("WebChannelConnection RPC 'Listen' stream") && args[0].includes("transport errored")) {
         rpcErrorCount.current++;
         // If multiple RPC errors occur quickly, flag it as a potential persistent issue
@@ -61,8 +61,8 @@ export function FirebaseConnectionStatus() {
         // If this itself is blocked, it might throw an error caught below.
         // If it succeeds but later RPC errors occur, the console.error override will catch them.
         if (unsubscribeTestListener) unsubscribeTestListener(); // Clean up previous listener
-        unsubscribeTestListener = onSnapshot(testQuery, 
-          (snapshot) => { // Success callback
+        unsubscribeTestListener = onSnapshot(testQuery,
+          () => { // Success callback, snapshot unused
             if (isMounted && connectionStatus !== 'error') { // Don't override if already in RPC error state
               setConnectionStatus('connected');
               setErrorMessage(null);
@@ -80,12 +80,13 @@ export function FirebaseConnectionStatus() {
           }
         );
         
-      } catch (error: any) {
+      } catch (error: unknown) {
         if (!isMounted) return;
+        const firebaseError = error as { code?: string; message?: string };
         // Handle permission errors silently for this check as they are expected if not logged in
-        if (error.code === 'permission-denied' || error.message?.includes('Missing or insufficient permissions')) {
+        if (firebaseError.code === 'permission-denied' || firebaseError.message?.includes('Missing or insufficient permissions')) {
           if (connectionStatus !== 'error') { // Don't override if already in RPC error state
-            setConnectionStatus('connected'); 
+            setConnectionStatus('connected');
             setErrorMessage(null);
             setShowTroubleshooter(false);
           }
@@ -99,7 +100,7 @@ export function FirebaseConnectionStatus() {
         if (retryCount >= maxRetries) {
           setConnectionStatus('error');
           setShowTroubleshooter(true);
-          if (error.code === 'unavailable' || error.message?.includes('network') || error.message?.includes('ERR_BLOCKED_BY_CLIENT') || error.message?.includes('ERR_HTTP2_PROTOCOL_ERROR') || error.message?.includes('failed to fetch')) {
+          if (firebaseError.code === 'unavailable' || firebaseError.message?.includes('network') || firebaseError.message?.includes('ERR_BLOCKED_BY_CLIENT') || firebaseError.message?.includes('ERR_HTTP2_PROTOCOL_ERROR') || firebaseError.message?.includes('failed to fetch')) {
             setErrorMessage('Connection to Firebase blocked. Please disable any ad blockers or privacy extensions for this site.');
             toast({
               title: 'Connection Blocked',
@@ -108,7 +109,7 @@ export function FirebaseConnectionStatus() {
               duration: 10000
             });
           } else {
-            setErrorMessage(`Firebase connection error: ${error.message || 'Unknown error'}`);
+            setErrorMessage(`Firebase connection error: ${firebaseError.message || 'Unknown error'}`);
           }
         } else {
           console.log(`Firebase connection retry ${retryCount}/${maxRetries}...`);

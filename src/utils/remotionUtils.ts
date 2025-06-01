@@ -1,5 +1,5 @@
 import path from 'path';
-import os from 'os';
+// import os from 'os'; // Unused
 import fs from 'fs';
 import { NarrationChunk } from '@/types/narration';
 
@@ -43,7 +43,7 @@ function addWavHeadersToBuffer(pcmData: ArrayBuffer): ArrayBuffer {
   view.setUint32(40, pcmBytes, true); // Data size
   
   // Copy PCM data
-  const headerArray = new Uint8Array(buffer, 0, headerSize);
+  // const headerArray = new Uint8Array(buffer, 0, headerSize); // Unused
   const dataArray = new Uint8Array(buffer, headerSize);
   const pcmArray = new Uint8Array(pcmData);
   dataArray.set(pcmArray);
@@ -54,164 +54,15 @@ function addWavHeadersToBuffer(pcmData: ArrayBuffer): ArrayBuffer {
 // Check if we're in a Node.js environment
 const isNode = typeof window === 'undefined';
 
-// Server-side module loaders
-const loadBundler = () => {
-  try {
-    return require('@remotion/bundler');
-  } catch (error) {
-    console.error('Failed to load @remotion/bundler:', error);
-    return null;
-  }
-};
-
-const loadRenderer = () => {
-  try {
-    const renderer = require('@remotion/renderer');
-    return {
-      renderMedia: renderer.renderMedia,
-      selectComposition: renderer.selectComposition
-    };
-  } catch (error) {
-    console.error('Failed to load @remotion/renderer:', error);
-    return null;
-  }
-};
-
-// Lazy-loaded module references
-let bundleModule: any = null;
-let renderMediaModule: any = null;
-let selectCompositionModule: any = null;
-
-// Handle Remotion environment setup
-if (isNode) {
-  // Configure environment before loading modules
-  try {
-    // Determine platform
-    const platform = os.platform();
-    console.log('Current platform:', platform);
-    
-    // Set environment variables to optimize Remotion behavior
-    process.env.REMOTION_BINARY_LOCATION = 'mock';
-    process.env.SKIP_DOWNLOADING_REMOTION_BINARIES = 'true';
-    
-    // Force Remotion to use specific render mode
-    process.env.REMOTION_DISABLE_COMPOSITOR = 'true';
-    
-    // Load modules only when needed, not on initial import
-  } catch (error) {
-    console.error('Error configuring Remotion environment:', error);
-  }
-}
-
-// Helper function to ensure modules are loaded
-const ensureRemotionModules = () => {
-  if (!bundleModule) {
-    bundleModule = loadBundler();
-    if (!bundleModule) {
-      throw new Error('Failed to load @remotion/bundler module');
-    }
-  }
-  
-  if (!renderMediaModule || !selectCompositionModule) {
-    const renderer = loadRenderer();
-    if (!renderer) {
-      throw new Error('Failed to load @remotion/renderer module');
-    }
-    renderMediaModule = renderer.renderMedia;
-    selectCompositionModule = renderer.selectComposition;
-  }
-  
-  return {
-    bundleModule,
-    renderMediaModule,
-    selectCompositionModule
-  };
-};
+// [REMOVED] Programmatic Remotion bundling/rendering helpers and env setup.
+// This section (originally lines 57-129) was removed to prevent Next.js build errors
+// caused by Webpack attempting to bundle `@remotion/bundler`.
+// The project uses a CLI-based approach for Remotion rendering.
 
 import { GeneratedImage } from '@/types/story';
 
-interface RenderVideoProps {
-  images: (string | GeneratedImage)[]; // Array of image URLs or GeneratedImage objects
-  audioChunks: NarrationChunk[]; // Array of narration chunks
-  storyTitle: string;
-}
-
-/**
- * Renders a video using Remotion with the provided images and audio chunks.
- * @param images - Array of image URLs
- * @param audioChunks - Array of narration chunks
- * @param storyTitle - Title of the story
- * @returns The path to the rendered video
- */
-export const renderStoryVideo = async ({
-  images,
-  audioChunks,
-  storyTitle
-}: RenderVideoProps): Promise<string> => {
-  try {
-    // Check if we're in a Node.js environment
-    if (!isNode) {
-      throw new Error('Video rendering is only supported on the server side');
-    }
-    
-    // Create a temporary directory to store the composition bundle
-    const tmpDir = path.join(os.tmpdir(), 'remotion-render');
-    fs.mkdirSync(tmpDir, { recursive: true });
-    
-    console.log('Loading Remotion modules on demand...');
-    
-    // Ensure Remotion modules are loaded when needed
-    const modules = ensureRemotionModules();
-    console.log('Remotion modules loaded successfully');
-    
-    // Bundle the composition
-    console.log('Bundling composition...');
-    const bundle = await modules.bundleModule.bundle(
-      path.resolve(process.cwd(), 'src', 'remotion', 'index.ts'),
-      undefined,
-      {
-        cacheDir: tmpDir,
-      }
-    );
-    
-    // Select the composition from the bundle
-    console.log('Selecting composition...');
-    const composition = await modules.selectCompositionModule({
-      serveUrl: bundle.url,
-      id: 'StoryVideo',
-      inputProps: {
-        images,
-        audioChunks,
-      },
-    });
-    
-    const outputLocation = path.join(
-      tmpDir,
-      `${storyTitle.replace(/[^a-zA-Z0-9]/g, '_')}.mp4`
-    );
-    
-    // Render the video
-    console.log('Rendering video to:', outputLocation);
-    await modules.renderMediaModule({
-      composition,
-      serveUrl: bundle.url,
-      codec: 'h264',
-      outputLocation,
-      inputProps: {
-        images,
-        audioChunks,
-      },
-    });
-    
-    console.log('Video rendering completed');
-    // Return the output location
-    return outputLocation;
-  } catch (error) {
-    console.error('Error rendering video:', error);
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    throw new Error(`Failed to render video: ${errorMessage}`);
-  }
-};
+// [REMOVED] Programmatic Remotion bundling/rendering function `renderStoryVideo` and its `RenderVideoProps` interface.
+// This section (originally lines 132-214) was removed as it also relied on the problematic `require('@remotion/bundler')`.
 
 /**
  * Helper function to detect image dimensions from a buffer
@@ -499,45 +350,67 @@ export const saveVideoForDownload = async (
     throw new Error('Saving video is only supported on the server side');
   }
   
-  // Create directory if it doesn't exist
-  const downloadDir = path.join(process.cwd(), 'public', 'downloads', 'videos');
-  fs.mkdirSync(downloadDir, { recursive: true });
+  const publicDir = path.join(process.cwd(), 'public');
+  const downloadsDir = path.join(publicDir, 'downloads', storyId);
+  fs.mkdirSync(downloadsDir, { recursive: true });
   
-  // Create a safe filename from the story ID
-  const safeStoryId = storyId.replace(/[^a-zA-Z0-9-_]/g, '_');
-  const filename = `${safeStoryId}-${Date.now()}.mp4`;
-  const publicPath = path.join(downloadDir, filename);
+  const filename = path.basename(videoPath);
+  const destinationPath = path.join(downloadsDir, filename);
   
-  // Copy file to public directory
-  fs.copyFileSync(videoPath, publicPath);
-  
-  // Note: Asset cleanup is handled separately to avoid interfering with CLI rendering
-  
-  // Return the relative path for frontend access
-  return `/downloads/videos/${filename}`;
+  try {
+    fs.copyFileSync(videoPath, destinationPath);
+    console.log(`Video copied to ${destinationPath}`);
+    
+    // Clean up the original video from the temp directory
+    try {
+      fs.unlinkSync(videoPath);
+      console.log(`Temporary video file ${videoPath} deleted.`);
+    } catch (cleanupError) {
+      console.warn(`Failed to delete temporary video file ${videoPath}:`, cleanupError);
+    }
+    
+    return `/downloads/${storyId}/${filename}`; // Return public URL
+  } catch (error) {
+    console.error('Error saving video for download:', error);
+    throw new Error('Failed to save video for download.');
+  }
 };
 
 /**
- * Cleans up old assets from the public/remotion-assets directory
- * Called after a successful video render to prevent accumulation of files
+ * Cleans up temporary assets created during Remotion rendering.
  */
 export const cleanupRemotionAssets = (): void => {
-  if (!isNode) return;
-  
+  if (!isNode) {
+    console.warn('Asset cleanup is only supported on the server side');
+    return;
+  }
+
+  const publicDir = path.join(process.cwd(), 'public');
+  const assetsDir = path.join(publicDir, 'remotion-assets');
+
   try {
-    const assetsDir = path.join(process.cwd(), 'public', 'remotion-assets');
     if (fs.existsSync(assetsDir)) {
       const files = fs.readdirSync(assetsDir);
-      
-      // Delete all files in the directory
       for (const file of files) {
+        // Optionally, keep placeholder or other essential files
+        // if (file === 'placeholder.jpg') continue; 
         fs.unlinkSync(path.join(assetsDir, file));
       }
-      
-      console.log(`Cleaned up ${files.length} temporary Remotion assets`);
+      console.log(`Cleaned up assets in ${assetsDir}`);
     }
   } catch (error) {
-    console.error('Error cleaning up Remotion assets:', error);
-    // Don't throw, just log the error - we don't want to fail the video saving
+    console.error(`Error cleaning up Remotion assets in ${assetsDir}:`, error);
+  }
+
+  // Also clean up the main temp directory for renders if it exists
+  // This path should match the one used in renderStoryVideoWithCLI
+  const renderTmpDir = path.join('/Volumes/McMorfu/Projects/StoryTailor/temp', 'remotion-render');
+  try {
+    if (fs.existsSync(renderTmpDir)) {
+      fs.rmSync(renderTmpDir, { recursive: true, force: true });
+      console.log(`Cleaned up render temp directory ${renderTmpDir}`);
+    }
+  } catch (error) {
+    console.error(`Error cleaning up render temp directory ${renderTmpDir}:`, error);
   }
 };

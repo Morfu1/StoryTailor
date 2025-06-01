@@ -173,7 +173,7 @@ export default function DashboardPage() {
                      <AlertDialogHeader>
                        <AlertDialogTitle>Delete Story</AlertDialogTitle>
                        <AlertDialogDescription>
-                         Are you sure you want to delete "<strong>{story.title}</strong>"? This action cannot be undone and will permanently delete the story and all its associated files (images, audio, etc.).
+                         Are you sure you want to delete &quot;<strong>{story.title}</strong>&quot;? This action cannot be undone and will permanently delete the story and all its associated files (images, audio, etc.).
                        </AlertDialogDescription>
                      </AlertDialogHeader>
                      <AlertDialogFooter>
@@ -211,7 +211,7 @@ export default function DashboardPage() {
               </CardHeader>
               <CardContent className="flex-grow">
                 <p className="text-xs text-muted-foreground">
-                  Last updated: {story.updatedAt ? formatDistanceToNow(new Date( (story.updatedAt as any).seconds * 1000), { addSuffix: true }) : 'N/A'}
+                  Last updated: {story.updatedAt && typeof (story.updatedAt as { seconds: number })?.seconds === 'number' ? formatDistanceToNow(new Date( (story.updatedAt as { seconds: number }).seconds * 1000), { addSuffix: true }) : 'N/A'}
                 </p>
               </CardContent>
               <CardFooter className="flex flex-col gap-2">

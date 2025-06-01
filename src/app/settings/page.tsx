@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { CreditCard, Loader2, RefreshCw, AlertCircle, KeyRound, Save } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -33,7 +33,7 @@ export default function SettingsPage() {
   const [loadingApiKeys, setLoadingApiKeys] = useState(true);
   const [savingApiKeys, setSavingApiKeys] = useState(false);
 
-  const fetchCredits = async (showRefreshToast = false) => {
+  const fetchCredits = useCallback(async (showRefreshToast = false) => {
     if (!user) {
       setCreditsError("User not authenticated. Cannot fetch credits.");
       return;
@@ -84,9 +84,9 @@ export default function SettingsPage() {
       setLoadingCredits(false);
       setRefreshingCredits(false);
     }
-  };
+  }, [user, apiKeys, toast, setLoadingCredits, setRefreshingCredits, setCredits, setCreditsError]);
 
-  const fetchApiKeys = async () => {
+  const fetchApiKeys = useCallback(async () => {
     if (!user) return;
     setLoadingApiKeys(true);
     const result = await getUserApiKeys(user.uid);
@@ -108,7 +108,7 @@ export default function SettingsPage() {
       setLoadingCredits(false); // No keys, so no loading for credits
     }
     setLoadingApiKeys(false);
-  };
+  }, [user, fetchCredits, toast, setLoadingApiKeys, setApiKeys, setCreditsError, setLoadingCredits]);
 
   useEffect(() => {
     if (user) {
@@ -117,7 +117,7 @@ export default function SettingsPage() {
       setLoadingApiKeys(false);
       setLoadingCredits(false);
     }
-  }, [user]); // fetchApiKeys depends on user
+  }, [user, fetchApiKeys]); // Added fetchApiKeys to dependency array
 
   const handleRefreshCredits = () => {
     fetchCredits(true);

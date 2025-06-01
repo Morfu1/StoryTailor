@@ -116,11 +116,11 @@ export default function CreateStoryPage() {
             console.log('Story ID:', storyId);
             // console.log('Full story data:', loadedStory); // Avoid logging full story data
 
-            if (loadedStory.createdAt && !(loadedStory.createdAt instanceof Date)) {
-              loadedStory.createdAt = (loadedStory.createdAt as any).toDate();
+            if (loadedStory.createdAt && typeof (loadedStory.createdAt as { toDate?: () => Date })?.toDate === 'function') {
+              loadedStory.createdAt = (loadedStory.createdAt as { toDate: () => Date }).toDate();
             }
-            if (loadedStory.updatedAt && !(loadedStory.updatedAt instanceof Date)) {
-              loadedStory.updatedAt = (loadedStory.updatedAt as any).toDate();
+            if (loadedStory.updatedAt && typeof (loadedStory.updatedAt as { toDate?: () => Date })?.toDate === 'function') {
+              loadedStory.updatedAt = (loadedStory.updatedAt as { toDate: () => Date }).toDate();
             }
             
             if (loadedStory.generatedScript && (!loadedStory.narrationChunks || loadedStory.narrationChunks.length === 0)) {
@@ -142,9 +142,9 @@ export default function CreateStoryPage() {
                     variant: 'default'
                   });
                 }
-              } catch (error: any) {
+              } catch (error: unknown) {
                  // Check if the error is due to missing API key
-                if (error.message && error.message.toLowerCase().includes("api key not configured")) {
+                if (error instanceof Error && error.message && error.message.toLowerCase().includes("api key not configured")) {
                    toast({ title: "Action Required", description: "Google API key needed to prepare script chunks. Please set it in Account Settings.", variant: "destructive" });
                 } else {
                   console.error("Error proactively preparing chunks for loaded story:", error);
@@ -225,9 +225,9 @@ export default function CreateStoryPage() {
     
     handleSetLoading('cleanup', true);
     try {
-      const result = await cleanupBrokenImages(storyData.id, storyData.userId);
+      const result = await cleanupBrokenImages(storyData.id);
       if (result.success) {
-        toast({ 
+        toast({
           title: 'Images Cleaned Up', 
           description: 'Corrupted images have been removed.', 
           className: 'bg-green-500 text-white' 
@@ -591,7 +591,7 @@ export default function CreateStoryPage() {
             <AlertDialogHeader>
               <AlertDialogTitle>Delete Story Permanently</AlertDialogTitle>
               <AlertDialogDescription>
-                Are you sure you want to delete "<strong>{storyData.title}</strong>"? This action cannot be undone and will permanently delete the story and all its associated files (images, audio, etc.).
+                Are you sure you want to delete &quot;<strong>{storyData.title}</strong>&quot;? This action cannot be undone and will permanently delete the story and all its associated files (images, audio, etc.).
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>

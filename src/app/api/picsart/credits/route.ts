@@ -38,7 +38,17 @@ export async function GET(request: NextRequest) {
 
     console.log(`Attempting to fetch Picsart credits for user ${userId} using their key...`);
 
-    const response: any = {};
+    interface PicsartCreditDetails {
+      credits?: number;
+      limit?: number;
+      error?: string;
+    }
+    const response: {
+      video?: PicsartCreditDetails;
+      image?: PicsartCreditDetails;
+      partial_errors?: string[];
+      // Add other potential credit types here if needed
+    } = {};
     const errors: string[] = [];
 
     // Fetch video credits balance
@@ -55,7 +65,8 @@ export async function GET(request: NextRequest) {
 
       if (videoResponse.ok) {
         const videoData = await videoResponse.json();
-        response.video_credits = videoData.credits || 0;
+        if (!response.video) response.video = {};
+        response.video.credits = videoData.credits || 0;
         console.log('Video credits fetched successfully:', videoData.credits);
       } else {
         const errorText = await videoResponse.text();
@@ -81,7 +92,8 @@ export async function GET(request: NextRequest) {
 
       if (genaiResponse.ok) {
         const genaiData = await genaiResponse.json();
-        response.genai_credits = genaiData.credits || 0;
+        if (!response.image) response.image = {}; // Assuming genai_credits map to image credits
+        response.image.credits = genaiData.credits || 0;
         console.log('GenAI credits fetched successfully:', genaiData.credits);
       } else {
         const errorText = await genaiResponse.text();

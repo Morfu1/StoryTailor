@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { saveStory } from "@/actions/storyActions";
+import { saveStory } from "@/actions/firestoreStoryActions"; // Corrected import
 import {
   AlignCenter,
   AlignJustify,
@@ -37,7 +37,7 @@ interface StoryContentProps {
   isGeneratingImages: boolean;
   handleGenerateChapterImages: () => Promise<void>;
   currentChapter: number;
-  chaptersGenerated: number[];
+  // chaptersGenerated: number[]; // Unused
   currentImageProgress: number;
   generationProgress: number;
   totalImagesToGenerate: number;
@@ -48,7 +48,7 @@ export default function StoryContent({
   isGeneratingImages,
   handleGenerateChapterImages,
   currentChapter,
-  chaptersGenerated,
+  // chaptersGenerated, // Unused
   currentImageProgress,
   generationProgress,
   totalImagesToGenerate,
@@ -498,69 +498,44 @@ export default function StoryContent({
                           ))}
                       </div>
                     ) : (
-                      <div className="text-center p-6 border border-dashed rounded-md bg-muted/10">
-                        <ImageIcon className="mx-auto h-12 w-12 text-muted-foreground mb-2" />
-                        <p className="text-muted-foreground mb-4">
-                          No chapter images generated yet
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          Click the button below to generate images for Chapter{" "}
-                          {currentChapter}
-                        </p>
-                      </div>
+                      !isGeneratingImages && (
+                        <div className="text-center py-6 bg-muted/20 rounded-md border border-dashed">
+                          <ImageIcon className="mx-auto h-10 w-10 text-muted-foreground mb-2" />
+                          <p className="text-sm text-muted-foreground mb-2">
+                            No images generated for this chapter yet.
+                          </p>
+                          <Button
+                            onClick={handleGenerateChapterImages}
+                            disabled={isGeneratingImages}
+                            size="sm"
+                          >
+                            {isGeneratingImages ? (
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            ) : (
+                              <ImageIcon className="mr-2 h-4 w-4" />
+                            )}
+                            Generate Chapter {currentChapter} Images
+                          </Button>
+                        </div>
+                      )
                     )}
                   </div>
 
-                  <div className="flex justify-center">
-                    <Button
-                      variant="default"
-                      size="lg"
-                      className="gap-2"
-                      onClick={handleGenerateChapterImages}
-                      disabled={isGeneratingImages}
-                    >
-                      {isGeneratingImages ? (
-                        <>
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                          {currentImageProgress > 0 && totalImagesToGenerate > 0
-                            ? `Generating Image ${currentImageProgress}/${totalImagesToGenerate} (${generationProgress}%)`
-                            : `Preparing to generate Chapter ${currentChapter} Images...`}
-                        </>
-                      ) : chaptersGenerated.length === 0 ? (
-                        <>
-                          <ImageIcon className="h-4 w-4" />
-                          Generate Chapter 1 Images (
-                          {storyData?.imagePrompts?.slice(0, 7).length ||
-                            0}{" "}
-                          prompts)
-                        </>
-                      ) : (
-                        <>
-                          <ImageIcon className="h-4 w-4" />
-                          Generate Chapter {currentChapter} Images (
-                          {storyData?.imagePrompts?.slice(
-                            (currentChapter - 1) * 7,
-                            currentChapter * 7,
-                          ).length || 0}{" "}
-                          prompts)
-                        </>
-                      )}
-                    </Button>
-                  </div>
-                </div>
-              )}
-
-              {viewMode === "read" && storyData.generatedScript && (
-                <div className="mt-4 flex justify-end">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="text-xs"
-                    onClick={() => setViewMode("edit")}
-                  >
-                    <Edit3 className="mr-1 h-3 w-3" />
-                    Edit Script
-                  </Button>
+                  {isGeneratingImages && (
+                    <div className="mt-4 text-center">
+                      <Loader2 className="mx-auto h-8 w-8 animate-spin text-primary mb-2" />
+                      <p className="text-sm font-medium">
+                        Generating images for Chapter {currentChapter}... (
+                        {currentImageProgress}/{totalImagesToGenerate})
+                      </p>
+                      <div className="w-full bg-muted rounded-full h-2.5 mt-2">
+                        <div
+                          className="bg-primary h-2.5 rounded-full transition-all duration-300 ease-out"
+                          style={{ width: `${generationProgress}%` }}
+                        ></div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

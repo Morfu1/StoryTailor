@@ -4,12 +4,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
-import { Mic, Loader2, Play, Pause, RefreshCw, StopCircle, Settings } from 'lucide-react'; // Added Settings
+import { Mic, Loader2, RefreshCw, StopCircle } from 'lucide-react'; // Removed Play, Pause, Settings
 import Link from 'next/link'; // Added Link
 import { VoiceSelector } from './VoiceSelector';
 import { NarrationChunkPlayer } from './NarrationChunkPlayer';
 import { useNarrationGeneration } from '@/hooks/useNarrationGeneration';
-import { useToast } from '@/hooks/use-toast';
+// import { useToast } from '@/hooks/use-toast'; // Unused
 import type { UseStoryStateReturn } from '@/hooks/useStoryState';
 
 interface NarrationStepProps {
@@ -17,7 +17,7 @@ interface NarrationStepProps {
 }
 
 export function NarrationStep({ storyState }: NarrationStepProps) {
-  const { toast } = useToast();
+  // const { toast } = useToast(); // Unused
   const { handleGenerateNarration, handleRegenerateChunks, handleStopGeneration } = useNarrationGeneration({ storyState });
   const {
     storyData,
@@ -81,7 +81,7 @@ export function NarrationStep({ storyState }: NarrationStepProps) {
           <div className="bg-amber-100 border border-amber-300 rounded p-3 mb-4">
             <h4 className="text-sm font-medium text-amber-800">Please Save Your Story First</h4>
             <p className="text-xs text-amber-700 mt-1">
-              To ensure narration works correctly, save your story using the "Save Story" button at the bottom of the page before generating audio.
+              To ensure narration works correctly, save your story using the &quot;Save Story&quot; button at the bottom of the page before generating audio.
             </p>
           </div>
         )}

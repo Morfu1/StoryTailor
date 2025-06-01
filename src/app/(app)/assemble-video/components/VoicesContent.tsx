@@ -14,12 +14,13 @@ export default function VoicesContent({ storyData }: VoicesContentProps) {
     const voiceName = storyData.narrationVoice || "Narrator";
     const voiceId =
       storyData.narrationVoiceId ||
-      (storyData as any).elevenLabsVoiceId ||
+      (storyData as { elevenLabsVoiceId?: string })?.elevenLabsVoiceId ||
       "Unknown";
-    const duration = (storyData as any).narrationAudioDurationSeconds
-      ? `${Math.floor((storyData as any).narrationAudioDurationSeconds / 60)}:${((storyData as any).narrationAudioDurationSeconds % 60).toString().padStart(2, "0")}`
+    const durationSeconds = storyData.narrationAudioDurationSeconds;
+    const duration = typeof durationSeconds === 'number'
+      ? `${Math.floor(durationSeconds / 60)}:${(durationSeconds % 60).toString().padStart(2, "0")}`
       : "0:00";
-    const hasAudio = !!(storyData as any).narrationAudioUrl;
+    const hasAudio = !!storyData.narrationAudioUrl;
 
     return { voiceName, voiceId, duration, hasAudio };
   }, [storyData]);
@@ -63,7 +64,7 @@ export default function VoicesContent({ storyData }: VoicesContentProps) {
                   <div className="flex items-center gap-2">
                     <audio
                       controls
-                      src={(storyData as any).narrationAudioUrl}
+                      src={storyData.narrationAudioUrl || undefined}
                       className="h-7 w-full sm:w-48"
                     >
                       Your browser does not support the audio element.
@@ -83,7 +84,7 @@ export default function VoicesContent({ storyData }: VoicesContentProps) {
                   Character voices coming soon
                 </p>
                 <p className="text-xs text-muted-foreground mt-1">
-                  You'll be able to assign different voices to each character
+                  You&apos;ll be able to assign different voices to each character
                 </p>
                 <Button variant="outline" size="sm" className="mt-3" disabled>
                   <User className="h-4 w-4 mr-2" />

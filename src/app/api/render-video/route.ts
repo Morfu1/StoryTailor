@@ -5,12 +5,12 @@ import { GeneratedImage } from '@/types/story'; // Import GeneratedImage
 import { ensureDownloadsDirectory } from './init-downloads';
 import { createVideoJob, updateJobStatus } from '@/utils/videoJobManager';
 import { exec, ChildProcess } from 'child_process'; // Import ChildProcess
-import { promisify } from 'util';
+// import { promisify } from 'util'; // Unused
 import path from 'path';
 import fs from 'fs';
-import os from 'os';
+// import os from 'os'; // Unused
 
-const execAsync = promisify(exec);
+// const execAsync = promisify(exec); // Unused
 
 // Map to store active rendering processes
 export const activeRenderProcesses = new Map<string, ChildProcess>();

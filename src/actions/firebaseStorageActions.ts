@@ -1,9 +1,8 @@
 
 "use server";
 
-import { firebaseAdmin, dbAdmin } from '@/lib/firebaseAdmin';
+import { firebaseAdmin } from '@/lib/firebaseAdmin';
 import { getStorage as getAdminStorage } from 'firebase-admin/storage';
-import type { Story } from '@/types/story';
 
 export async function getStorageBucket(): Promise<string | undefined> {
   return process.env?.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET;

@@ -55,7 +55,7 @@ export function FirebaseTroubleshooter() {
                 <h4 className="font-semibold mt-3 mb-1">How to fix:</h4>
                 <ol className="list-decimal pl-5 space-y-2">
                   <li>Temporarily disable your ad blocker for this site</li>
-                  <li>Add this site to your ad blocker's whitelist/allowlist</li>
+                  <li>Add this site to your ad blocker&apos;s whitelist/allowlist</li>
                   <li>If using uBlock Origin:
                     <ul className="list-disc pl-5 mt-1">
                       <li>Click the uBlock icon in your browser</li>
@@ -78,7 +78,7 @@ export function FirebaseTroubleshooter() {
                 <h4 className="font-semibold mt-3 mb-1">How to fix:</h4>
                 <ul className="list-disc pl-5 space-y-2">
                   <li>Check if your browser is blocking third-party cookies</li>
-                  <li>Disable "Enhanced Tracking Protection" for this site (Firefox)</li>
+                  <li>Disable &quot;Enhanced Tracking Protection&quot; for this site (Firefox)</li>
                   <li>Try using a different browser temporarily</li>
                 </ul>
               </AccordionContent>
@@ -95,7 +95,7 @@ export function FirebaseTroubleshooter() {
                 <h4 className="font-semibold mt-3 mb-1">How to fix:</h4>
                 <ul className="list-disc pl-5 space-y-2">
                   <li>Try accessing the site from a different network</li>
-                  <li>Disable VPN if you're using one</li>
+                  <li>Disable VPN if you&apos;re using one</li>
                   <li>Check if your network administrator has blocked Firebase domains</li>
                 </ul>
               </AccordionContent>
@@ -124,7 +124,7 @@ export function FirebaseTroubleshooter() {
               </AccordionTrigger>
               <AccordionContent className="text-amber-800">
                 <p className="mb-2">
-                  If you've tried all the above solutions and still can't connect:
+                  If you&apos;ve tried all the above solutions and still can&apos;t connect:
                 </p>
                 <ul className="list-disc pl-5 space-y-2">
                   <li>Clear your browser cache and cookies</li>

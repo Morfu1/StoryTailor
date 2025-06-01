@@ -68,7 +68,7 @@ export function ConvertibleAudioPlayer({
         URL.revokeObjectURL(audioSrc);
       }
     };
-  }, [src, chunkId, onError]);
+  }, [src, chunkId, onError, audioSrc]); // Added audioSrc to dependency array
 
   // Cleanup blob URL on unmount
   useEffect(() => {

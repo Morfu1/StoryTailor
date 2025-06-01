@@ -56,7 +56,7 @@ export default function VideoPreviewArea({
             This is the timeline view. Generate images to start creating
             your animation or select an image from the timeline below.
             <span className="font-mono text-xs block mt-2 p-2 bg-background/80 rounded-md">
-              Example: "Wide shot of @SunnyMeadow, with @Barnaby..."
+              Example: &quot;Wide shot of @SunnyMeadow, with @Barnaby...&quot;
             </span>
           </p>
         </div>

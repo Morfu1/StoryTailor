@@ -1,4 +1,3 @@
-
 "use client";
 
 import type { Story } from "@/types/story"; // Import StoryCharacterLocationItemPrompts removed
@@ -14,10 +13,10 @@ import { Button } from "@/components/ui/button";
 // } from "@/components/ui/tooltip";
 import {
   getStory,
-  generateImageFromPrompt,
   saveStory,
   updateStoryTimeline,
-} from "@/actions/storyActions";
+} from "@/actions/firestoreStoryActions"; // Corrected import path
+import { generateImageFromPrompt } from "@/actions/storyActions"; // Kept for this function
 import type { GeneratedImage } from "@/types/story";
 import {
   // AlignCenter,
@@ -73,7 +72,7 @@ import AllMediaContent from "./components/AllMediaContent";
 import EditTimelineItemPanelContent from "./components/EditTimelineItemPanelContent";
 import VideoPageSidebar from "./components/VideoPageSidebar";
 import VideoPreviewArea from "./components/VideoPreviewArea";
-import VideoControls from "./components/VideoControls";
+// import VideoControls from "./components/VideoControls"; // Unused
 import TimelineStrip from "./components/TimelineStrip";
 // import { Label } from "@/components/ui/label";
 // import {
@@ -138,8 +137,8 @@ export default function AssembleVideoPage() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [selectedPanel, setSelectedPanel] = useState("Story");
   const [isGeneratingImages, setIsGeneratingImages] = useState(false);
-  const [currentChapter, setCurrentChapter] = useState(1);
-  const [chaptersGenerated, setChaptersGenerated] = useState<number[]>([]);
+  const [currentChapter] = useState(1); // setCurrentChapter was unused
+  // const [chaptersGenerated, setChaptersGenerated] = useState<number[]>([]); // Unused
   const [totalImagesToGenerate, setTotalImagesToGenerate] = useState<number>(7);
   const [currentImageProgress, setCurrentImageProgress] = useState(0);
   const [generationProgress, setGenerationProgress] = useState(0);
@@ -149,8 +148,8 @@ export default function AssembleVideoPage() {
   const [editedPrompt, setEditedPrompt] = useState<string>("");
   const [isEditingImage, setIsEditingImage] = useState(false);
   const [dynamicTimelineTracks, setDynamicTimelineTracks] = useState<PageTimelineTrack[]>([]);
-  const [selectedTimelineItemKey, setSelectedTimelineItemKey] = useState<string | null>(null); // For unique ID based selection
-  const [timelineModified, setTimelineModified] = useState(false); // Track if timeline was modified by user
+  const [selectedTimelineItemKey, setSelectedTimelineItemKey] = useState<string | null>(null);
+  const [timelineModified, setTimelineModified] = useState<boolean>(false);
 
   const isInitialMount = useRef(true);
   const isStoryDataDrivenUpdate = useRef(false);
@@ -230,7 +229,7 @@ export default function AssembleVideoPage() {
           let showGenerateButton = false;
 
           if (config.type === 'video' && imagesToShow.length > 0) {
-            items = imagesToShow.map((img, filteredIndex) => {
+            items = imagesToShow.map((img) => { // index removed as it was unused
               const originalImageIndex = storyData.generatedImages?.findIndex(
                 (originalImg) => originalImg.imageUrl === img.imageUrl && originalImg.originalPrompt === img.originalPrompt
               );
@@ -248,7 +247,7 @@ export default function AssembleVideoPage() {
           }
 
           if (config.type === 'text' && imagesToShow.length > 0 && storyData.generatedScript) {
-            items = imagesToShow.map((img, filteredIndex) => {
+            items = imagesToShow.map((img, filteredIndex) => { // filteredIndex unused
               const originalImageIndex = storyData.generatedImages?.findIndex(
                 (originalImg) => originalImg.imageUrl === img.imageUrl && originalImg.originalPrompt === img.originalPrompt
               );
@@ -320,8 +319,9 @@ export default function AssembleVideoPage() {
 
         // Fallback for other components (less likely for current track setup)
         // Check for displayName first, then function name
-        if ((iconComponent as any).displayName && typeof (iconComponent as any).displayName === 'string') {
-          return (iconComponent as any).displayName;
+        const iconWithDisplayName = iconComponent as React.FC & { displayName?: string };
+        if (iconWithDisplayName.displayName && typeof iconWithDisplayName.displayName === 'string') {
+          return iconWithDisplayName.displayName;
         }
         if (typeof iconComponent === 'function' && iconComponent.name && typeof iconComponent.name === 'string') {
           return iconComponent.name;
@@ -400,7 +400,7 @@ export default function AssembleVideoPage() {
     }
   }, [selectedTimelineImage, storyData?.generatedImages, dynamicTimelineTracks]);
 
-  const handleDeleteItemFromTimeline = (itemIdToDelete?: string) => {
+  const handleDeleteItemFromTimeline = React.useCallback((itemIdToDelete?: string) => {
     const keyToDelete = itemIdToDelete || selectedTimelineItemKey;
     if (!keyToDelete) {
       toast({ title: "No item selected", description: "Please select an item on the timeline to delete.", variant: "default", duration: 2000 });
@@ -420,7 +420,7 @@ export default function AssembleVideoPage() {
     setSelectedTimelineItemKey(null);
     setSelectedTimelineImage(null); // Also clear the originalIndex based selection
     setSelectedPanel("All Media"); // Switch panel as Edit Image might no longer be relevant
-  };
+  }, [selectedTimelineItemKey, toast, setSelectedTimelineItemKey, setSelectedTimelineImage, setSelectedPanel]);
 
   // Keyboard listener for delete
   useEffect(() => {
@@ -451,7 +451,7 @@ export default function AssembleVideoPage() {
 
     try {
 
-      const audioDuration = storyData?.narrationAudioDurationSeconds || 240;
+      // const audioDuration = storyData?.narrationAudioDurationSeconds || 240; // Unused
       const imagesToGenerate = 7;
       setTotalImagesToGenerate(imagesToGenerate);
 
@@ -503,94 +503,83 @@ export default function AssembleVideoPage() {
             storyData,
           );
           return {
-            originalPromptWithReferences: promptText,
-            expandedPrompt,
+            originalPromptWithReferences: promptText, // Store the original prompt with @references
+            expandedPrompt: expandedPrompt, // Store the expanded prompt
           };
         },
       );
 
-      const newImagesBatch: GeneratedImage[] = [];
+      const newImages: GeneratedImage[] = [];
+      setCurrentImageProgress(0);
+      setGenerationProgress(0);
 
-      for (let index = 0; index < imagePrompts.length; index++) {
-        const currentPrompt = imagePrompts[index];
-        setCurrentImageProgress(index + 1);
-        setGenerationProgress(
-          Math.round(((index + 1) / imagePrompts.length) * 100),
+      for (let i = 0; i < imagePrompts.length; i++) {
+        const { originalPromptWithReferences, expandedPrompt } = imagePrompts[i];
+        setCurrentImageProgress(i + 1);
+        const progressPercentage = ((i + 1) / imagePrompts.length) * 100;
+        setGenerationProgress(progressPercentage);
+
+        const result = await generateImageFromPrompt(
+          expandedPrompt, // This is the prompt to send to the AI
+          user!.uid,
+          storyData.id,
+          storyData.imageProvider as 'picsart' | 'gemini' | 'imagen3' || "picsart",
+          storyData.imageStyleId
+          // chapterNumber is not a direct param of generateImageFromPrompt
+          // It's metadata we add to the GeneratedImage object later
         );
 
-        toast({
-          title: `Generating Image ${index + 1}/${imagePrompts.length}`,
-          description: currentPrompt.originalPromptWithReferences.substring(0, 100) + "...",
-          duration: 4000,
-        });
-
-        // Append styles for PicsArt
-        const finalApiPrompt = `${currentPrompt.expandedPrompt}, 3D, Cartoon, High Quality, detailed illustration`;
-        const result = await generateImageFromPrompt(finalApiPrompt);
-
-        if (!result.success || !result.imageUrl) {
-          throw new Error(
-            `Failed to generate image ${index + 1}: ${result.error || "Unknown error"}`,
-          );
+        if (result.success && result.imageUrl) {
+          newImages.push({
+            requestPrompt: result.requestPrompt || expandedPrompt, // Store the prompt sent to API
+            originalPrompt: originalPromptWithReferences, // Store original prompt with @references
+            expandedPrompt: expandedPrompt, // Store expanded prompt
+            imageUrl: result.imageUrl,
+            isChapterGenerated: true, // Mark as generated for this chapter
+            chapterNumber: currentChapter, // Assign current chapter number
+          });
+        } else {
+          toast({
+            title: `Error Generating Image ${i + 1}`,
+            description:
+              result.error || "Failed to generate an image for this prompt.",
+            variant: "destructive",
+          });
+          // Optionally, decide if you want to stop or continue on error
         }
-
-        newImagesBatch.push({
-          originalPrompt: currentPrompt.originalPromptWithReferences,
-          requestPrompt: result.requestPrompt || finalApiPrompt,
-          imageUrl: result.imageUrl,
-          isChapterGenerated: true,
-          chapterNumber: currentChapter,
-          expandedPrompt: currentPrompt.expandedPrompt,
-          history: [],
-        });
-
-        toast({
-          title: `Image ${index + 1}/${imagePrompts.length} Generated!`,
-          description: `Created from: ${currentPrompt.originalPromptWithReferences.substring(0, 50)}...`,
-          duration: 2000,
-          className: "bg-green-500 text-white",
-        });
       }
-
-      setGenerationProgress(100);
 
       setStoryData((prevData) => {
         if (!prevData) return null;
-        const updatedStory = {
+        // Filter out any placeholder/undefined images before adding new ones
+        const existingValidImages = prevData.generatedImages?.filter(img => img && img.imageUrl) || [];
+        return {
           ...prevData,
-          generatedImages: [...(prevData.generatedImages || []), ...newImagesBatch],
+          generatedImages: [...existingValidImages, ...newImages],
         };
-        saveStoryData(updatedStory); // Async save, don't await here to keep UI responsive
-        return updatedStory;
       });
 
-      setChaptersGenerated((prev) => [...prev, currentChapter]);
-      const totalPossibleChapters = Math.ceil(
-        (storyData?.imagePrompts?.length || 0) / imagesToGenerate,
-      );
-
-      if (currentChapter < totalPossibleChapters) {
-        setCurrentChapter((prev) => prev + 1);
-        toast({
-          title: "Chapter Images Complete!",
-          description: `Generated ${newImagesBatch.length} images for Chapter ${currentChapter -1}. Ready for Chapter ${currentChapter}.`,
-          className: "bg-green-500 text-white",
-          duration: 5000,
-        });
-      } else {
-        toast({
-          title: "All Chapter Images Generated!",
-          description: `Generated all available chapter images.`,
-          className: "bg-green-500 text-white",
-          duration: 5000,
-        });
+      // Save the updated story data with new images
+      if (storyData && user?.uid) {
+        const storyToSave = {
+          ...storyData,
+          generatedImages: [...(storyData.generatedImages?.filter(img => img && img.imageUrl) || []), ...newImages],
+        };
+        await saveStory(storyToSave, user.uid);
       }
-      setSelectedPanel("All Media");
+
+
+      // setChaptersGenerated((prev: number[]) => [...new Set([...prev, currentChapter])]); // Removed as chaptersGenerated state is unused
+      toast({
+        title: `Chapter ${currentChapter} Images Generated!`,
+        description: `${newImages.length} images added to your story.`,
+        className: "bg-green-500 text-white",
+      });
     } catch (error) {
-      console.error("Error generating images:", error);
+      console.error("Error generating chapter images:", error);
       toast({
         title: "Image Generation Failed",
-        description: (error as Error).message || "There was an error generating the images. Please try again.",
+        description: "An unexpected error occurred.",
         variant: "destructive",
       });
     } finally {
@@ -600,69 +589,89 @@ export default function AssembleVideoPage() {
     }
   };
 
+
   const handleEditGenerate = async () => {
     if (
       selectedTimelineImage === null ||
-      !storyData ||
-      !storyData.generatedImages
-    )
+      !storyData?.generatedImages?.[selectedTimelineImage] ||
+      !editedPrompt
+    ) {
+      toast({
+        title: "Cannot Generate",
+        description:
+          "No image selected or prompt is empty. Please select an image and ensure the prompt is filled.",
+        variant: "destructive",
+      });
       return;
+    }
 
     setIsEditingImage(true);
     toast({
-      title: "Generating Edited Image...",
-      description: "Replacing the image in the timeline.",
+      title: "Generating New Image...",
+      description: "Please wait while the new image is being created.",
     });
 
     try {
-      const currentImage = storyData.generatedImages[selectedTimelineImage];
-      if (!currentImage) throw new Error("Selected image not found");
+      // Expand the edited prompt (which might contain @references)
+      const finalPromptToGenerate = parseEntityReferences(
+        editedPrompt, // This is the user-edited prompt with @references
+        storyData
+      );
 
-      const expandedPrompt = parseEntityReferences(editedPrompt, storyData);
-      const finalPrompt = `${expandedPrompt}, 3D, Cartoon, High Quality, detailed illustration`; // Added styles
+      const result = await generateImageFromPrompt(
+        finalPromptToGenerate, // This is the prompt to send to the AI
+        user!.uid,
+        storyData.id,
+        storyData.imageProvider as 'picsart' | 'gemini' | 'imagen3' || "picsart",
+        storyData.imageStyleId
+        // chapterNumber is not a direct param of generateImageFromPrompt
+      );
 
-      const result = await generateImageFromPrompt(finalPrompt);
+      if (result.success && result.imageUrl) {
+        const newImage: GeneratedImage = {
+          requestPrompt: result.requestPrompt || finalPromptToGenerate, // Store the prompt sent to API
+          originalPrompt: editedPrompt, // This is the prompt with @references
+          expandedPrompt: finalPromptToGenerate, // This is the prompt sent to the AI
+          imageUrl: result.imageUrl,
+          isChapterGenerated: storyData.generatedImages[selectedTimelineImage].isChapterGenerated,
+          chapterNumber: storyData.generatedImages[selectedTimelineImage].chapterNumber,
+        };
 
-      if (!result.success || !result.imageUrl) {
-        throw new Error(result.error || "Failed to generate edited image.");
+        setStoryData((prevData) => {
+          if (!prevData) return null;
+          const updatedImages = [...(prevData.generatedImages || [])];
+          updatedImages[selectedTimelineImage] = newImage;
+          return { ...prevData, generatedImages: updatedImages };
+        });
+
+        // Save the updated story data
+        if (storyData && user?.uid) {
+            const storyToSave = {
+                ...storyData,
+                generatedImages: [...(storyData.generatedImages || [])]
+            };
+            storyToSave.generatedImages[selectedTimelineImage] = newImage;
+            await saveStory(storyToSave, user.uid);
+        }
+
+
+        toast({
+          title: "Image Updated!",
+          description: "The selected image has been regenerated.",
+          className: "bg-green-500 text-white",
+        });
+      } else {
+        toast({
+          title: "Error Regenerating Image",
+          description: result.error || "Failed to regenerate the image.",
+          variant: "destructive",
+        });
       }
-
-      const newImageData: GeneratedImage = {
-        ...currentImage,
-        originalPrompt: editedPrompt,
-        requestPrompt: result.requestPrompt || finalPrompt,
-        imageUrl: result.imageUrl,
-        expandedPrompt: expandedPrompt,
-        history: [
-          ...(currentImage.history || []).slice(-4), // Keep last 4 + new current
-          {
-            imageUrl: currentImage.imageUrl,
-            originalPrompt: currentImage.originalPrompt,
-            timestamp: new Date(),
-          },
-        ],
-      };
-
-      setStoryData((prevData) => {
-        if (!prevData || !prevData.generatedImages) return null;
-        const updatedImages = [...prevData.generatedImages];
-        updatedImages[selectedTimelineImage] = newImageData;
-        const updatedStory = { ...prevData, generatedImages: updatedImages };
-        saveStoryData(updatedStory);
-        return updatedStory;
-      });
-
+    } catch (error) {
+      console.error("Error regenerating image:", error);
       toast({
-        title: "Image Updated!",
-        description:
-          "The timeline image has been replaced with the new version.",
-        className: "bg-green-500 text-white",
-      });
-    } catch (error: any) {
-      console.error("Error generating edited image:", error);
-      toast({
-        title: "Edited Image Generation Failed",
-        description: error.message || "An unexpected error occurred.",
+        title: "Image Regeneration Failed",
+        description: "An unexpected error occurred.",
         variant: "destructive",
       });
     } finally {
@@ -673,165 +682,154 @@ export default function AssembleVideoPage() {
   const handleRevertToHistory = async (historyIndex: number) => {
     if (
       selectedTimelineImage === null ||
-      !storyData ||
-      !storyData.generatedImages
-    )
-      return;
-
-    const currentImage = storyData.generatedImages[selectedTimelineImage];
-    if (
-      !currentImage ||
-      !currentImage.history ||
-      !currentImage.history[historyIndex]
+      !storyData?.generatedImages?.[selectedTimelineImage]?.history ||
+      !storyData.generatedImages[selectedTimelineImage].history![historyIndex]
     ) {
       toast({
-        title: "Error",
-        description: "Could not find historical image.",
+        title: "Cannot Revert",
+        description: "Selected image or history version not found.",
         variant: "destructive",
       });
       return;
     }
 
-    const historicalImage = currentImage.history[historyIndex];
-    const newHistory = currentImage.history.filter((_, idx) => idx !== historyIndex);
-    // Add current image to history before reverting
-     newHistory.push({
-        imageUrl: currentImage.imageUrl,
-        originalPrompt: currentImage.originalPrompt,
-        timestamp: new Date()
-    });
-
-
-    const revertedImageData: GeneratedImage = {
-      ...currentImage,
-      originalPrompt: historicalImage.originalPrompt,
-      imageUrl: historicalImage.imageUrl,
-      // expandedPrompt: // Need to decide if we re-parse or store historical expandedPrompt
-      history: newHistory.slice(-5),
-    };
-
-    setEditedPrompt(revertedImageData.originalPrompt);
-
-    setStoryData((prevData) => {
-      if (!prevData || !prevData.generatedImages) return null;
-      const updatedImages = [...prevData.generatedImages];
-      updatedImages[selectedTimelineImage] = revertedImageData;
-      const updatedStory = { ...prevData, generatedImages: updatedImages };
-      saveStoryData(updatedStory);
-      return updatedStory;
-    });
+    const historyImage =
+      storyData.generatedImages[selectedTimelineImage].history![historyIndex];
 
     toast({
-      title: "Image Reverted",
-      description: "Image reverted to selected historical version.",
+      title: "Reverting Image...",
+      description: "Updating image to selected history version.",
+    });
+
+    // Create the updated image object based on the history
+    const revertedImage: GeneratedImage = {
+      // Assuming historyImage.expandedPrompt is the prompt that was sent to the API for that version
+      // or historyImage.originalPrompt if expandedPrompt wasn't stored in history previously.
+      // For safety, let's use originalPrompt if expanded is not there.
+      requestPrompt: historyImage.expandedPrompt || historyImage.originalPrompt,
+      imageUrl: historyImage.imageUrl,
+      originalPrompt: historyImage.originalPrompt, // Use history's original prompt
+      expandedPrompt: historyImage.expandedPrompt, // Use history's expanded prompt
+      isChapterGenerated: storyData.generatedImages[selectedTimelineImage].isChapterGenerated,
+      chapterNumber: storyData.generatedImages[selectedTimelineImage].chapterNumber,
+      history: storyData.generatedImages[selectedTimelineImage].history,
+    };
+
+    setStoryData((prevData) => {
+      if (!prevData) return null;
+      const updatedImages = [...(prevData.generatedImages || [])];
+      updatedImages[selectedTimelineImage] = revertedImage;
+      return { ...prevData, generatedImages: updatedImages };
+    });
+
+    // Save the updated story data
+    if (storyData && user?.uid) {
+        const storyToSave = {
+            ...storyData,
+            generatedImages: [...(storyData.generatedImages || [])]
+        };
+        storyToSave.generatedImages[selectedTimelineImage] = revertedImage;
+        await saveStory(storyToSave, user.uid);
+    }
+
+
+    toast({
+      title: "Image Reverted!",
+      description: "Image has been updated from history.",
       className: "bg-green-500 text-white",
     });
+    // Update editedPrompt to reflect the reverted image's prompt
+    setEditedPrompt(historyImage.originalPrompt || "");
   };
 
 
-  // Get the width of the currently selected timeline item
-  const getSelectedItemWidth = (): number => {
-    if (!selectedTimelineItemKey) return 120; // Default width
+  // Helper to get the currently selected item's width from timelineTracks
+  // const getSelectedItemWidth = (): number => { // Unused
+  //   if (!selectedTimelineItemKey) return 100; // Default or some indicator of no selection
+  //
+  //   for (const track of dynamicTimelineTracks) {
+  //     const item = track.items.find(i => i.id === selectedTimelineItemKey);
+  //     if (item && item.ui?.width) {
+  //       if (typeof item.ui.width === 'number') return item.ui.width;
+  //       if (typeof item.ui.width === 'string' && item.ui.width.endsWith('%')) {
+  //         return parseInt(item.ui.width.replace('%', ''), 10);
+  //       }
+  //     }
+  //   }
+  //   return 100; // Default if not found or not a percentage
+  // };
 
-    for (const track of dynamicTimelineTracks) {
-      const selectedItem = track.items.find(item => item.id === selectedTimelineItemKey);
-      if (selectedItem) {
-        if (selectedItem.ui?.width) {
-          const width = selectedItem.ui.width;
-          return typeof width === 'string' ? parseInt(width.replace('px', '')) : width;
-        }
-        return 120; // Default width if ui.width is not set
-      }
-    }
-    return 120; // Default width if item not found
-  };
+  // Helper to get the currently selected item's margin from timelineTracks
+  // const getSelectedItemMargin = (): number => { // Unused
+  //   if (!selectedTimelineItemKey) return 0; // Default or some indicator of no selection
+  //
+  //   for (const track of dynamicTimelineTracks) {
+  //     const item = track.items.find(i => i.id === selectedTimelineItemKey);
+  //     if (item && item.ui?.marginLeft) {
+  //       if (typeof item.ui.marginLeft === 'number') return item.ui.marginLeft;
+  //       if (typeof item.ui.marginLeft === 'string' && item.ui.marginLeft.endsWith('%')) {
+  //         return parseInt(item.ui.marginLeft.replace('%', ''), 10);
+  //       }
+  //     }
+  //   }
+  //   return 0; // Default if not found or not a percentage
+  // };
 
-  // Get the margin of the currently selected timeline item
-  const getSelectedItemMargin = (): number => {
-    if (!selectedTimelineItemKey) return 0; // Default margin
 
-    for (const track of dynamicTimelineTracks) {
-      const selectedItem = track.items.find(item => item.id === selectedTimelineItemKey);
-      if (selectedItem) {
-        if (selectedItem.ui?.marginLeft) {
-          const margin = selectedItem.ui.marginLeft;
-          return typeof margin === 'string' ? parseInt(margin.replace('px', '')) : margin;
-        }
-        return 0; // Default margin if ui.marginLeft is not set
-      }
-    }
-    return 0; // Default margin if item not found
-  };
+  // const handleUpdateItemWidth = (itemId: string, width: number) => { // Unused
+  //   setDynamicTimelineTracks(prevTracks => {
+  //     const updatedTracks = prevTracks.map(track => ({
+  //       ...track,
+  //       items: track.items.map(item => {
+  //         if (item.id === itemId) {
+  //           return {
+  //             ...item,
+  //             ui: { ...item.ui, width: `${width}%` },
+  //           };
+  //         }
+  //         return item;
+  //       }),
+  //     }));
+  //     setTimelineModified(true); // Mark timeline as modified
+  //     return updatedTracks;
+  //   });
+  // };
 
-  // Update the width of the selected timeline item
-  const handleUpdateItemWidth = (itemId: string, width: number) => {
-    setDynamicTimelineTracks(prevTracks => {
-      const updatedTracks = prevTracks.map(track => ({
-        ...track,
-        items: track.items.map(item => {
-          if (item.id === itemId) {
-            return {
-              ...item,
-              ui: {
-                ...item.ui,
-                width: width
-              }
-            };
-          }
-          return item;
-        })
-      }));
-      setTimelineModified(true); // Mark timeline as modified
-      return updatedTracks;
-    });
-  };
 
-  // Update the margin of the selected timeline item
-  const handleUpdateItemMargin = (margin: number) => {
-    if (!selectedTimelineItemKey) return;
+  // const handleUpdateItemMargin = (margin: number) => { // Unused
+  //   if (!selectedTimelineItemKey) return;
+  //
+  //   setDynamicTimelineTracks((prevTracks: PageTimelineTrack[]) => {
+  //     const updatedTracks = prevTracks.map((track: PageTimelineTrack) => ({
+  //       ...track,
+  //       items: track.items.map((item: PageTimelineMediaItem) => {
+  //         if (item.id === selectedTimelineItemKey) {
+  //           return {
+  //             ...item,
+  //             ui: { ...item.ui, marginLeft: `${margin}%` },
+  //           };
+  //         }
+  //         return item;
+  //       }),
+  //     }));
+  //     setTimelineModified(true); // Mark timeline as modified
+  //     return updatedTracks;
+  //   });
+  // };
 
-    setDynamicTimelineTracks(prevTracks => {
-      const updatedTracks = prevTracks.map(track => ({
-        ...track,
-        items: track.items.map(item => {
-          if (item.id === selectedTimelineItemKey) {
-            return {
-              ...item,
-              ui: {
-                ...item.ui,
-                marginLeft: `${margin}px`
-              }
-            };
-          }
-          return item;
-        })
-      }));
-      setTimelineModified(true); // Mark timeline as modified
-      return updatedTracks;
-    });
-  };
+  // const saveStoryData = async (updatedStory: Story | null) => { // Unused
+  //   if (updatedStory && user?.uid) {
+  //     const result = await saveStory(updatedStory, user.uid);
+// if (!result.success) {
+// toast({
+// title: "Error Saving Story",
+// description: result.error || "Failed to save story updates.",
+// variant: "destructive",
+// });
+// }
+// }
+// };
 
-  const saveStoryData = async (updatedStory: Story | null) => {
-    if (!updatedStory || !user?.uid) {
-        toast({title: "Error", description: "Cannot save, story data or user ID is missing.", variant: "destructive"});
-        return;
-    }
-    try {
-      const result = await saveStory(updatedStory, user.uid);
-      if (!result.success) {
-          toast({ title: "Save Error", description: result.error || "Failed to save story to database.", variant: "destructive"});
-      } else {
-          console.log("Story data saved successfully via Assemble Page action.");
-      }
-    } catch (error) {
-      console.error("Error saving story data from assemble page:", error);
-      toast({
-        title: "Error Saving Data",
-        description: "There was a problem saving your story data.",
-        variant: "destructive",
-      });
-    }
-  };
 
   useEffect(() => {
     if (authLoading) return;
@@ -855,21 +853,14 @@ export default function AssembleVideoPage() {
       .then((response) => {
         if (response.success && response.data) {
           setStoryData(response.data);
-          // Determine current chapter based on generated images
-          if (response.data.generatedImages && response.data.imagePrompts) {
-            const generatedChapterNumbers = response.data.generatedImages
-              .filter(img => img.isChapterGenerated && typeof img.chapterNumber === 'number')
-              .map(img => img.chapterNumber as number);
-            const maxGeneratedChapter = generatedChapterNumbers.length > 0 ? Math.max(...generatedChapterNumbers) : 0;
-
-            const totalPossibleChapters = Math.ceil((response.data.imagePrompts.length || 0) / 7);
-            if (maxGeneratedChapter < totalPossibleChapters) {
-              setCurrentChapter(maxGeneratedChapter + 1);
-            } else {
-              setCurrentChapter(totalPossibleChapters > 0 ? totalPossibleChapters : 1); // Or indicate completion
+          // Initialize chaptersGenerated based on existing images
+          const generatedChapters = new Set<number>();
+          response.data.generatedImages?.forEach(img => {
+            if (img && typeof img.chapterNumber === 'number') {
+              generatedChapters.add(img.chapterNumber);
             }
-            setChaptersGenerated([...new Set(generatedChapterNumbers)]);
-          }
+          });
+          // setChaptersGenerated(Array.from(generatedChapters)); // Removed as chaptersGenerated state is unused
 
         } else {
           toast({
@@ -881,96 +872,122 @@ export default function AssembleVideoPage() {
         }
       })
       .finally(() => setPageLoading(false));
-  }, [storyId, user, router, toast, authLoading]);
+  }, [storyId, user, authLoading, router, toast]);
 
   if (pageLoading || authLoading) {
     return (
-      <div className="flex h-screen items-center justify-center bg-background">
-        <Loader2 className="h-16 w-16 animate-spin text-primary" />
-        <p className="ml-4 text-xl text-foreground">Loading Video Editor...</p>
+      <div className="flex items-center justify-center h-screen">
+        <Loader2 className="w-12 h-12 animate-spin text-primary" />
       </div>
     );
   }
 
   if (!storyData) {
     return (
-      <div className="flex h-screen items-center justify-center bg-background">
-        <p className="text-xl text-destructive">Could not load story data.</p>
+      <div className="flex items-center justify-center h-screen">
+        <p>Story not found or an error occurred.</p>
       </div>
     );
   }
+
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
 
     if (over && active.id !== over.id) {
-      const draggedItemSourceData = active.data.current as { type: 'image' | 'audio'; url: string; originalIndex?: number; prompt?: string; } | undefined;
-      const targetTrackId = over.id.toString(); // Ensure it's a string
-      const targetTrack = dynamicTimelineTracks.find(t => t.id === targetTrackId);
+      const activeItemId = String(active.id); // e.g., "media-image-0" or "timeline-item-video-track-1-img-0-1627..."
+      const overTrackId = String(over.id); // e.g., "video-track-1-droppable"
 
-      if (!draggedItemSourceData || !targetTrack) {
-        console.warn("DragEnd: Missing dragged item data or target track not found.", { draggedItemSourceData, targetTrackId, dynamicTimelineTracks });
-        return;
-      }
+      // Find the source item details (from AllMediaContent or another track)
+      let sourceItem: PageTimelineMediaItem | undefined;
+      let sourceTrackId: string | undefined;
 
-      const itemType = draggedItemSourceData.type;
+      if (activeItemId.startsWith("media-")) { // Item dragged from AllMediaContent
+        const parts = activeItemId.split('-'); // "media", "image", "0"
+        const type = parts[1] as 'image' | 'audio' | 'text'; // Assuming type is always present
+        const originalIndex = parseInt(parts[2], 10);
 
-      if (!targetTrack.accepts.includes(itemType)) {
-        toast({
-          title: "Cannot Drop Here",
-          description: `The '${targetTrack.name}' track does not accept '${itemType}' items.`,
-          variant: "destructive",
-          duration: 3000,
-        });
-        return;
-      }
+        if (type === 'image' && storyData.generatedImages && storyData.generatedImages[originalIndex]) {
+          const imgData = storyData.generatedImages[originalIndex];
+          sourceItem = {
+            id: `img-${originalIndex}-${Date.now()}-${Math.random().toString(36).substring(2,7)}`, // New unique ID for timeline
+            type: 'image',
+            originalIndex: originalIndex,
+            sourceId: activeItemId,
+            imageUrl: imgData.imageUrl,
+            title: imgData.originalPrompt?.substring(0,30) + "...",
+          };
+        }
+        // Add similar logic for 'audio' or 'text' if they can be dragged from AllMediaContent
+      } else if (activeItemId.startsWith("timeline-item-")) { // Item dragged from another track
+         const parts = activeItemId.split('-'); // "timeline", "item", "video", "track", "1", "img-0-..."
+         sourceTrackId = `${parts[2]}-${parts[3]}-${parts[4]}`; // e.g. "video-track-1"
+         const actualItemId = parts.slice(5).join('-'); // e.g. "img-0-..."
 
-      const newTimelineItem: PageTimelineMediaItem = {
-        id: `${itemType}-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`, // More robust unique ID
-        type: itemType,
-        sourceId: active.id.toString(),
-        imageUrl: itemType === 'image' ? draggedItemSourceData.url : undefined,
-        // audioUrl: itemType === 'audio' ? draggedItemSourceData.url : undefined, // If we add audio items
-        title: draggedItemSourceData.prompt ? (draggedItemSourceData.prompt.substring(0, 30) + "...") : `New ${itemType}`,
-        originalIndex: draggedItemSourceData.originalIndex,
-        // Default duration/startTime can be set here, e.g., based on item type or a default value
-        duration: itemType === 'image' ? 5 : 10, // Example: 5s for images, 10s for audio
-        startTime: 0, // Placeholder, actual positioning logic will be more complex
-      };
-
-      setDynamicTimelineTracks(prevTracks => {
-        setTimelineModified(true); // Mark timeline as modified when items are added
-        return prevTracks.map(track => {
-          if (track.id === targetTrackId) {
-            // Add to the end for now. Later, we'll need to insert at a specific position.
-            return { ...track, items: [...track.items, newTimelineItem] };
+        for (const track of dynamicTimelineTracks) {
+          if (track.id === sourceTrackId) {
+            sourceItem = track.items.find((item: PageTimelineMediaItem) => item.id === actualItemId);
+            break;
           }
-          return track;
-        });
-      });
+        }
+      }
 
-      toast({
-        title: "Item Added to Timeline!",
-        description: `${newTimelineItem.title} added to ${targetTrack.name}.`,
-        duration: 3000,
-      });
-      console.log("Added to timeline:", newTimelineItem, "Target track:", targetTrackId);
+
+      if (sourceItem) {
+        setDynamicTimelineTracks((prevTracks: PageTimelineTrack[]) => {
+          let newTracks = [...prevTracks];
+
+          // Remove from source track if it was an internal move
+          if (sourceTrackId) {
+            newTracks = newTracks.map(track => {
+              if (track.id === sourceTrackId) {
+                return { ...track, items: track.items.filter((item: PageTimelineMediaItem) => item.id !== sourceItem!.id) };
+              }
+              return track;
+            });
+          }
+
+          // Add to destination track
+          const targetTrackIdClean = overTrackId.replace('-droppable', '');
+          newTracks = newTracks.map(track => {
+            if (track.id === targetTrackIdClean && track.accepts.includes(sourceItem!.type)) {
+              // Check if item already exists (by sourceId if from AllMedia, or id if internal move)
+              const itemExists = track.items.some((item: PageTimelineMediaItem) =>
+                (sourceItem!.sourceId && item.sourceId === sourceItem!.sourceId) ||
+                (!sourceItem!.sourceId && item.id === sourceItem!.id)
+              );
+              if (!itemExists) {
+                return { ...track, items: [...track.items, sourceItem!] };
+              } else {
+                toast({ title: "Item Exists", description: "This item is already on the track.", variant: "default", duration: 2000});
+              }
+            }
+            return track;
+          });
+          setTimelineModified(true); // Mark timeline as modified
+          return newTracks;
+        });
+      }
     }
   };
+
 
   return (
     <DndContext onDragEnd={handleDragEnd} collisionDetection={closestCenter}>
       <div className="flex h-[calc(100vh-var(--header-height,4rem))] bg-secondary text-foreground">
+        {/* Column 1: Sidebar / Menu */}
         {isSidebarOpen && (
           <VideoPageSidebar
+            storyId={storyId}
+            sidebarNavItems={sidebarNavItems}
             selectedPanel={selectedPanel}
             setSelectedPanel={setSelectedPanel}
             isSidebarOpen={isSidebarOpen}
             setIsSidebarOpen={setIsSidebarOpen}
-            storyId={storyId}
-            sidebarNavItems={sidebarNavItems}
           />
         )}
+
+        {/* Top Bar for columns 2 & 3 */}
         <div className="flex-1 flex flex-col">
           <div className="bg-background border-b border-border p-3 flex items-center justify-between shadow-sm">
             <div className="flex items-center gap-2">
@@ -995,79 +1012,102 @@ export default function AssembleVideoPage() {
             <Button
               variant="default"
               className="bg-accent hover:bg-accent/90 text-accent-foreground"
-              disabled // Temporarily disable export
+              // onClick={handleExportVideo} // Placeholder for export functionality
+              disabled // Disable until export is implemented
             >
               <Download className="w-4 h-4 mr-2" />
-              Export (Coming Soon)
+              Export Video
             </Button>
           </div>
 
-          <div className="flex-1 flex min-w-0"> {/* Removed overflow-hidden */}
-            <div className="w-[490px] p-4 overflow-auto border-r border-border bg-background/30"> {/* Changed background */}
-              {selectedPanel === "All Media" ? (
-                <AllMediaContent storyData={storyData} />
+          {/* Container for columns 2 & 3 */}
+          <div className="flex-1 flex overflow-hidden">
+            {/* Column 2: Panel Content */}
+            <div className="w-2/5 p-4 overflow-y-auto border-r border-border bg-background">
+              {selectedPanel === "Story" && storyData ? (
+                <StoryContent
+                  storyData={storyData}
+                  isGeneratingImages={isGeneratingImages}
+                  handleGenerateChapterImages={handleGenerateChapterImages}
+                  currentChapter={currentChapter}
+                  // chaptersGenerated={chaptersGenerated} // Prop removed from StoryContent
+                  currentImageProgress={currentImageProgress}
+                  generationProgress={generationProgress}
+                  totalImagesToGenerate={totalImagesToGenerate}
+                />
               ) : selectedPanel === "Edit Image" ? (
                 <EditTimelineItemPanelContent
                   storyData={storyData}
                   selectedTimelineImage={selectedTimelineImage}
                   editedPrompt={editedPrompt}
                   setEditedPrompt={setEditedPrompt}
-                  handleEditGenerate={handleEditGenerate}
                   isEditingImage={isEditingImage}
+                  handleEditGenerate={handleEditGenerate}
                   handleRevertToHistory={handleRevertToHistory}
-                  handleUpdateItemWidth={(width) => selectedTimelineItemKey && handleUpdateItemWidth(selectedTimelineItemKey, width)}
-                  selectedItemWidth={getSelectedItemWidth()}
+                  // selectedTimelineItemKey is not a prop of EditTimelineItemPanelContent
+                  // dynamicTimelineTracks is not a prop of EditTimelineItemPanelContent
+                  // The component uses selectedTimelineImage (index) to fetch image data
+                  // Width/Margin handlers are optional and seem to be for a different context or need adjustment
+                  // For now, let's pass what's defined.
+                  // selectedItemWidth and selectedItemMargin are also props of the component,
+                  // but they are not being explicitly passed from the parent here.
+                  // The component has defaults for them.
+                  // If they need to be controlled from here, state variables would be needed.
+                  // handleUpdateItemWidth={(width: number) => handleUpdateItemWidth(selectedTimelineItemKey!, width)} // Assuming selectedTimelineItemKey is valid when this is called
+                  // handleUpdateItemMargin={handleUpdateItemMargin} // This already uses selectedTimelineItemKey internally
                 />
-              ) : selectedPanel === "Voices" ? (
+              ) : selectedPanel === "Voices" && storyData ? (
                 <VoicesContent storyData={storyData} />
-              ) : selectedPanel === "Story" ? (
-                storyData ? (
-                  <StoryContent
-                    storyData={storyData}
-                    isGeneratingImages={isGeneratingImages}
-                    handleGenerateChapterImages={handleGenerateChapterImages}
-                    currentChapter={currentChapter}
-                    chaptersGenerated={chaptersGenerated}
-                    currentImageProgress={currentImageProgress}
-                    generationProgress={generationProgress}
-                    totalImagesToGenerate={totalImagesToGenerate}
-                  />
-                ) : (
-                  <div className="flex items-center justify-center h-full">
-                    <Loader2 className="w-8 h-8 animate-spin" />
-                  </div>
-                )
-              ) : ( // Fallback for settings or any other panel
-                <div className="flex h-full items-center justify-center p-6 text-center rounded-lg border border-border shadow-sm bg-card">
-                  <Settings className="w-12 h-12 text-muted-foreground mb-3" />
-                  <p className="text-muted-foreground text-sm">
-                    {selectedPanel} settings will be available here. <br/> This section is under construction.
+              ) : selectedPanel === "All Media" && storyData ? (
+                <AllMediaContent
+                  storyData={storyData}
+                  // onSelectItem and onDeleteItem are not props of AllMediaContent
+                  // This component is for displaying draggable media.
+                  // Selection/deletion is handled by TimelineStrip or other interactions.
+                />
+              ) : selectedPanel === "Settings" ? (
+                <div className="p-4">
+                  <h3 className="text-lg font-semibold">Settings</h3>
+                  <p className="text-muted-foreground">
+                    Video settings and preferences will go here.
                   </p>
+                </div>
+              ) : (
+                <div className="flex h-full items-center justify-center text-muted-foreground">
+                  Select an option from the sidebar.
                 </div>
               )}
             </div>
 
-            <div className="flex-1 min-w-0 p-4 overflow-y-auto overflow-x-hidden"> {/* Right Panel: flex-col and items-center removed */}
+            {/* Column 3: Video Preview & Timeline (always visible) */}
+            <div className="w-3/5 flex flex-col p-4 gap-4 overflow-hidden">
               <div className="h-full w-full flex flex-col items-center"> {/* New Inner Wrapper for layout */}
-                <div className="w-full max-w-[800px] aspect-video">
-                  <VideoPreviewArea storyData={storyData} selectedTimelineImage={selectedTimelineImage} className="w-full h-full" />
-                </div>
-                <TimelineStrip
-                  // storyData is still needed for some parts like narration URL, script, etc.
-                  // but the tracks themselves will come from dynamicTimelineTracks
+                <VideoPreviewArea
                   storyData={storyData}
+                  selectedTimelineImage={selectedTimelineImage}
+                  // selectedTimelineItemKey is not a prop of VideoPreviewArea
+                  // dynamicTimelineTracks is not a prop of VideoPreviewArea
+                  // The component uses selectedTimelineImage (index)
+                />
+                {/* <VideoControls /> */} {/* Temporarily removed */}
+                <TimelineStrip
                   timelineTracks={dynamicTimelineTracks}
+                  storyData={storyData}
+                  // onSelectItem is not a direct prop. Selection is handled by TrackLane calling:
                   selectedTimelineImage={selectedTimelineImage}
                   setSelectedTimelineImage={setSelectedTimelineImage}
                   selectedTimelineItemKey={selectedTimelineItemKey}
                   setSelectedTimelineItemKey={setSelectedTimelineItemKey}
+                  setSelectedPanel={setSelectedPanel} // Pass to allow TrackLane to open Edit panel
                   handleDeleteItemFromTimeline={handleDeleteItemFromTimeline}
-                  setSelectedPanel={setSelectedPanel}
+                  // setTracks and setTimelineModified are not props of TimelineStrip.
+                  // Reordering is handled by DndContext in page.tsx.
+                  // TimelineStrip needs other props for its internal logic and for TrackLane:
                   isGeneratingImages={isGeneratingImages}
                   handleGenerateChapterImages={handleGenerateChapterImages}
                   currentChapter={currentChapter}
-                  className="w-full max-w-[800px] mt-4"
-                  handleUpdateItemWidth={handleUpdateItemWidth}
+                  // handleUpdateItemWidth can be passed if TrackLane needs it directly
+                  // For now, assuming TrackLane's existing props are sufficient or it calls parent functions
                 />
               </div>
             </div>
@@ -1077,4 +1117,3 @@ export default function AssembleVideoPage() {
     </DndContext>
   );
 }
-

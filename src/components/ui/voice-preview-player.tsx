@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react'; // Added useCallback
 import { Button } from '@/components/ui/button';
 import { Play, Pause, Volume2, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -13,10 +13,54 @@ interface VoicePreviewPlayerProps {
   size?: 'sm' | 'md' | 'lg';
 }
 
-export function VoicePreviewPlayer({ 
-  audioDataUri, 
-  isLoading = false, 
-  onPlay, 
+// Moved addWavHeaders outside the component as it's a pure utility function
+const addWavHeaders = (pcmData: ArrayBuffer): Blob => {
+  const pcmBytes = pcmData.byteLength;
+  const sampleRate = 24000; // Google TTS uses 24kHz
+  const numChannels = 1; // Mono
+  const bitsPerSample = 16; // 16-bit
+  const bytesPerSample = bitsPerSample / 8;
+  const blockAlign = numChannels * bytesPerSample;
+  const byteRate = sampleRate * blockAlign;
+  
+  // WAV header is 44 bytes
+  const headerSize = 44;
+  const fileSize = headerSize + pcmBytes;
+  
+  const buffer = new ArrayBuffer(fileSize);
+  const view = new DataView(buffer);
+  
+  // RIFF header
+  view.setUint32(0, 0x52494646, false); // "RIFF"
+  view.setUint32(4, fileSize - 8, true); // File size - 8
+  view.setUint32(8, 0x57415645, false); // "WAVE"
+  
+  // fmt chunk
+  view.setUint32(12, 0x666d7420, false); // "fmt "
+  view.setUint32(16, 16, true); // fmt chunk size
+  view.setUint16(20, 1, true); // Audio format (1 = PCM)
+  view.setUint16(22, numChannels, true); // Number of channels
+  view.setUint32(24, sampleRate, true); // Sample rate
+  view.setUint32(28, byteRate, true); // Byte rate
+  view.setUint16(32, blockAlign, true); // Block align
+  view.setUint16(34, bitsPerSample, true); // Bits per sample
+  
+  // data chunk
+  view.setUint32(36, 0x64617461, false); // "data"
+  view.setUint32(40, pcmBytes, true); // Data size
+  
+  // Copy PCM data
+  const dataArray = new Uint8Array(buffer, headerSize);
+  const pcmArray = new Uint8Array(pcmData);
+  dataArray.set(pcmArray);
+  
+  return new Blob([buffer], { type: 'audio/wav' });
+};
+
+export function VoicePreviewPlayer({
+  audioDataUri,
+  isLoading = false,
+  onPlay,
   className,
   size = 'sm'
 }: VoicePreviewPlayerProps) {
@@ -37,6 +81,56 @@ export function VoicePreviewPlayer({
     md: 'h-4 w-4',
     lg: 'h-5 w-5'
   };
+
+  const createWebAudioPlayback = useCallback(async (dataUri: string) => {
+    try {
+      console.log('Converting Google TTS WAV using existing audio converter logic...');
+      
+      // Extract base64 data and convert to ArrayBuffer
+      const base64Data = dataUri.split(',')[1];
+      const arrayBuffer = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0)).buffer;
+      
+      console.log('Decoded arrayBuffer size:', arrayBuffer.byteLength);
+      
+      // Check if this is already a complete WAV file or raw PCM data (same logic as audioConverter)
+      const view = new Uint8Array(arrayBuffer);
+      const isAlreadyWav = view[0] === 0x52 && view[1] === 0x49 && view[2] === 0x46 && view[3] === 0x46; // "RIFF"
+      
+      let wavBlob: Blob;
+      
+      if (isAlreadyWav) {
+        console.log('Audio is already a complete WAV file');
+        wavBlob = new Blob([arrayBuffer], { type: 'audio/wav' });
+      } else {
+        console.log('Converting raw PCM data to WAV format using audioConverter logic');
+        wavBlob = addWavHeaders(arrayBuffer); // addWavHeaders is now stable (defined outside)
+      }
+      
+      const objectUrl = URL.createObjectURL(wavBlob);
+      objectUrlRef.current = objectUrl;
+      
+      console.log('Created WAV blob:', {
+        blobSize: wavBlob.size,
+        blobType: wavBlob.type,
+        wasAlreadyWav: isAlreadyWav
+      });
+      
+      if (audioRef.current) {
+        audioRef.current.src = objectUrl;
+        audioRef.current.load();
+      }
+      
+    } catch (error) {
+      console.error('Audio conversion failed:', error);
+      console.log('Falling back to direct data URI...');
+      
+      // Fallback: try the original data URI
+      if (audioRef.current) {
+        audioRef.current.src = dataUri;
+        audioRef.current.load();
+      }
+    }
+  }, [audioRef, objectUrlRef]); // addWavHeaders is stable, no need to list
 
   useEffect(() => {
     if (audioDataUri && audioRef.current) {
@@ -66,7 +160,7 @@ export function VoicePreviewPlayer({
         audioRef.current.load();
       }
     }
-  }, [audioDataUri]);
+  }, [audioDataUri, createWebAudioPlayback]); // Added createWebAudioPlayback
 
   // Cleanup object URL on unmount
   useEffect(() => {
@@ -102,99 +196,7 @@ export function VoicePreviewPlayer({
     }
   };
 
-  const createWebAudioPlayback = async (dataUri: string) => {
-    try {
-      console.log('Converting Google TTS WAV using existing audio converter logic...');
-      
-      // Extract base64 data and convert to ArrayBuffer
-      const base64Data = dataUri.split(',')[1];
-      const arrayBuffer = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0)).buffer;
-      
-      console.log('Decoded arrayBuffer size:', arrayBuffer.byteLength);
-      
-      // Check if this is already a complete WAV file or raw PCM data (same logic as audioConverter)
-      const view = new Uint8Array(arrayBuffer);
-      const isAlreadyWav = view[0] === 0x52 && view[1] === 0x49 && view[2] === 0x46 && view[3] === 0x46; // "RIFF"
-      
-      let wavBlob: Blob;
-      
-      if (isAlreadyWav) {
-        console.log('Audio is already a complete WAV file');
-        wavBlob = new Blob([arrayBuffer], { type: 'audio/wav' });
-      } else {
-        console.log('Converting raw PCM data to WAV format using audioConverter logic');
-        wavBlob = addWavHeaders(arrayBuffer);
-      }
-      
-      const objectUrl = URL.createObjectURL(wavBlob);
-      objectUrlRef.current = objectUrl;
-      
-      console.log('Created WAV blob:', {
-        blobSize: wavBlob.size,
-        blobType: wavBlob.type,
-        wasAlreadyWav: isAlreadyWav
-      });
-      
-      if (audioRef.current) {
-        audioRef.current.src = objectUrl;
-        audioRef.current.load();
-      }
-      
-    } catch (error) {
-      console.error('Audio conversion failed:', error);
-      console.log('Falling back to direct data URI...');
-      
-      // Fallback: try the original data URI
-      if (audioRef.current) {
-        audioRef.current.src = dataUri;
-        audioRef.current.load();
-      }
-    }
-  };
-
-  // Add WAV headers to raw PCM data from Google TTS (same as audioConverter.ts)
-  const addWavHeaders = (pcmData: ArrayBuffer): Blob => {
-    const pcmBytes = pcmData.byteLength;
-    const sampleRate = 24000; // Google TTS uses 24kHz
-    const numChannels = 1; // Mono
-    const bitsPerSample = 16; // 16-bit
-    const bytesPerSample = bitsPerSample / 8;
-    const blockAlign = numChannels * bytesPerSample;
-    const byteRate = sampleRate * blockAlign;
-    
-    // WAV header is 44 bytes
-    const headerSize = 44;
-    const fileSize = headerSize + pcmBytes;
-    
-    const buffer = new ArrayBuffer(fileSize);
-    const view = new DataView(buffer);
-    
-    // RIFF header
-    view.setUint32(0, 0x52494646, false); // "RIFF"
-    view.setUint32(4, fileSize - 8, true); // File size - 8
-    view.setUint32(8, 0x57415645, false); // "WAVE"
-    
-    // fmt chunk
-    view.setUint32(12, 0x666d7420, false); // "fmt "
-    view.setUint32(16, 16, true); // fmt chunk size
-    view.setUint16(20, 1, true); // Audio format (1 = PCM)
-    view.setUint16(22, numChannels, true); // Number of channels
-    view.setUint32(24, sampleRate, true); // Sample rate
-    view.setUint32(28, byteRate, true); // Byte rate
-    view.setUint16(32, blockAlign, true); // Block align
-    view.setUint16(34, bitsPerSample, true); // Bits per sample
-    
-    // data chunk
-    view.setUint32(36, 0x64617461, false); // "data"
-    view.setUint32(40, pcmBytes, true); // Data size
-    
-    // Copy PCM data
-    const dataArray = new Uint8Array(buffer, headerSize);
-    const pcmArray = new Uint8Array(pcmData);
-    dataArray.set(pcmArray);
-    
-    return new Blob([buffer], { type: 'audio/wav' });
-  };
+  // const createWebAudioPlayback = useCallback(async (dataUri: string) => { ... }); // Moved earlier
 
   const handleTogglePlay = async () => {
     if (!audioDataUri) {

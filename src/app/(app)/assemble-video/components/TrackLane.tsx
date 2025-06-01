@@ -1,11 +1,12 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React from "react"; // Removed useEffect, useState
 import Image from "next/image";
 import { useDroppable } from "@dnd-kit/core";
 import { Button } from "@/components/ui/button";
 import { Check, ImageIcon, Loader2 } from "lucide-react";
 import type { TimelineStripTrack, TimelineStripMediaItem } from "./TimelineStrip"; // Assuming types are exported from TimelineStrip or a shared types file
+import type { GeneratedImage } from "@/types/story"; // Import GeneratedImage
 
 interface TrackLaneProps {
   track: TimelineStripTrack;
@@ -21,7 +22,7 @@ interface TrackLaneProps {
   audioRef: React.RefObject<HTMLAudioElement>;
   duration: number;
   setCurrentTime: (time: number) => void;
-  imagesToShowForAudioSync: any[]; // This is the 'imagesToShow' from TimelineStrip, used for audio sync calculations
+  imagesToShowForAudioSync: GeneratedImage[]; // This is the 'imagesToShow' from TimelineStrip, used for audio sync calculations
   handleUpdateItemWidth?: (itemId: string, width: number) => void;
 }
 
@@ -39,7 +40,7 @@ export default function TrackLane({
   duration,
   setCurrentTime,
   imagesToShowForAudioSync,
-  handleUpdateItemWidth,
+  // handleUpdateItemWidth, // Prop received but not used in this component
 }: TrackLaneProps) {
   const { setNodeRef, isOver } = useDroppable({
     id: track.id,
@@ -109,38 +110,36 @@ export default function TrackLane({
               const shouldDuplicate = numWidth > baseWidth * 1.5;
               const duplicateCount = shouldDuplicate ? Math.max(1, Math.floor(numWidth / baseWidth)) : 1;
 
-              // State for direct editing
-              const [isResizing, setIsResizing] = useState(false);
-              const [startX, setStartX] = useState(0);
-              const [startWidth, setStartWidth] = useState(numWidth);
+              // State for direct editing - Commented out due to React Hook rules violation
+              // const [isResizing, setIsResizing] = useState(false);
+              // const [startX, setStartX] = useState(0);
+              // const [startWidth, setStartWidth] = useState(numWidth);
 
-              // Handle resize start
-              const handleResizeStart = (e: React.MouseEvent) => {
-                e.stopPropagation();
-                e.preventDefault();
-                setIsResizing(true);
-                setStartX(e.clientX);
-                setStartWidth(numWidth);
+              // Handle resize start - Commented out
+              // const handleResizeStart = (e: React.MouseEvent) => {
+              //   e.stopPropagation();
+              //   e.preventDefault();
+              //   setIsResizing(true);
+              //   setStartX(e.clientX);
+              //   setStartWidth(numWidth);
+              //   document.addEventListener('mousemove', handleResizeMove);
+              //   document.addEventListener('mouseup', handleResizeEnd);
+              // };
 
-                // Add document-level event listeners
-                document.addEventListener('mousemove', handleResizeMove);
-                document.addEventListener('mouseup', handleResizeEnd);
-              };
+              // Handle resize move - Commented out
+              // const handleResizeMove = (e: MouseEvent) => {
+              //   if (!isResizing) return;
+              //   const diff = e.clientX - startX;
+              //   const newWidth = Math.max(80, startWidth + diff);
+              //   handleUpdateItemWidth && handleUpdateItemWidth(item.id, newWidth);
+              // };
 
-              // Handle resize move
-              const handleResizeMove = (e: MouseEvent) => {
-                if (!isResizing) return;
-                const diff = e.clientX - startX;
-                const newWidth = Math.max(80, startWidth + diff);
-                handleUpdateItemWidth && handleUpdateItemWidth(item.id, newWidth);
-              };
-
-              // Handle resize end
-              const handleResizeEnd = () => {
-                setIsResizing(false);
-                document.removeEventListener('mousemove', handleResizeMove);
-                document.removeEventListener('mouseup', handleResizeEnd);
-              };
+              // Handle resize end - Commented out
+              // const handleResizeEnd = () => {
+              //   setIsResizing(false);
+              //   document.removeEventListener('mousemove', handleResizeMove);
+              //   document.removeEventListener('mouseup', handleResizeEnd);
+              // };
 
               return (
                 <div
@@ -181,11 +180,11 @@ export default function TrackLane({
                     ))}
                   </div>
 
-                  {/* Resize handle */}
-                  <div
+                  {/* Resize handle - Commented out */}
+                  {/* <div
                     className="absolute top-0 right-0 w-4 h-full cursor-ew-resize opacity-0 group-hover:opacity-100 bg-gradient-to-r from-transparent to-black/20"
                     onMouseDown={handleResizeStart}
-                  />
+                  /> */}
                   {isEffectivelySelected && (
                     <div className="absolute top-1 right-1 bg-primary rounded-full w-4 h-4 flex items-center justify-center z-10">
                       <Check className="w-3 h-3 text-white" />

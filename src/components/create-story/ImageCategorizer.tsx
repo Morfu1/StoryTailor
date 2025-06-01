@@ -1,5 +1,5 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Label } from '@/components/ui/label';
+// import { Label } from '@/components/ui/label'; // Unused
 import { Button } from '@/components/ui/button';
 import { Users, MapPin, Package, Clapperboard, Download } from 'lucide-react';
 import Image from 'next/image';
@@ -8,6 +8,7 @@ import { ImagePopup } from '@/components/ui/image-popup';
 import { useToast } from '@/hooks/use-toast';
 import { categorizeImages, getSceneName } from '@/utils/storyHelpers';
 import type { UseStoryStateReturn } from '@/hooks/useStoryState';
+import type { GeneratedImage } from '@/types/story'; // Import GeneratedImage
 
 interface ImageCategorizerProps {
   storyState: UseStoryStateReturn;
@@ -48,7 +49,7 @@ export function ImageCategorizer({ storyState }: ImageCategorizerProps) {
     }
   };
 
-  const renderImageGrid = (images: any[], title: string, icon: React.ReactNode) => {
+  const renderImageGrid = (images: GeneratedImage[], title: string, icon: React.ReactNode) => {
     if (images.length === 0) {
       return (
         <Card>

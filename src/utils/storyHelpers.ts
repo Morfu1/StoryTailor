@@ -38,7 +38,7 @@ export const extractKeywordsFromText = (text: string): string => {
   return words.slice(0, 6).join(' ').trim();
 };
 
-export const parseNamedPrompts = (rawPrompts: string | undefined, type: 'Character' | 'Item' | 'Location'): ParsedPrompt[] => {
+export const parseNamedPrompts = (rawPrompts: string | undefined): ParsedPrompt[] => {
   if (!rawPrompts) return [];
   
   // Normalize escaped newlines to actual newlines
@@ -103,9 +103,9 @@ export const categorizeImages = (storyData: Story) => {
   console.log('Total generatedImages:', storyData.generatedImages.length);
 
   // Get parsed prompts from step 2
-  const characterPrompts = parseNamedPrompts(storyData.detailsPrompts?.characterPrompts, 'Character');
-  const locationPrompts = parseNamedPrompts(storyData.detailsPrompts?.locationPrompts, 'Location');
-  const itemPrompts = parseNamedPrompts(storyData.detailsPrompts?.itemPrompts, 'Item');
+  const characterPrompts = parseNamedPrompts(storyData.detailsPrompts?.characterPrompts);
+  const locationPrompts = parseNamedPrompts(storyData.detailsPrompts?.locationPrompts);
+  const itemPrompts = parseNamedPrompts(storyData.detailsPrompts?.itemPrompts);
 
   console.log('Character prompts:', characterPrompts.map(p => p.description));
   console.log('Location prompts:', locationPrompts.map(p => p.description));
@@ -267,7 +267,7 @@ export const determineCurrentStep = (storyData: Story): number => {
 
 // Helper function to estimate duration from MP3 data URI (client-side)
 export const getMp3DurationFromDataUriClient = (dataUri: string): Promise<number> => {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     if (!dataUri.startsWith('data:audio/mpeg;base64,')) {
       console.warn('Cannot estimate duration: Not an MP3 data URI.');
       resolve(30); // Default duration

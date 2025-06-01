@@ -17,10 +17,10 @@ interface EditTimelineItemPanelContentProps {
   handleEditGenerate: () => Promise<void>;
   isEditingImage: boolean;
   handleRevertToHistory: (historyIndex: number) => Promise<void>;
-  handleUpdateItemWidth?: (width: number) => void;
-  handleUpdateItemMargin?: (margin: number) => void;
-  selectedItemWidth?: number;
-  selectedItemMargin?: number;
+  // handleUpdateItemWidth?: (width: number) => void; // Unused
+  // handleUpdateItemMargin?: (margin: number) => void; // Unused
+  // selectedItemWidth?: number; // Unused
+  // selectedItemMargin?: number; // Unused
 }
 
 export default function EditTimelineItemPanelContent({
@@ -31,10 +31,10 @@ export default function EditTimelineItemPanelContent({
   handleEditGenerate,
   isEditingImage,
   handleRevertToHistory,
-  handleUpdateItemWidth,
-  handleUpdateItemMargin,
-  selectedItemWidth = 120,
-  selectedItemMargin = 0,
+  // handleUpdateItemWidth, // Unused
+  // handleUpdateItemMargin, // Unused
+  // selectedItemWidth = 120, // Unused
+  // selectedItemMargin = 0, // Unused
 }: EditTimelineItemPanelContentProps) {
   if (selectedTimelineImage === null || !storyData?.generatedImages?.[selectedTimelineImage]) {
     return (

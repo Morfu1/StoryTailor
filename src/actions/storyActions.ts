@@ -6,69 +6,32 @@ import { z } from 'zod';
 
 // Import Input/Output schemas from the original flow files - STATIC IMPORTS
 import {
-  GenerateCharacterPromptsInputSchema as AICharacterPromptsInputSchemaOriginal,
-  GenerateCharacterPromptsOutputSchema as AICharacterPromptsOutputSchemaOriginal
-} from '@/ai/flows/generate-character-prompts-types';
-
-import {
-  GenerateImagePromptsInputSchema as AIImagePromptsInputSchemaOriginal,
-  GenerateImagePromptsOutputSchema as AIImagePromptsOutputSchemaOriginal
-} from '@/ai/flows/generate-image-prompts-types';
-
-import {
-  GenerateNarrationAudioInputSchema as AINarrationAudioInputSchemaFlow, // Renaming to match schema convention
-  GenerateNarrationAudioOutputSchema as AINarrationAudioOutputSchemaFlow, // Renaming to match schema convention
   type GenerateNarrationAudioInput as AINarrationAudioInputType,
   type GenerateNarrationAudioOutput as AINarrationAudioOutputType
 } from '@/ai/flows/generate-narration-audio-types';
 
+// Removed Original and ServerSchema imports as they are unused or superseded
 
 import {
-  GenerateScriptInputSchema as AIScriptInputSchemaOriginal,
-  GenerateScriptOutputSchema as AIScriptOutputSchemaOriginal
-} from '@/ai/flows/generate-script-types';
-
-import {
-  GenerateTitleInputSchema as AITitleInputSchemaOriginal,
-  GenerateTitleOutputSchema as AITitleOutputSchemaOriginal
-} from '@/ai/flows/generate-title-types';
-
-import {
-  GenerateScriptChunksInputSchema as AIScriptChunksInputSchemaOriginal,
-  GenerateScriptChunksOutputSchema as AIScriptChunksOutputSchemaOriginal
-} from '@/ai/flows/generate-script-chunks-types';
-
-import {
-  AITitleInputSchema,
   AITitleOutputSchema,
-  GenerateTitleInputServerSchema,
   type GenerateTitleInput,
-  AIScriptInputSchema,
   AIScriptOutputSchema,
-  GenerateScriptInputServerSchema,
   type GenerateScriptInput,
-  AICharacterPromptsInputSchema,
   AICharacterPromptsOutputSchema,
-  GenerateCharacterPromptsInputServerSchema,
   type GenerateCharacterPromptsInput,
-  AIImagePromptsInputSchema,
   AIImagePromptsOutputSchema,
-  GenerateImagePromptsInputServerSchema,
   type GenerateImagePromptsInput,
-  AIScriptChunksInputSchema,
   AIScriptChunksOutputSchema,
-  GenerateScriptChunksInputServerSchema,
   type GenerateScriptChunksInput
 } from './storyActionSchemas';
 
 
-import { firebaseAdmin, dbAdmin } from '@/lib/firebaseAdmin';
-import type { Story, ElevenLabsVoice, GeneratedImage } from '@/types/story';
-import type { Timestamp as AdminTimestamp } from 'firebase-admin/firestore';
-// import { getStorage as getAdminStorage } from 'firebase-admin/storage'; Removed unused import
-import { revalidatePath } from 'next/cache';
+// import { firebaseAdmin, dbAdmin } from '@/lib/firebaseAdmin'; // Unused based on lint
+import type { ElevenLabsVoice } from '@/types/story'; // Story, GeneratedImage, AdminTimestamp might be used later
+// import type { Timestamp as AdminTimestamp } from 'firebase-admin/firestore'; // Unused based on lint
+// import { revalidatePath } from 'next/cache'; // Unused based on lint
 import { getUserApiKeys } from './apiKeyActions';
-import type { UserApiKeys } from '@/types/apiKeys';
+// import type { UserApiKeys } from '@/types/apiKeys'; // Unused based on lint
 import { 
   uploadAudioToFirebaseStorage, 
   uploadImageToFirebaseStorage, 
@@ -324,7 +287,7 @@ export async function generateCharacterPrompts(input: GenerateCharacterPromptsIn
     if (input.imageStyleId) {
       try {
         const { getStylePromptForProvider } = await import('@/utils/imageStyleUtils');
-        stylePromptText = getStylePromptForProvider(input.imageStyleId as any, input.imageProvider || 'picsart');
+        stylePromptText = getStylePromptForProvider(input.imageStyleId as string, input.imageProvider || 'picsart');
       } catch (error) {
         console.warn('Failed to get style prompt for character generation:', error);
       }
@@ -621,9 +584,9 @@ export async function generateScriptChunks(input: GenerateScriptChunksInput): Pr
 }
 
 
-interface FirebaseErrorWithCode extends Error {
-  code?: string;
-}
+// interface FirebaseErrorWithCode extends Error { // ESLint: defined but never used
+//   code?: string;
+// }
 
 
 export async function generateImageFromGemini(
@@ -693,9 +656,10 @@ export async function generateImageFromGemini(
       }
     }
     return { success: true, imageUrl: `data:image/png;base64,${imageData}`, requestPrompt };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Error calling Gemini API:", error);
-    return { success: false, error: error.message || "An unknown error occurred while generating the image.", requestPrompt };
+    const message = error instanceof Error ? error.message : "An unknown error occurred while generating the image.";
+    return { success: false, error: message, requestPrompt };
   }
 }
 
@@ -723,13 +687,14 @@ export async function generateImageFromImagen3(
           const entityNames = extractEntityNames(storyResult.data);
           let placeholderDescriptions = "";
           for (const ref of entityReferences) {
-            const entityName = ref.substring(1).trim();
+            // const entityName = ref.substring(1).trim(); // Unused
             let actualEntityName: string | null = null;
             let entityType: 'character' | 'item' | 'location' | null = null;
             for (const characterName of entityNames.characters) { if (nameToReference(characterName) === ref) { actualEntityName = characterName; entityType = 'character'; break; } }
             if (!actualEntityName) { for (const itemName of entityNames.items) { if (nameToReference(itemName) === ref) { actualEntityName = itemName; entityType = 'item'; break; } } }
             if (!actualEntityName) { for (const locationName of entityNames.locations) { if (nameToReference(locationName) === ref) { actualEntityName = locationName; entityType = 'location'; break; } } }
             if (actualEntityName && entityType) {
+              // const entityName = actualEntityName; // entityName was assigned but never used.
               const promptsSection = entityType === 'character' ? storyResult.data.detailsPrompts?.characterPrompts || '' : entityType === 'item' ? storyResult.data.detailsPrompts?.itemPrompts || '' : storyResult.data.detailsPrompts?.locationPrompts || '';
               const entityPattern = new RegExp(actualEntityName.replace(/[.*+?^${}()|[\]\\]/g, '\\\\$&') + "\\\\s*\\\\n+(.*?)(?=\\\\n\\\\n|$)", "s");
               const entityMatch = promptsSection.match(entityPattern);
@@ -747,7 +712,7 @@ export async function generateImageFromImagen3(
   if (styleId) {
     try {
       const { applyStyleToPrompt } = await import('@/utils/imageStyleUtils');
-      requestPrompt = applyStyleToPrompt(requestPrompt || originalPrompt, styleId as any, 'imagen3');
+      requestPrompt = applyStyleToPrompt(requestPrompt || originalPrompt, styleId as string, 'imagen3');
     } catch (error) { console.warn("[generateImageFromImagen3] Failed to apply style:", error); }
   } else if (userId && storyId) {
     try {
@@ -755,7 +720,7 @@ export async function generateImageFromImagen3(
       const storyResult = await getStory(storyId, userId);
       if (storyResult.success && storyResult.data?.imageStyleId) {
         const { applyStyleToPrompt } = await import('@/utils/imageStyleUtils');
-        requestPrompt = applyStyleToPrompt(requestPrompt || originalPrompt, storyResult.data.imageStyleId as any, 'imagen3');
+        requestPrompt = applyStyleToPrompt(requestPrompt || originalPrompt, storyResult.data.imageStyleId as string, 'imagen3');
       }
     } catch (error) { console.warn("[generateImageFromImagen3] Failed to apply style from story:", error); }
   }
@@ -799,9 +764,10 @@ export async function generateImageFromImagen3(
       }
     }
     return { success: true, imageUrl: `data:image/png;base64,${imageData}`, requestPrompt };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Error calling Imagen 3 API:", error);
-    return { success: false, error: error.message || "An unknown error occurred while generating the image.", requestPrompt };
+    const message = error instanceof Error ? error.message : "An unknown error occurred while generating the image.";
+    return { success: false, error: message, requestPrompt };
   }
 }
 
@@ -842,7 +808,7 @@ export async function generateImageFromPrompt(
   if (styleId) {
     try {
       const { applyStyleToPrompt } = await import('@/utils/imageStyleUtils');
-      finalPrompt = applyStyleToPrompt(finalPrompt, styleId as any, provider);
+      finalPrompt = applyStyleToPrompt(finalPrompt, styleId as string, provider);
     } catch (error) { console.warn("Failed to apply style:", error); }
   } else if (userId && storyId) {
     try {
@@ -850,7 +816,7 @@ export async function generateImageFromPrompt(
       const storyResult = await getStory(storyId, userId);
       if (storyResult.success && storyResult.data?.imageStyleId) {
         const { applyStyleToPrompt } = await import('@/utils/imageStyleUtils');
-        finalPrompt = applyStyleToPrompt(finalPrompt, storyResult.data.imageStyleId as any, provider);
+        finalPrompt = applyStyleToPrompt(finalPrompt, storyResult.data.imageStyleId as string, provider);
       }
     } catch (error) { console.warn("Failed to apply style from story:", error); }
   }
@@ -870,8 +836,8 @@ export async function generateImageFromPrompt(
     const responseText = await response.text();
     if (!response.ok) {
       console.error("PicsArt API Error Response Text:", responseText);
-      let errorData;
-      try { errorData = JSON.parse(responseText); } catch (e) { errorData = { message: `PicsArt API request failed with status ${response.status}. Response: ${responseText}` }; }
+      let errorData: { message?: string; title?: string; };
+      try { errorData = JSON.parse(responseText); } catch { errorData = { message: `PicsArt API request failed with status ${response.status}. Response: ${responseText}` }; }
       return { success: false, error: errorData.message || errorData.title || `PicsArt API request failed: ${response.status}`, requestPrompt };
     }
 
@@ -907,9 +873,10 @@ export async function generateImageFromPrompt(
       const errorDetail = `Status: ${response.status}, Body: ${JSON.stringify(result)}`;
       return { success: false, error: `Unexpected response format from PicsArt API after POST. Details: ${errorDetail}`, requestPrompt };
     }
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Error calling PicsArt API:", error);
-    return { success: false, error: error.message || "An unknown error occurred while generating the image.", requestPrompt };
+    const message = error instanceof Error ? error.message : "An unknown error occurred while generating the image.";
+    return { success: false, error: message, requestPrompt };
   }
 }
 
@@ -926,7 +893,9 @@ async function pollForPicsArtImage(
       const response = await fetch(pollingUrl, { method: "GET", headers: { "x-picsart-api-key": apiKey } });
       const responseText = await response.text();
       let result;
-      try { result = JSON.parse(responseText); } catch (e) {
+      try {
+        result = JSON.parse(responseText);
+      } catch {
         if (response.status === 202 && attempt < maxAttempts) { await new Promise(resolve => setTimeout(resolve, delayMs)); continue; }
         return { success: false, error: `PicsArt Polling: Failed to parse JSON. Status: ${response.status}, Body: ${responseText}`, requestPrompt };
       }
@@ -942,8 +911,11 @@ async function pollForPicsArtImage(
       } else {
         return { success: false, error: `PicsArt Polling: Request failed with status ${response.status}. Details: ${JSON.stringify(result)}`, requestPrompt };
       }
-    } catch (error: any) {
-      if (attempt >= maxAttempts) { return { success: false, error: `PicsArt Polling: Error after multiple attempts: ${error.message}`, requestPrompt }; }
+    } catch (error: unknown) {
+      if (attempt >= maxAttempts) {
+        const message = error instanceof Error ? error.message : "PicsArt Polling: Error after multiple attempts";
+        return { success: false, error: message, requestPrompt };
+      }
       await new Promise(resolve => setTimeout(resolve, delayMs));
     }
   }

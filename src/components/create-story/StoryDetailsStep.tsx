@@ -1,13 +1,13 @@
-
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Users, Loader2, Edit2, RefreshCw, Settings } from 'lucide-react'; // Added Settings
+import { Users, Loader2, Edit2, RefreshCw } from 'lucide-react'; // Removed Settings
 import Link from 'next/link'; // Added Link
-import { generateCharacterPrompts, saveStory } from '@/actions/storyActions';
+import { generateCharacterPrompts } from '@/actions/storyActions';
+import { saveStory } from '@/actions/firestoreStoryActions'; // Corrected import path
 import { useToast } from '@/hooks/use-toast';
 import type { UseStoryStateReturn } from '@/hooks/useStoryState';
 import type { StoryCharacterLocationItemPrompts } from '@/types/story';
@@ -374,4 +374,3 @@ export function StoryDetailsStep({ storyState }: StoryDetailsStepProps) {
     </Card>
   );
 }
-

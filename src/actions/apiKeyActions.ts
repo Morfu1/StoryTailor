@@ -2,7 +2,7 @@
 "use server";
 
 import type { UserApiKeys } from '@/types/apiKeys';
-import { firebaseAdmin, dbAdmin } from '@/lib/firebaseAdmin';
+import { dbAdmin } from '@/lib/firebaseAdmin';
 
 export async function saveUserApiKeys(userId: string, apiKeys: UserApiKeys): Promise<{ success: boolean; error?: string }> {
   if (!dbAdmin) {
@@ -22,21 +22,24 @@ export async function saveUserApiKeys(userId: string, apiKeys: UserApiKeys): Pro
     await apiKeyRef.set(apiKeys, { merge: true });
     console.log(`[saveUserApiKeys] Successfully saved API keys for userId: ${userId}`);
     return { success: true };
-  } catch (error: any) { // Catch as 'any' to access error.message and error.code
+  } catch (error: unknown) { // Catch as 'unknown' for better type safety
     console.error(`[saveUserApiKeys] Error saving API keys for userId: ${userId}. Error:`, error);
     let errorMessage = "Failed to save API keys.";
-    if (error.message) {
+    if (error instanceof Error) {
       errorMessage += ` Details: ${error.message}`;
-    }
-    if (error.code) {
-      errorMessage += ` (Code: ${error.code})`;
-    }
-    // Specific check for common permission issues
-    if (error.code === 7 || (error.message && error.message.toLowerCase().includes('permission denied'))) {
-        errorMessage = "Failed to save API keys due to a permission issue on the server. Please check the service account permissions for Firestore.";
-        console.error("[saveUserApiKeys] Potential permission issue. Ensure the service account has 'Cloud Datastore User' or equivalent Firestore write permissions.");
-    } else if (error.message && error.message.toLowerCase().includes('offline')) {
-        errorMessage = "Failed to save API keys. The server appears to be offline or unable to reach Firestore. Please check server connectivity and Firebase status.";
+      // Check for a 'code' property if it's a FirebaseError or similar
+      if ('code' in error && error.code) {
+        errorMessage += ` (Code: ${error.code})`;
+        // Specific check for common permission issues
+        if (error.code === 7 || (error.message && error.message.toLowerCase().includes('permission denied'))) {
+            errorMessage = "Failed to save API keys due to a permission issue on the server. Please check the service account permissions for Firestore.";
+            console.error("[saveUserApiKeys] Potential permission issue. Ensure the service account has 'Cloud Datastore User' or equivalent Firestore write permissions.");
+        }
+      } else if (error.message && error.message.toLowerCase().includes('offline')) {
+          errorMessage = "Failed to save API keys. The server appears to be offline or unable to reach Firestore. Please check server connectivity and Firebase status.";
+      }
+    } else {
+        errorMessage += " An unknown error occurred.";
     }
     
     return { success: false, error: errorMessage };
@@ -61,19 +64,21 @@ export async function getUserApiKeys(userId: string): Promise<{ success: boolean
       return { success: true, data: docSnap.data() as UserApiKeys };
     } else {
       // It's not an error if no keys are found, just return an empty object.
-      return { success: true, data: {} }; 
+      return { success: true, data: {} };
     }
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error(`[getUserApiKeys] Error fetching API keys for userId: ${userId}. Error:`, error);
     let errorMessage = "Failed to fetch API keys.";
-    if (error.message) {
+    if (error instanceof Error) {
       errorMessage += ` Details: ${error.message}`;
-    }
-    if (error.code) {
-      errorMessage += ` (Code: ${error.code})`;
-    }
-     if (error.code === 7 || (error.message && error.message.toLowerCase().includes('permission denied'))) {
-        errorMessage = "Failed to fetch API keys due to a permission issue on the server. Please check the service account permissions for Firestore.";
+      if ('code' in error && error.code) {
+        errorMessage += ` (Code: ${error.code})`;
+        if (error.code === 7 || (error.message && error.message.toLowerCase().includes('permission denied'))) {
+          errorMessage = "Failed to fetch API keys due to a permission issue on the server. Please check the service account permissions for Firestore.";
+        }
+      }
+    } else {
+        errorMessage += " An unknown error occurred.";
     }
     return { success: false, error: errorMessage };
   }

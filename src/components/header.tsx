@@ -1,7 +1,7 @@
 "use client";
 
 import { signOut } from 'firebase/auth';
-import { LogOut, UserCircle, Settings, Loader2, LayoutDashboard, PlusCircle, CreditCard } from 'lucide-react';
+import { LogOut, UserCircle, Settings, Loader2, LayoutDashboard, PlusCircle } from 'lucide-react'; // Removed CreditCard
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
@@ -41,7 +41,7 @@ export function Header() {
       await signOut(auth);
       toast({ title: 'Logged Out', description: 'You have been successfully logged out.' });
       router.push('/login');
-    } catch (error) {
+    } catch { // _error variable unused
       toast({ title: 'Logout Failed', description: 'Could not log out. Please try again.', variant: 'destructive' });
     }
   };

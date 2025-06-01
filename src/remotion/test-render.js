@@ -1,7 +1,7 @@
 // Test script for Remotion rendering - images only
-const { exec } = require('child_process');
-const path = require('path');
-const fs = require('fs');
+import { exec } from 'child_process';
+import path from 'path';
+import fs from 'fs';
 
 // Ensure output directory exists
 const outputDir = path.join(__dirname, '../../public/test');

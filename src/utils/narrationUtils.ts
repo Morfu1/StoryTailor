@@ -10,7 +10,7 @@ import { generateScriptChunks as aiGenerateScriptChunks } from '@/actions/storyA
  * @param targetChunks Optional: This parameter might be used by the AI as a hint, but the AI will ultimately decide the chunks.
  * @returns Promise resolving to an array of NarrationChunk objects.
  */
-export async function prepareScriptChunksAI(script: string, userId: string, targetChunks?: number): Promise<NarrationChunk[]> {
+export async function prepareScriptChunksAI(script: string, userId: string): Promise<NarrationChunk[]> {
   if (!script) return [];
 
   try {
@@ -41,7 +41,7 @@ export async function prepareScriptChunksAI(script: string, userId: string, targ
   }
 }
 
-export function prepareScriptChunksSimple(script: string, targetChunks?: number): NarrationChunk[] {
+export function prepareScriptChunksSimple(script: string): NarrationChunk[] {
   if (!script) return [];
   const textChunks = script.split('. ').map(s => s.trim()).filter(s => s.length > 0);
   return textChunks.map((text, index) => ({

@@ -1,4 +1,4 @@
-import type { Timestamp } from 'firebase/firestore';
+import type { Timestamp, FieldValue } from 'firebase/firestore';
 import type { ImageStyleId } from './imageStyles';
 
 export interface StoryCharacterLocationItemPrompts {
@@ -19,6 +19,7 @@ export interface GeneratedImage {
   history?: {
     imageUrl: string;
     originalPrompt: string;
+    expandedPrompt?: string; // The full prompt with all @Entity references expanded
     timestamp: Date;
   }[]; // To store previous versions of this image
 }
@@ -88,9 +89,10 @@ export interface Story {
   actionPrompts?: ActionPrompt[]; // Action prompts for future use
   imageStyleId?: ImageStyleId; // Selected image generation style
   timelineTracks?: PageTimelineTrack[]; // To store the state of the timeline
+  imageProvider?: string; // e.g., "picsart", "stability"
   // videoUrl?: string; // For future video assembly
-  createdAt?: Timestamp | Date; // Stored as Firestore Timestamp, hydrated as Date
-  updatedAt?: Timestamp | Date; // Stored as Firestore Timestamp, hydrated as Date
+  createdAt?: Timestamp | Date | FieldValue; // Stored as Firestore Timestamp or FieldValue, hydrated as Date
+  updatedAt?: Timestamp | Date | FieldValue; // Stored as Firestore Timestamp or FieldValue, hydrated as Date
   
   // New fields for chunked narration
   scriptChunks?: string[]; // The script split into chunks for narration

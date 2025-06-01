@@ -1,8 +1,8 @@
 "use client";
 
-const React = require('react');
-const { Composition } = require('remotion');
-const { StoryVideoComponent } = require('./StoryVideo');
+import React from 'react';
+import { Composition } from 'remotion';
+import { StoryVideoComponent } from './StoryVideo';
 
 // Root component for Remotion
 const RemotionRoot = () => {
@@ -28,4 +28,4 @@ const RemotionRoot = () => {
   );
 };
 
-module.exports = { RemotionRoot };
+export { RemotionRoot };

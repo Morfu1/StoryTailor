@@ -53,12 +53,16 @@ if (!admin.apps.length) {
         console.error(`[firebaseAdmin] CRITICAL (Manual Key Parse): Service account key file NOT FOUND at "${absoluteKeyPath}".`);
         // This will prevent initialization if key file is mandatory
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       adminApp = undefined;
       console.error('[firebaseAdmin] CRITICAL ERROR (Manual Key Parse) during Firebase Admin SDK initializeApp() or key parsing:');
-      console.error(`  Error Type: ${error.name}`);
-      console.error(`  Error Message: ${error.message}`);
-      if (error.stack) console.error(`  Stack Trace: ${error.stack}`);
+      if (error instanceof Error) {
+        console.error(`  Error Type: ${error.name}`);
+        console.error(`  Error Message: ${error.message}`);
+        if (error.stack) console.error(`  Stack Trace: ${error.stack}`);
+      } else {
+        console.error(`  Error: ${String(error)}`);
+      }
       console.error('[firebaseAdmin] RESULT (Manual Key Parse): Firebase Admin SDK initialization FAILED. \`dbAdmin\` will be undefined.');
     }
   } else {
@@ -82,12 +86,16 @@ if (adminApp) {
     console.log(`[firebaseAdmin] INFO (Manual Key Parse): Attempting to get Firestore Admin instance for database ID: "${databaseId}" using app: "${adminApp.name}".`);
     dbAdmin = getAdminFirestore(adminApp, databaseId);
     console.log(`[firebaseAdmin] SUCCESS (Manual Key Parse): Firestore Admin SDK instance for "${databaseId}" (dbAdmin) obtained.`);
-  } catch (error: any) {
+  } catch (error: unknown) {
     dbAdmin = undefined;
     console.error(`[firebaseAdmin] CRITICAL ERROR (Manual Key Parse) obtaining Firestore Admin instance for database "${databaseId}":`);
-    console.error(`  Error Type: ${error.name}`);
-    console.error(`  Error Message: ${error.message}`);
-    if (error.stack) console.error(`  Stack Trace: ${error.stack}`);
+    if (error instanceof Error) {
+      console.error(`  Error Type: ${error.name}`);
+      console.error(`  Error Message: ${error.message}`);
+      if (error.stack) console.error(`  Stack Trace: ${error.stack}`);
+    } else {
+      console.error(`  Error: ${String(error)}`);
+    }
     console.error(`[firebaseAdmin] RESULT (Manual Key Parse): Creation of dbAdmin for database "${databaseId}" FAILED.`);
   }
 } else {

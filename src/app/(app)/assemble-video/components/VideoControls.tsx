@@ -41,8 +41,8 @@ export default function VideoControls({ storyData }: VideoControlsProps) {
       </div>
       <span className="text-sm text-muted-foreground">
         0:00 /{" "}
-        {(storyData as any)?.narrationAudioDurationSeconds
-          ? (((storyData as any).narrationAudioDurationSeconds / 60)
+        {typeof storyData?.narrationAudioDurationSeconds === 'number'
+          ? ((storyData.narrationAudioDurationSeconds / 60)
               .toFixed(2)
               .replace(".", ":"))
           : "3:59"}{" "}

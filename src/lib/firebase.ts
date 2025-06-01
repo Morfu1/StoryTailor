@@ -3,12 +3,12 @@ import { getAuth, type Auth } from 'firebase/auth';
 import {
   getFirestore,
   type Firestore,
-  connectFirestoreEmulator,
+  // connectFirestoreEmulator, // Unused
   initializeFirestore,
   persistentLocalCache,
   persistentMultipleTabManager
 } from 'firebase/firestore';
-import { getStorage, type FirebaseStorage, connectStorageEmulator } from 'firebase/storage';
+import { getStorage, type FirebaseStorage } from 'firebase/storage'; // Removed connectStorageEmulator
 
 // For Firebase JS SDK v7.20.0 and later, measurementId is optional
 // It's crucial to use environment variables for Firebase config in a real application.

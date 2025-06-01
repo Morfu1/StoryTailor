@@ -3,7 +3,7 @@
 import React from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+// import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"; // Unused imports
 import { ArrowLeft, SidebarClose, LucideIcon } from "lucide-react";
 
 interface SidebarNavItem {

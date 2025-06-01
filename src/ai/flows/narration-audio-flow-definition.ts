@@ -58,7 +58,7 @@ export const generateNarrationAudioFlow = ai.defineFlow(
         if (!response.ok) {
           const errorBodyText = await response.text();
           let errorDetail = errorBodyText;
-          try { const errorJson = JSON.parse(errorBodyText); errorDetail = errorJson.error?.message || errorBodyText; } catch (e) { /* ignore */ }
+          try { const errorJson = JSON.parse(errorBodyText); errorDetail = errorJson.error?.message || errorBodyText; } catch { /* ignore */ }
           return { error: `Google TTS API error: ${response.status} - ${errorDetail}` };
         }
 

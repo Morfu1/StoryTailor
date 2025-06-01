@@ -1,6 +1,6 @@
 // This file is the entry point for Remotion rendering
-const { registerRoot } = require('remotion');
-const { RemotionRoot } = require('./Root.jsx');
+import { registerRoot } from 'remotion';
+import { RemotionRoot } from './Root.jsx';
 
 // Register the root component
 registerRoot(RemotionRoot);

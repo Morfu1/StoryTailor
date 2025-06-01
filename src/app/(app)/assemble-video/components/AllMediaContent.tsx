@@ -53,8 +53,8 @@ export default function AllMediaContent({ storyData }: AllMediaContentProps) {
     (img): img is GeneratedImage => !!img && img.isChapterGenerated === true,
   );
   const narrationAudioUrl =
-    (storyData as any).narrationAudioUrl ||
-    (storyData as any).detailsPrompts?.narrationAudioUrl;
+    storyData.narrationAudioUrl ||
+    (storyData.detailsPrompts as { narrationAudioUrl?: string })?.narrationAudioUrl;
 
   return (
     <div className="h-full">
@@ -125,14 +125,14 @@ export default function AllMediaContent({ storyData }: AllMediaContentProps) {
                 <audio controls src={narrationAudioUrl} className="w-full h-10">
                   Your browser does not support the audio element.
                 </audio>
-                {(storyData as any).narrationAudioDurationSeconds && (
+                {typeof storyData.narrationAudioDurationSeconds === 'number' && (
                   <p className="text-xs text-muted-foreground mt-1">
                     Duration:{" "}
                     {Math.floor(
-                      (storyData as any).narrationAudioDurationSeconds / 60,
+                      (storyData.narrationAudioDurationSeconds) / 60,
                     )}
                     :
-                    {((storyData as any).narrationAudioDurationSeconds % 60)
+                    {(storyData.narrationAudioDurationSeconds % 60)
                       .toString()
                       .padStart(2, "0")}
                   </p>
@@ -152,8 +152,8 @@ export default function AllMediaContent({ storyData }: AllMediaContentProps) {
             <div className="p-6 border border-dashed rounded-md bg-muted/20 text-center">
               <Music className="w-10 h-10 text-muted-foreground/40 mx-auto mb-2" />
               <p className="text-sm text-muted-foreground">
-                Display for individual sound effects (e.g., "glow", "steps on
-                path") will be implemented here once the data structure is
+                Display for individual sound effects (e.g., &quot;glow&quot;, &quot;steps on
+                path&quot;) will be implemented here once the data structure is
                 available.
               </p>
               <p className="text-xs text-muted-foreground mt-1">

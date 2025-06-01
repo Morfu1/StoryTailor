@@ -10,10 +10,10 @@ import {
   staticFile,
   Sequence,
   useCurrentFrame,
-  useVideoConfig,
+  // useVideoConfig, // Unused
 } from 'remotion';
 import { NarrationChunk } from '@/types/narration';
-import { GeneratedImage } from '@/types/story'; // Keep GeneratedImage for inputProps if it's still used there initially
+// import { GeneratedImage } from '@/types/story'; // Unused
 
 // Define LocalImageWithMetadata (ideally import from a shared types file like src/types/story.ts)
 interface LocalImageWithMetadata {
@@ -243,7 +243,7 @@ const calculateTotalDuration = (scenes: SceneData[]): number => {
 const imageSrcCache = new Map<string, string>();
 
 // Individual Scene component - memoized for performance
-const Scene = memo(({ image, index }: { image: string; index: number }) => {
+const SceneComponent = ({ image, index }: { image: string; index: number }) => {
   const frame = useCurrentFrame();
 
   // Memoize fade-in calculation
@@ -297,6 +297,7 @@ const Scene = memo(({ image, index }: { image: string; index: number }) => {
         opacity,
       }}
     >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src={getImageSrc()}
         style={{
@@ -305,58 +306,60 @@ const Scene = memo(({ image, index }: { image: string; index: number }) => {
           objectFit: 'contain',
         }}
         alt={`Scene ${index + 1}`}
-        onError={(e) => {
+        onError={() => {
           console.error(`Failed to load image ${image} for scene ${index}`);
         }}
       />
     </AbsoluteFill>
   );
-});
+};
+SceneComponent.displayName = 'Scene';
+const Scene = memo(SceneComponent);
 
 // Function to get image dimensions from URL for resolution optimization
-const getImageDimensionsFromUrl = async (imageUrl: string): Promise<{ width: number; height: number } | null> => {
-  try {
-    if (!imageUrl || imageUrl === 'placeholder') return null;
+// const getImageDimensionsFromUrl = async (imageUrl: string): Promise<{ width: number; height: number } | null> => {
+//   try {
+//     if (!imageUrl || imageUrl === 'placeholder') return null;
     
-    // Only process HTTP URLs (not data URLs or static files)
-    if (!imageUrl.startsWith('http')) return null;
+//     // Only process HTTP URLs (not data URLs or static files)
+//     if (!imageUrl.startsWith('http')) return null;
     
-    const response = await fetch(imageUrl);
-    if (!response.ok) return null;
+//     const response = await fetch(imageUrl);
+//     if (!response.ok) return null;
     
-    const buffer = await response.arrayBuffer();
-    const uint8Array = new Uint8Array(buffer);
+//     const buffer = await response.arrayBuffer();
+//     const uint8Array = new Uint8Array(buffer);
     
-    // Check for JPEG
-    if (uint8Array[0] === 0xFF && uint8Array[1] === 0xD8) {
-      for (let i = 2; i < uint8Array.length - 8; i++) {
-        if (uint8Array[i] === 0xFF) {
-          const marker = uint8Array[i + 1];
-          if (marker === 0xC0 || marker === 0xC1 || marker === 0xC2) {
-            const height = (uint8Array[i + 5] << 8) | uint8Array[i + 6];
-            const width = (uint8Array[i + 7] << 8) | uint8Array[i + 8];
-            return { width, height };
-          }
-        }
-      }
-    }
+//     // Check for JPEG
+//     if (uint8Array[0] === 0xFF && uint8Array[1] === 0xD8) {
+//       for (let i = 2; i < uint8Array.length - 8; i++) {
+//         if (uint8Array[i] === 0xFF) {
+//           const marker = uint8Array[i + 1];
+//           if (marker === 0xC0 || marker === 0xC1 || marker === 0xC2) {
+//             const height = (uint8Array[i + 5] << 8) | uint8Array[i + 6];
+//             const width = (uint8Array[i + 7] << 8) | uint8Array[i + 8];
+//             return { width, height };
+//           }
+//         }
+//       }
+//     }
     
-    // Check for PNG
-    if (uint8Array[0] === 0x89 && uint8Array[1] === 0x50 && uint8Array[2] === 0x4E && uint8Array[3] === 0x47) {
-      const width = (uint8Array[16] << 24) | (uint8Array[17] << 16) | (uint8Array[18] << 8) | uint8Array[19];
-      const height = (uint8Array[20] << 24) | (uint8Array[21] << 16) | (uint8Array[22] << 8) | uint8Array[23];
-      return { width, height };
-    }
+//     // Check for PNG
+//     if (uint8Array[0] === 0x89 && uint8Array[1] === 0x50 && uint8Array[2] === 0x4E && uint8Array[3] === 0x47) {
+//       const width = (uint8Array[16] << 24) | (uint8Array[17] << 16) | (uint8Array[18] << 8) | uint8Array[19];
+//       const height = (uint8Array[20] << 24) | (uint8Array[21] << 16) | (uint8Array[22] << 8) | uint8Array[23];
+//       return { width, height };
+//     }
     
-    return null;
-  } catch (error) {
-    console.warn('Could not detect image dimensions:', error);
-    return null;
-  }
-};
+//     return null;
+//   } catch (error) {
+//     console.warn('Could not detect image dimensions:', error);
+//     return null;
+//   }
+// };
 
 // Story Video component - exported for use in Root.tsx
-export const StoryVideoComponent: React.FC<StoryVideoProps> = memo(({ images, audioChunks, fps }) => {
+const StoryVideoComponentInner: React.FC<StoryVideoProps> = ({ images, audioChunks, fps }) => {
   console.log('=== StoryVideoComponent rendering ===');
   console.log('- Images count:', images?.length || 0);
   console.log('- Audio chunks count:', audioChunks?.length || 0);
@@ -421,7 +424,9 @@ export const StoryVideoComponent: React.FC<StoryVideoProps> = memo(({ images, au
       </Series>
     </AbsoluteFill>
   );
-});
+};
+StoryVideoComponentInner.displayName = 'StoryVideoComponent';
+export const StoryVideoComponent = memo(StoryVideoComponentInner);
 
 // Main entry component for Remotion
 export const StoryVideo = () => {

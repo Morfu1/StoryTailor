@@ -1,8 +1,9 @@
 import { useCallback, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
-import { generateNarrationAudio, saveStory } from '@/actions/storyActions';
+import { generateNarrationAudio } from '@/actions/storyActions';
+import { saveStory } from '@/actions/firestoreStoryActions';
 import { prepareScriptChunksAI, calculateTotalNarrationDuration } from '@/utils/narrationUtils';
-import type { Story } from '@/types/story';
+// import type { Story } from '@/types/story'; // Unused
 import type { UseStoryStateReturn } from './useStoryState';
 
 interface UseNarrationGenerationProps {
@@ -26,7 +27,7 @@ export const useNarrationGeneration = ({ storyState }: UseNarrationGenerationPro
     setProcessingAllMode,
     setCurrentStep,
     handleSetLoading,
-    setElevenLabsVoices,
+    // setElevenLabsVoices, // Unused
     isLoading
   } = storyState;
 
@@ -71,11 +72,11 @@ export const useNarrationGeneration = ({ storyState }: UseNarrationGenerationPro
 
     // Ensure narrationChunks exist (with text) before proceeding
     if (!storyData.narrationChunks || storyData.narrationChunks.length === 0) {
-      if (storyData.generatedScript) {
+      if (storyData.generatedScript && storyData.userId) { // Added userId check
         toast({ title: 'Preparing Chunks...', description: 'AI is splitting the script. Please wait.', className: 'bg-primary text-primary-foreground' });
         handleSetLoading('scriptChunksUpdate', true);
         try {
-          const newNarrationChunks = await prepareScriptChunksAI(storyData.generatedScript);
+          const newNarrationChunks = await prepareScriptChunksAI(storyData.generatedScript, storyData.userId); // Added userId
           updateStoryData({ narrationChunks: newNarrationChunks });
           handleSetLoading('scriptChunksUpdate', false);
           if (newNarrationChunks.length > 0) {
@@ -88,14 +89,14 @@ export const useNarrationGeneration = ({ storyState }: UseNarrationGenerationPro
             handleSetLoading('narration', false);
             return;
           }
-        } catch (error) {
+        } catch { // _error variable unused
           toast({ title: 'Error Preparing Chunks', description: 'Failed to split script with AI.', variant: 'destructive' });
           handleSetLoading('scriptChunksUpdate', false);
           handleSetLoading('narration', false);
           return;
         }
       } else {
-        toast({ title: 'No Script', description: 'Please generate a script first.', variant: 'destructive' });
+        toast({ title: 'No Script or User ID', description: 'Please generate a script first and ensure you are logged in.', variant: 'destructive' });
         handleSetLoading('narration', false);
         return;
       }
@@ -181,7 +182,7 @@ export const useNarrationGeneration = ({ storyState }: UseNarrationGenerationPro
           handleSetLoading('narration', false);
           return;
         }
-      } catch (error) {
+      } catch (error) { // Explicitly type error
         console.error('Error saving story to get ID:', error);
         toast({
           title: 'Error',
@@ -247,7 +248,7 @@ export const useNarrationGeneration = ({ storyState }: UseNarrationGenerationPro
               console.error('Failed to auto-save story after narration generation:', saveResult.error);
             }
           })
-          .catch((error) => {
+          .catch((error) => { // Explicitly type error
             console.error('Failed to auto-save story after narration generation:', error);
           });
       }
@@ -296,11 +297,7 @@ export const useNarrationGeneration = ({ storyState }: UseNarrationGenerationPro
     }
   }, [
     narrationSource,
-    storyData.generatedScript,
-    storyData.narrationChunks,
-    storyData.elevenLabsVoiceId,
-    storyData.userId,
-    storyData.id,
+    storyData, // Replaced individual storyData props with the main object
     selectedVoiceId,
     selectedTtsModel,
     selectedGoogleVoiceId,
@@ -314,6 +311,7 @@ export const useNarrationGeneration = ({ storyState }: UseNarrationGenerationPro
     setCurrentNarrationChunkIndex,
     setProcessingAllMode,
     setCurrentStep
+    // userApiKeys and apiKeysLoading are not directly used in this callback
   ]);
 
   // Auto-continue generation when in processingAllMode and currentNarrationChunkIndex changes
@@ -337,7 +335,7 @@ export const useNarrationGeneration = ({ storyState }: UseNarrationGenerationPro
         clearTimeout(timer);
       };
     }
-  }, [processingAllMode, currentNarrationChunkIndex, isLoading.narration]);
+  }, [processingAllMode, currentNarrationChunkIndex, isLoading.narration, handleGenerateNarration]); // Added handleGenerateNarration to deps
 
   const handleStopGeneration = useCallback(() => {
     console.log('[useNarrationGeneration] Stopping audio generation');
@@ -356,6 +354,11 @@ export const useNarrationGeneration = ({ storyState }: UseNarrationGenerationPro
       toast({ title: 'No Script Available', description: 'Generate a script first.', variant: 'destructive' });
       return;
     }
+    if (!storyData.userId) { // Added userId check
+        toast({ title: 'User ID Missing', description: 'Cannot regenerate chunks without a user ID.', variant: 'destructive' });
+        return;
+    }
+
 
     toast({ 
       title: 'Regenerating Chunks...', 
@@ -366,7 +369,7 @@ export const useNarrationGeneration = ({ storyState }: UseNarrationGenerationPro
     handleSetLoading('scriptChunksUpdate', true);
     
     try {
-      const newNarrationChunks = await prepareScriptChunksAI(storyData.generatedScript);
+      const newNarrationChunks = await prepareScriptChunksAI(storyData.generatedScript, storyData.userId); // Added userId
       
       // Clear any existing audio URLs since chunks are changing
       const chunksWithoutAudio = newNarrationChunks.map(chunk => ({
@@ -387,7 +390,7 @@ export const useNarrationGeneration = ({ storyState }: UseNarrationGenerationPro
       } else {
         toast({ title: 'No Chunks Generated', description: 'AI could not split the script into chunks.', variant: 'destructive' });
       }
-    } catch (error) {
+    } catch (error) { // Explicitly type error
       console.error('Error regenerating chunks:', error);
       toast({ title: 'Error', description: 'Failed to regenerate chunks. Please try again.', variant: 'destructive' });
       handleSetLoading('scriptChunksUpdate', false);

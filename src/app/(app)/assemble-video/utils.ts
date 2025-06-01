@@ -56,7 +56,7 @@ export const extractEntityNames = (storyData: Story | null): { characters: strin
  */
 export const parseNamedPrompts = (
   rawPrompts: string | undefined,
-  type: "Character" | "Item" | "Location",
+  // type: "Character" | "Item" | "Location", // Unused parameter
 ): ParsedPrompt[] => {
   if (!rawPrompts) return [];
 

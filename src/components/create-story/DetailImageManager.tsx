@@ -5,7 +5,8 @@ import Image from 'next/image';
 import { useState } from 'react';
 import { ImagePopup } from '@/components/ui/image-popup';
 import { parseNamedPrompts } from '@/utils/storyHelpers';
-import { generateImageFromPrompt, saveStory } from '@/actions/storyActions';
+import { generateImageFromPrompt } from '@/actions/storyActions';
+import { saveStory } from '@/actions/firestoreStoryActions'; // Corrected import path
 import { useToast } from '@/hooks/use-toast';
 import type { UseStoryStateReturn } from '@/hooks/useStoryState';
 import type { GeneratedImage } from '@/types/story';
@@ -99,13 +100,13 @@ export function DetailImageManager({ storyState, promptType, promptsString, show
     const allParsedPrompts: { name?: string, description: string, type: 'Character' | 'Item' | 'Location', key: string }[] = [];
 
     if (characterPrompts) {
-      parseNamedPrompts(characterPrompts, 'Character').forEach(p => allParsedPrompts.push({ ...p, type: 'Character', key: `Character-${p.originalIndex}` }));
+      parseNamedPrompts(characterPrompts).forEach(p => allParsedPrompts.push({ ...p, type: 'Character', key: `Character-${p.originalIndex}` }));
     }
     if (itemPrompts) {
-      parseNamedPrompts(itemPrompts, 'Item').forEach(p => allParsedPrompts.push({ ...p, type: 'Item', key: `Item-${p.originalIndex}` }));
+      parseNamedPrompts(itemPrompts).forEach(p => allParsedPrompts.push({ ...p, type: 'Item', key: `Item-${p.originalIndex}` }));
     }
     if (locationPrompts) {
-      parseNamedPrompts(locationPrompts, 'Location').forEach(p => allParsedPrompts.push({ ...p, type: 'Location', key: `Location-${p.originalIndex}` }));
+      parseNamedPrompts(locationPrompts).forEach(p => allParsedPrompts.push({ ...p, type: 'Location', key: `Location-${p.originalIndex}` }));
     }
 
     let newImages: GeneratedImage[] = [...(storyData.generatedImages || [])];
@@ -215,7 +216,7 @@ export function DetailImageManager({ storyState, promptType, promptsString, show
     return <p className="text-xs text-muted-foreground">No {promptType.toLowerCase()} prompts available yet. Generate details first.</p>;
   }
 
-  const parsedPrompts = parseNamedPrompts(promptsString, promptType as 'Character' | 'Item' | 'Location');
+  const parsedPrompts = parseNamedPrompts(promptsString);
 
   if (parsedPrompts.length === 0) {
     return <p className="text-xs text-muted-foreground">No {promptType.toLowerCase()} prompts found. Add some in the text area above, separating entries with a blank line.</p>;
@@ -292,7 +293,7 @@ export function DetailImageManager({ storyState, promptType, promptsString, show
                     </Button>
                   </div>
                 </div>
-                <p className="text-xs text-muted-foreground mt-1">Full prompt: "{existingImage.requestPrompt}"</p>
+                <p className="text-xs text-muted-foreground mt-1">Full prompt: &quot;{existingImage.requestPrompt}&quot;</p>
               </div>
             )}
           </div>

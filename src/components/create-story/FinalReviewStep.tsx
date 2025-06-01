@@ -6,8 +6,8 @@ import { CheckCircle, AlertCircle, Film, VideoIcon, Download, RefreshCw, XCircle
 import { ImageCategorizer } from './ImageCategorizer';
 import { countSceneImages, countDetailImages } from '@/utils/storyHelpers';
 import type { UseStoryStateReturn } from '@/hooks/useStoryState';
-import { useState, useEffect } from 'react';
-import { NarrationChunk } from '@/types/narration';
+import { useState, useEffect, useCallback } from 'react'; // Added useCallback
+// import { NarrationChunk } from '@/types/narration'; // Unused
 import { GeneratedImage } from '@/types/story';
 
 interface FinalReviewStepProps {
@@ -173,6 +173,16 @@ export function FinalReviewStep({ storyState }: FinalReviewStepProps) {
 }
 
 // Component for rendering video button
+
+interface VideoJob {
+  id: string;
+  status: 'pending' | 'processing' | 'completed' | 'error';
+  progress?: number;
+  downloadUrl?: string;
+  error?: string;
+  estimatedTimeRemaining?: number;
+}
+
 function RenderVideoButton({ storyData }: { storyData: UseStoryStateReturn['storyData'] }) {
   const [isRendering, setIsRendering] = useState(false);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
@@ -182,7 +192,7 @@ function RenderVideoButton({ storyData }: { storyData: UseStoryStateReturn['stor
   const [estimatedTimeRemaining, setEstimatedTimeRemaining] = useState<number | null>(null);
 
   // Poll job status when rendering
-  const pollJobStatus = async (jobId: string) => {
+  const pollJobStatus = useCallback(async (jobId: string) => {
     try {
       const response = await fetch(`/api/video-job/${jobId}`);
       const job = await response.json();
@@ -215,7 +225,7 @@ function RenderVideoButton({ storyData }: { storyData: UseStoryStateReturn['stor
       console.error('Error polling job status:', error);
       setTimeout(() => pollJobStatus(jobId), 5000); // Retry after 5 seconds
     }
-  };
+  }, []); // pollJobStatus itself has no external dependencies from RenderVideoButton's scope
 
   // Check for existing completed videos when component loads
   useEffect(() => {
@@ -227,13 +237,13 @@ function RenderVideoButton({ storyData }: { storyData: UseStoryStateReturn['stor
         const response = await fetch(`/api/video-job/story/${storyData.id}`);
         if (response.ok) {
           const jobs = await response.json();
-          const completedJob = jobs.find((job: any) => job.status === 'completed' && job.downloadUrl);
+          const completedJob = jobs.find((job: VideoJob) => job.status === 'completed' && job.downloadUrl);
           if (completedJob) {
             setVideoUrl(completedJob.downloadUrl);
           }
           
           // Check for any in-progress jobs
-          const inProgressJob = jobs.find((job: any) => job.status === 'processing' || job.status === 'pending');
+          const inProgressJob = jobs.find((job: VideoJob) => job.status === 'processing' || job.status === 'pending');
           if (inProgressJob) {
             setIsRendering(true);
             setJobId(inProgressJob.id);
@@ -247,7 +257,7 @@ function RenderVideoButton({ storyData }: { storyData: UseStoryStateReturn['stor
     };
     
     checkExistingVideo();
-  }, [storyData.id]);
+  }, [storyData.id, pollJobStatus]); // Added pollJobStatus to dependency array
 
   const handleRenderVideo = async () => {
     setIsRendering(true);

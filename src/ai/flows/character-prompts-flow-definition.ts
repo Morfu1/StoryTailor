@@ -85,7 +85,7 @@ export const generateCharacterPromptsFlow = ai.defineFlow(
     if (input.imageStyleId) {
       try {
         const { getStylePromptForProvider } = await import('@/utils/imageStyleUtils');
-        stylePrompt = getStylePromptForProvider(input.imageStyleId as any, input.imageProvider);
+        stylePrompt = getStylePromptForProvider(input.imageStyleId as string, input.imageProvider);
         console.log('Applied style prompt for character generation:', stylePrompt);
       } catch (error) {
         console.warn('Failed to get style prompt for character generation:', error);

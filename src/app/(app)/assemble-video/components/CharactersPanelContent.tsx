@@ -16,13 +16,13 @@ import {
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 import { generateImageFromPrompt } from "@/actions/storyActions";
-import { parseNamedPrompts } from "../utils"; 
+import { parseNamedPrompts } from "@/utils/storyHelpers";
 import {
   ArrowLeft,
   ImageIcon,
   Loader2,
   Plus,
-  Trash2,
+  // Trash2, // Unused
   Upload,
 } from "lucide-react";
 import Image from "next/image";
@@ -74,7 +74,7 @@ export default function CharactersPanelContent({
 
     const processPrompts = (promptString: string | undefined, type: EntityType) => {
       if (!promptString) return;
-      const parsed = parseNamedPrompts(promptString, type);
+      const parsed = parseNamedPrompts(promptString);
       parsed.forEach((p, index) => {
         // Find an image where the 'originalPrompt' (which is the entity description) matches
         const image = storyData.generatedImages?.find(img => img.originalPrompt === p.description);
@@ -145,7 +145,7 @@ export default function CharactersPanelContent({
       // The prompt sent to image generation should be the description itself.
       // Styles like "high quality, detailed..." can be appended by the generateImageFromPrompt action or here.
       const imageGenPrompt = `${formDescription}, high quality, detailed illustration, children's book style, vibrant colors, storybook style`;
-      const imageResult = await generateImageFromPrompt(imageGenPrompt);
+      const imageResult = await generateImageFromPrompt(imageGenPrompt, storyData.userId, storyData.id);
 
       if (!imageResult.success || !imageResult.imageUrl) {
         toast({
@@ -185,6 +185,19 @@ export default function CharactersPanelContent({
       setIsSaving(false);
     }
   };
+
+  // Moved groupedEntities useMemo hook before conditional return
+  const groupedEntities = useMemo(() => {
+    const groups: Record<EntityType, DisplayableEntity[]> = {
+      Character: [],
+      Location: [],
+      Item: [],
+    };
+    filteredEntities.forEach((entity) => {
+      groups[entity.type].push(entity);
+    });
+    return groups;
+  }, [filteredEntities]);
 
   if (panelView === "form" && formEntityType) {
     return (
@@ -264,17 +277,17 @@ export default function CharactersPanelContent({
     );
   }
 
-  const groupedEntities = useMemo(() => {
-    const groups: Record<EntityType, DisplayableEntity[]> = {
-      Character: [],
-      Location: [],
-      Item: [],
-    };
-    filteredEntities.forEach((entity) => {
-      groups[entity.type].push(entity);
-    });
-    return groups;
-  }, [filteredEntities]);
+  // const groupedEntities = useMemo(() => { // Moved earlier
+  //   const groups: Record<EntityType, DisplayableEntity[]> = {
+  //     Character: [],
+  //     Location: [],
+  //     Item: [],
+  //   };
+  //   filteredEntities.forEach((entity) => {
+  //     groups[entity.type].push(entity);
+  //   });
+  //   return groups;
+  // }, [filteredEntities]);
 
   const entityTypes: EntityType[] = ["Character", "Location", "Item"];
 
@@ -374,7 +387,7 @@ export default function CharactersPanelContent({
           {filteredEntities.length === 0 && searchTerm && (
             <div className="flex h-40 items-center justify-center p-4 text-center">
               <p className="text-muted-foreground">
-                No items match your search term "{searchTerm}".
+                No items match your search term &quot;{searchTerm}&quot;.
               </p>
             </div>
           )}
@@ -382,7 +395,7 @@ export default function CharactersPanelContent({
             <div className="flex h-40 items-center justify-center p-4 text-center">
                 <p className="text-muted-foreground">
                     No characters, items, or locations defined yet. <br/>
-                    You can generate them in "Create Story" (Step 2), or add new ones here.
+                    You can generate them in &quot;Create Story&quot; (Step 2), or add new ones here.
                 </p>
             </div>
            )}

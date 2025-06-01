@@ -79,7 +79,7 @@ function addWavHeaders(pcmData: ArrayBuffer): Blob {
   view.setUint32(40, pcmBytes, true); // Data size
   
   // Copy PCM data
-  const headerArray = new Uint8Array(buffer, 0, headerSize);
+  // const headerArray = new Uint8Array(buffer, 0, headerSize); // Unused
   const dataArray = new Uint8Array(buffer, headerSize);
   const pcmArray = new Uint8Array(pcmData);
   dataArray.set(pcmArray);
@@ -90,48 +90,48 @@ function addWavHeaders(pcmData: ArrayBuffer): Blob {
 /**
  * Convert AudioBuffer to WAV blob
  */
-function audioBufferToWav(buffer: AudioBuffer): Blob {
-  const length = buffer.length;
-  const numberOfChannels = buffer.numberOfChannels;
-  const sampleRate = buffer.sampleRate;
-  const bitDepth = 16;
+// function audioBufferToWav(buffer: AudioBuffer): Blob { // Unused
+//   const length = buffer.length;
+//   const numberOfChannels = buffer.numberOfChannels;
+//   const sampleRate = buffer.sampleRate;
+//   const bitDepth = 16;
   
-  const arrayBuffer = new ArrayBuffer(44 + length * numberOfChannels * 2);
-  const view = new DataView(arrayBuffer);
+//   const arrayBuffer = new ArrayBuffer(44 + length * numberOfChannels * 2);
+//   const view = new DataView(arrayBuffer);
   
-  // WAV header
-  const writeString = (offset: number, string: string) => {
-    for (let i = 0; i < string.length; i++) {
-      view.setUint8(offset + i, string.charCodeAt(i));
-    }
-  };
+//   // WAV header
+//   const writeString = (offset: number, string: string) => {
+//     for (let i = 0; i < string.length; i++) {
+//       view.setUint8(offset + i, string.charCodeAt(i));
+//     }
+//   };
   
-  writeString(0, 'RIFF');
-  view.setUint32(4, 36 + length * numberOfChannels * 2, true);
-  writeString(8, 'WAVE');
-  writeString(12, 'fmt ');
-  view.setUint32(16, 16, true);
-  view.setUint16(20, 1, true);
-  view.setUint16(22, numberOfChannels, true);
-  view.setUint32(24, sampleRate, true);
-  view.setUint32(28, sampleRate * numberOfChannels * bitDepth / 8, true);
-  view.setUint16(32, numberOfChannels * bitDepth / 8, true);
-  view.setUint16(34, bitDepth, true);
-  writeString(36, 'data');
-  view.setUint32(40, length * numberOfChannels * 2, true);
+//   writeString(0, 'RIFF');
+//   view.setUint32(4, 36 + length * numberOfChannels * 2, true);
+//   writeString(8, 'WAVE');
+//   writeString(12, 'fmt ');
+//   view.setUint32(16, 16, true);
+//   view.setUint16(20, 1, true);
+//   view.setUint16(22, numberOfChannels, true);
+//   view.setUint32(24, sampleRate, true);
+//   view.setUint32(28, sampleRate * numberOfChannels * bitDepth / 8, true);
+//   view.setUint16(32, numberOfChannels * bitDepth / 8, true);
+//   view.setUint16(34, bitDepth, true);
+//   writeString(36, 'data');
+//   view.setUint32(40, length * numberOfChannels * 2, true);
   
-  // Convert float samples to 16-bit PCM
-  let offset = 44;
-  for (let i = 0; i < length; i++) {
-    for (let channel = 0; channel < numberOfChannels; channel++) {
-      const sample = Math.max(-1, Math.min(1, buffer.getChannelData(channel)[i]));
-      view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7FFF, true);
-      offset += 2;
-    }
-  }
+//   // Convert float samples to 16-bit PCM
+//   let offset = 44;
+//   for (let i = 0; i < length; i++) {
+//     for (let channel = 0; channel < numberOfChannels; channel++) {
+//       const sample = Math.max(-1, Math.min(1, buffer.getChannelData(channel)[i]));
+//       view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7FFF, true);
+//       offset += 2;
+//     }
+//   }
   
-  return new Blob([arrayBuffer], { type: 'audio/wav' });
-}
+//   return new Blob([arrayBuffer], { type: 'audio/wav' });
+// }
 
 /**
  * Check if a URL needs conversion (is a WAV file that might not be playable)

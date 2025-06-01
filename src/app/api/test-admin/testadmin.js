@@ -1,5 +1,5 @@
-const admin = require('firebase-admin');
-const path = require('path');
+import admin from 'firebase-admin';
+import path from 'path';
 
 // Use the path to the key file you copied into this directory
 const serviceAccountPath = path.resolve('./serviceAccountKey.json'); // Or the full name if you didn't rename it

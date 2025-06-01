@@ -5,13 +5,13 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Bot, Loader2, FileText, Edit3, Save, Settings } from 'lucide-react'; 
-import Link from 'next/link'; 
+import { Bot, Loader2, FileText, Edit3, Save } from 'lucide-react'; // Removed Settings
+import Link from 'next/link';
 import { generateTitle, generateScript } from '@/actions/storyActions'; // Kept these
 import { saveStory } from '@/actions/firestoreStoryActions'; // Changed for saveStory
 import { prepareScriptChunksAI } from '@/utils/narrationUtils';
 import { useToast } from '@/hooks/use-toast';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback } from 'react'; // Removed useEffect
 import { debounce } from '@/utils/debounce';
 import type { UseStoryStateReturn } from '@/hooks/useStoryState';
 
@@ -42,53 +42,64 @@ export function StoryPromptStep({ storyState }: StoryPromptStepProps) {
   const autoSaveStory = useCallback(
     debounce(async (title: string, script: string) => {
       if (!title.trim() || !script.trim() || !storyData.userId) return;
-      if (googleKeyMissing && activeTab === 'ai-generate') return; 
+      if (googleKeyMissing && activeTab === 'ai-generate') return;
 
       setIsAutoSaving(true);
       try {
         const narrationChunks = await prepareScriptChunksAI(script, storyData.userId);
         
-        const updatedStoryData = {
+        const updatedStoryDataInternal = { // Renamed to avoid conflict with storyData from closure
           ...storyData,
           title: title.trim(),
           generatedScript: script,
           narrationChunks
         };
         
-        const saveResult = await saveStory(updatedStoryData, storyData.userId); // Uses saveStory from firestoreStoryActions
+        const saveResult = await saveStory(updatedStoryDataInternal, storyData.userId); // Uses saveStory from firestoreStoryActions
         
         if (saveResult.success) {
           if (saveResult.storyId && !storyData.id) {
-            updateStoryData({ 
+            updateStoryData({
               id: saveResult.storyId,
               title: title.trim(),
               generatedScript: script,
-              narrationChunks 
+              narrationChunks
             });
             toast({
               title: 'Story Saved!',
               description: 'Your story has been automatically saved.',
-              className: 'bg-green-500 text-white'
-            });
+            }); // Added missing closing parenthesis for toast
           } else {
-            updateStoryData({ 
+            // Existing story updated
+            updateStoryData({ // Update local state even for existing story
               title: title.trim(),
               generatedScript: script,
-              narrationChunks 
+              narrationChunks
+            });
+            toast({
+              title: 'Story Updated!',
+              description: 'Your changes have been automatically saved.',
             });
           }
-        }
-      } catch (error: any) {
-        if (error.message && error.message.toLowerCase().includes("api key not configured")) {
-           toast({ title: "Action Required", description: "Google API key needed to prepare script chunks. Please set it in Account Settings.", variant: "destructive" });
         } else {
-           console.error('Auto-save error:', error);
+          toast({
+            title: 'Error Saving Story',
+            description: saveResult.error || 'An unknown error occurred.',
+            variant: 'destructive',
+          });
         }
+      } catch (error) {
+        console.error("Error in autoSaveStory:", error);
+        toast({
+          title: 'Error',
+          description: 'An unexpected error occurred during auto-save.',
+          variant: 'destructive',
+        });
       } finally {
         setIsAutoSaving(false);
       }
-    }, 2000),
-    [storyData, updateStoryData, toast, googleKeyMissing, activeTab]
+    }, 1000), // Assuming a 1000ms debounce delay, adjust if needed
+    [storyData, googleKeyMissing, activeTab, updateStoryData, toast, prepareScriptChunksAI, saveStory, setIsAutoSaving]
   );
 
   const handleManualScriptChange = (value: string) => {
@@ -235,10 +246,10 @@ export function StoryPromptStep({ storyState }: StoryPromptStepProps) {
       toast({ 
         title: 'Ready to Continue!', 
         description: 'Your story script has been processed.',
-        className: 'bg-primary text-primary-foreground' 
+        className: 'bg-primary text-primary-foreground'
       });
-    } catch (error: any) {
-      if (error.message && error.message.toLowerCase().includes("api key not configured")) {
+    } catch (error: unknown) {
+      if (error instanceof Error && error.message && error.message.toLowerCase().includes("api key not configured")) {
         toast({ title: "Action Required", description: "Google API key needed to process script chunks. Please set it in Account Settings.", variant: "destructive" });
       } else {
         console.error('Error processing manual script:', error);

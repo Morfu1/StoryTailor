@@ -41,7 +41,7 @@ function addWavHeadersToBuffer(pcmData: ArrayBuffer): ArrayBuffer {
   view.setUint32(40, pcmBytes, true); // Data size
   
   // Copy PCM data
-  const headerArray = new Uint8Array(buffer, 0, headerSize);
+  // const headerArray = new Uint8Array(buffer, 0, headerSize); // Unused
   const dataArray = new Uint8Array(buffer, headerSize);
   const pcmArray = new Uint8Array(pcmData);
   dataArray.set(pcmArray);
@@ -246,7 +246,7 @@ export async function downloadStoryAsZip(storyData: Story) {
     // Audio chunks text
     if (storyData.narrationChunks && storyData.narrationChunks.length > 0) {
       let chunksText = '=== AUDIO CHUNKS ===\n\n';
-      storyData.narrationChunks.forEach((chunk: any, index: number) => {
+      storyData.narrationChunks.forEach((chunk: { text: string; id?: string; audioUrl?: string; duration?: number; index?: number }, index: number) => {
         chunksText += `Chunk ${index + 1}:\n${chunk.text}\n\n`;
       });
       storyTextFolder.file('audio_chunks.txt', chunksText);
