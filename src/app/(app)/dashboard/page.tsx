@@ -65,7 +65,7 @@ export default function DashboardPage() {
     setDeletingStoryId(storyId);
     
     try {
-      const { deleteStory } = await import('@/actions/storyActions');
+      const { deleteStory } = await import('@/actions/firestoreStoryActions'); // Updated import
       const result = await deleteStory(storyId, user.uid);
       
       if (result.success) {
@@ -152,7 +152,7 @@ export default function DashboardPage() {
         </Card>
       ) : (
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {stories.map((story) => (
+          {stories.map((story, index) => (
             <Card key={story.id} className="flex flex-col overflow-hidden shadow-lg hover:shadow-xl transition-shadow duration-300 bg-card relative">
             {/* Delete button in top right corner */}
             <div className="absolute top-2 right-2 z-10">
@@ -199,6 +199,8 @@ export default function DashboardPage() {
                      alt={story.title || "Story image"} 
                      fill
                      style={{ objectFit: "cover" }}
+                     priority={index === 0} // Add priority to the first image
+                     sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, (max-width: 1280px) 33vw, 25vw" // Add sizes prop
                    />
                  </div>
                 <CardTitle className="mt-4 text-xl font-semibold text-foreground truncate">
@@ -237,3 +239,5 @@ export default function DashboardPage() {
   );
 }
 
+
+    
