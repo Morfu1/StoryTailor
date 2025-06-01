@@ -51,3 +51,7 @@ yarn-error.log*
 /public/remotion-assets/
 /public/downloads/
 /temp/
+
+
+# Firebase service account credentials
+storytailor-f089f-firebase-adminsdk-fbsvc-e5a2c1ca7e.json
