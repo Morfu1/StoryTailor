@@ -1,3 +1,4 @@
+
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
@@ -6,6 +7,7 @@ import { Progress } from '@/components/ui/progress';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ImagePopup } from '@/components/ui/image-popup';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { 
   AlertDialog,
   AlertDialogAction,
@@ -16,7 +18,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Clapperboard, Loader2, Edit2, ImageIcon, RefreshCw, Download, Settings } from 'lucide-react'; // Removed RotateCcw, Square
+import { Clapperboard, Loader2, Edit2, ImageIcon, RefreshCw, Download, Settings, ListMusic, ChevronsRight } from 'lucide-react';
 import Link from 'next/link';
 import { generateImagePrompts, generateImageFromPrompt } from '@/actions/storyActions';
 import { saveStory } from '@/actions/firestoreStoryActions';
@@ -27,12 +29,6 @@ import { useState, useRef } from 'react';
 import type { UseStoryStateReturn } from '@/hooks/useStoryState';
 import type { GeneratedImage, ActionPrompt } from '@/types/story';
 import { IMAGE_STYLES, DEFAULT_STYLE_ID, type ImageStyleId } from '@/types/imageStyles';
-
-// interface ImageGenerationProgressState { // Unused
-//   total: number;
-//   completed: number;
-//   generating: number[];
-// }
 
 const HighlightedPrompt = ({ prompt }: { prompt: string | undefined }) => {
   if (!prompt) {
@@ -79,18 +75,18 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
     setImageProvider,
     imageGenerationProgress,
     setImageGenerationProgress,
-    userApiKeys, // Get userApiKeys
-    apiKeysLoading // Get apiKeysLoading
+    userApiKeys, 
+    apiKeysLoading 
   } = storyState;
 
   const googleKeyMissing = !apiKeysLoading && !userApiKeys?.googleApiKey;
   const picsartKeyMissing = imageProvider === 'picsart' && !apiKeysLoading && !userApiKeys?.picsartApiKey;
   const geminiKeyMissing = imageProvider === 'gemini' && !apiKeysLoading && !userApiKeys?.geminiApiKey;
-  const imagen3KeyMissing = imageProvider === 'imagen3' && !apiKeysLoading && !userApiKeys?.googleApiKey; // Imagen3 uses Google API key
+  const imagen3KeyMissing = imageProvider === 'imagen3' && !apiKeysLoading && !userApiKeys?.googleApiKey; 
 
   const handleRegenerateImagePrompts = async () => {
     await generatePromptsWithOptions(true);
-    setIsRegenerateDialogOpen(false); // Close the dialog
+    setIsRegenerateDialogOpen(false); 
   };
  
   const generatePromptsWithOptions = async (isRegeneration = false) => {
@@ -106,7 +102,7 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
       60; 
     
     const imagePromptsInput = {
-      userId: storyData.userId, // Pass userId
+      userId: storyData.userId, 
       script: storyData.generatedScript,
       characterPrompts: storyData.detailsPrompts.characterPrompts || '',
       locationPrompts: storyData.detailsPrompts.locationPrompts || '',
@@ -121,7 +117,6 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
     };
     
     console.log('=== GENERATING IMAGE PROMPTS ===');
-    // ... (rest of the console logs can remain if needed for debugging)
     let currentImagePrompts = storyData.imagePrompts || [];
     let currentActionDescriptions = storyData.actionPrompts?.map(ap => ap.actionDescription) || [];
 
@@ -191,7 +186,6 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
       })();
 
       console.log('--- ImageGenerationStep: Generated actionPrompts ---');
-      // console.log(JSON.stringify(newActionPrompts, null, 2)); // Potentially large log
 
       let updatedGeneratedImages = [...(storyData.generatedImages || [])];
 
@@ -303,7 +297,6 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
       };
       
       console.log(`--- ImageGenerationStep: Assigning to newImage (individual) for prompt "${prompt.substring(0,30)}..." ---`);
-      // console.log('Found actionPrompt:', JSON.stringify(actionPrompt, null, 2)); // Potentially large log
       console.log('Assigned chunkId:', newImage.chunkId);
       console.log('Assigned chunkIndex:', newImage.chunkIndex);
       
@@ -424,7 +417,6 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
         };
 
         console.log(`--- ImageGenerationStep: Assigning to newImage (all) for prompt "${prompt.substring(0,30)}..." ---`);
-        // console.log('Using actionPrompt:', JSON.stringify(actionPrompt, null, 2)); // Potentially large log
         console.log('Assigned chunkId:', newImage.chunkId);
         console.log('Assigned chunkIndex:', newImage.chunkIndex);
         
@@ -516,8 +508,7 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
 
   const handleStopGeneration = () => {
     isGenerationStoppedRef.current = true;
-    // Any other cleanup or state updates needed when stopping
-    handleSetLoading('allImages', false); // Ensure loading state is reset
+    handleSetLoading('allImages', false); 
     const currentProgress = imageGenerationProgress;
     setImageGenerationProgress({ 
         total: currentProgress.total, 
@@ -715,29 +706,34 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
             )}
             <ScrollArea className="h-[400px] w-full rounded-md border p-3 bg-muted/20">
               <div className="space-y-4">
+              <TooltipProvider>
                 {storyData.imagePrompts.map((prompt, index) => {
                   const existingImage = storyData.generatedImages?.find(img => img.originalPrompt === prompt);
                   const isCurrentlyGenerating = imageGenerationProgress.generating.includes(index);
                   const isEditing = isImagePromptEditing[index];
+                  const actionPrompt = storyData.actionPrompts?.find(ap => ap.sceneIndex === index);
+
                   return (
                     <Card key={index} className="border-l-4 border-l-primary/20">
                       <CardContent className="p-4 space-y-3">
-                        <div>
-                          <Label htmlFor={`prompt-${index}`} className="text-xs font-semibold">Scene {index + 1} Prompt</Label>
-                          <div className="flex gap-2">
-                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => toggleImagePromptEditing(index)}>
-                              <Edit2 className="h-3.5 w-3.5" />
-                            </Button>
-                            <Button 
-                              variant="ghost" 
-                              size="icon" 
-                              className="h-7 w-7" 
-                              onClick={() => handleGenerateIndividualImage(prompt, index)}
-                              disabled={isLoading[`image-${index}`] || isLoading.allImages || picsartKeyMissing || geminiKeyMissing || imagen3KeyMissing}
-                            >
-                              {isLoading[`image-${index}`] || isCurrentlyGenerating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-                            </Button>
-                          </div>
+                        <div className="flex justify-between items-start">
+                            <div>
+                                <Label htmlFor={`prompt-${index}`} className="text-xs font-semibold">Scene {index + 1} Prompt</Label>
+                            </div>
+                            <div className="flex gap-2">
+                                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => toggleImagePromptEditing(index)}>
+                                <Edit2 className="h-3.5 w-3.5" />
+                                </Button>
+                                <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                className="h-7 w-7" 
+                                onClick={() => handleGenerateIndividualImage(prompt, index)}
+                                disabled={isLoading[`image-${index}`] || isLoading.allImages || picsartKeyMissing || geminiKeyMissing || imagen3KeyMissing}
+                                >
+                                {isLoading[`image-${index}`] || isCurrentlyGenerating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                                </Button>
+                            </div>
                         </div>
                         {isEditing ? (
                           <Textarea
@@ -751,6 +747,36 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
                             <HighlightedPrompt prompt={prompt} />
                           </p>
                         )}
+                        
+                        {actionPrompt && (
+                            <div className="mt-2 space-y-2">
+                                <Tooltip>
+                                    <TooltipTrigger asChild>
+                                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-default">
+                                            <ListMusic className="h-3.5 w-3.5 text-blue-500"/>
+                                            <span>Narration Chunk: {actionPrompt.chunkIndex !== undefined ? actionPrompt.chunkIndex + 1 : 'N/A'}</span>
+                                        </div>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="bottom" align="start" className="max-w-xs">
+                                        <p className="text-xs leading-relaxed">{actionPrompt.chunkText || "No narration text available for this chunk."}</p>
+                                    </TooltipContent>
+                                </Tooltip>
+                                <Tooltip>
+                                    <TooltipTrigger asChild>
+                                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-default">
+                                            <ChevronsRight className="h-3.5 w-3.5 text-green-500"/>
+                                            <span className="truncate max-w-[200px] sm:max-w-[300px]">
+                                                Action: {actionPrompt.actionDescription || 'No action defined'}
+                                            </span>
+                                        </div>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="bottom" align="start" className="max-w-xs">
+                                        <p className="text-xs leading-relaxed">{actionPrompt.actionDescription || "No action description available."}</p>
+                                    </TooltipContent>
+                                </Tooltip>
+                            </div>
+                        )}
+
                         {existingImage?.imageUrl && (
                           <div className="mt-2">
                             <Label className="text-xs font-medium">Generated Image:</Label>
@@ -762,7 +788,7 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
                                 sizes="(max-width: 768px) 100vw, 400px"
                                 style={{ objectFit: "contain" }}
                                 className="bg-muted cursor-pointer transition-transform hover:scale-105"
-                                priority={index < 3} // Prioritize loading first few images
+                                priority={index < 3} 
                                 unoptimized
                                 onClick={() => setPopupImage({ src: existingImage.imageUrl, alt: `Scene ${index + 1}: ${prompt.substring(0,30)}` })}
                               />
@@ -787,6 +813,7 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
                     </Card>
                   );
                 })}
+              </TooltipProvider>
               </div>
             </ScrollArea>
           </div>
@@ -817,3 +844,4 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
     </Card>
   );
 }
+
