@@ -1,3 +1,4 @@
+
 import { NextResponse } from 'next/server';
 import { downloadAssetsForRendering, saveVideoForDownload } from '@/utils/remotionUtils';
 import { NarrationChunk } from '@/types/narration';
@@ -137,8 +138,8 @@ async function renderStoryVideoWithCLI({
     console.log('Starting video rendering process...');
     console.log(`Processing ${images.length} images and ${audioChunks.length} audio chunks`);
     
-    // Create temporary directories on external drive with more space
-    const tmpDir = path.join('/Volumes/McMorfu/Projects/StoryTailor/temp', 'remotion-render');
+    // Use a project-relative temporary directory
+    const tmpDir = path.join(process.cwd(), '.tmp-remotion-render');
     fs.mkdirSync(tmpDir, { recursive: true });
     
     // Log information about the props being passed to Remotion

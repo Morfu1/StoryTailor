@@ -1,3 +1,4 @@
+
 import path from 'path';
 // import os from 'os'; // Unused
 import fs from 'fs';
@@ -403,8 +404,7 @@ export const cleanupRemotionAssets = (): void => {
   }
 
   // Also clean up the main temp directory for renders if it exists
-  // This path should match the one used in renderStoryVideoWithCLI
-  const renderTmpDir = path.join('/Volumes/McMorfu/Projects/StoryTailor/temp', 'remotion-render');
+  const renderTmpDir = path.join(process.cwd(), '.tmp-remotion-render');
   try {
     if (fs.existsSync(renderTmpDir)) {
       fs.rmSync(renderTmpDir, { recursive: true, force: true });
