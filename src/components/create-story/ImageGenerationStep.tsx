@@ -121,7 +121,7 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
     let currentActionDescriptions = storyData.actionPrompts?.map(ap => ap.actionDescription) || [];
 
     let calledAiForPrompts = false;
-    if (!isRegeneration || !storyData.imagePrompts || storyData.imagePrompts.length === 0) {
+    if (isRegeneration || !storyData.imagePrompts || storyData.imagePrompts.length === 0) {
       console.log('Calling AI to generate new image prompts and action descriptions...');
       const aiResult = await generateImagePrompts(imagePromptsInput);
       console.log('=== AI SERVER ACTION RESULT ===');
@@ -237,7 +237,7 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
         }
       }
       
-      if (!isRegeneration) {
+      if (!isRegeneration && !calledAiForPrompts) { // Only advance step if it was initial generation and AI was called
         setCurrentStep(5);
       }
       
@@ -286,14 +286,15 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
     const result = await generateImageFromPrompt(prompt, storyData.userId, storyData.id, imageProvider, styleId);
     
     if (result.success && result.imageUrl && result.requestPrompt) {
-      const actionPrompt = storyData.actionPrompts?.find((ap: ActionPrompt) => ap.originalPrompt === prompt);
+      // Find action prompt by sceneIndex to preserve chunk association
+      const actionPrompt = storyData.actionPrompts?.find((ap: ActionPrompt) => ap.sceneIndex === index);
       
       const newImage: GeneratedImage = {
-        originalPrompt: prompt,
+        originalPrompt: prompt, // This is the current prompt text (could be edited)
         requestPrompt: result.requestPrompt,
         imageUrl: result.imageUrl,
-        chunkId: actionPrompt?.chunkId,
-        chunkIndex: actionPrompt?.chunkIndex,
+        chunkId: actionPrompt?.chunkId, // Preserve chunkId from actionPrompt for this sceneIndex
+        chunkIndex: actionPrompt?.chunkIndex, // Preserve chunkIndex
       };
       
       console.log(`--- ImageGenerationStep: Assigning to newImage (individual) for prompt "${prompt.substring(0,30)}..." ---`);
@@ -301,18 +302,42 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
       console.log('Assigned chunkIndex:', newImage.chunkIndex);
       
       const updatedImages = [
-        ...(storyData.generatedImages || []).filter(img => img.originalPrompt !== prompt),
+        ...(storyData.generatedImages || []).filter(img => img.originalPrompt !== prompt), // Remove old image if prompt text matches
         newImage,
       ];
+      // If the prompt text was edited, we need to ensure the *old* image (if any) for this *index* is replaced.
+      // The filter above handles if the prompt text hasn't changed.
+      // If prompt text changed, we need a different approach to replace by index.
+      
+      // A more robust way to update:
+      const allImages = [...(storyData.generatedImages || [])];
+      const existingImageIndexForThisScene = allImages.findIndex(img => {
+          // Try to match by originalPrompt (if unchanged) or by chunkId/chunkIndex if the prompt was edited
+          if (actionPrompt && img.chunkId === actionPrompt.chunkId && img.chunkIndex === actionPrompt.chunkIndex) {
+              return true;
+          }
+          // Fallback if no actionPrompt or no match by chunk (e.g. prompt was never associated)
+          // This might happen if actionPrompts weren't generated or aligned properly
+          return img.originalPrompt === storyData.imagePrompts![index]; // Match by the original prompt at this index
+      });
+
+      if (existingImageIndexForThisScene !== -1) {
+          allImages[existingImageIndexForThisScene] = newImage; // Replace existing
+      } else {
+          allImages.push(newImage); // Add as new if no exact match found (should ideally replace)
+      }
+
+
       setStoryData({
         ...storyData,
-        generatedImages: updatedImages
+        // generatedImages: updatedImages // Old logic
+        generatedImages: allImages // New robust logic
       });
       
       if (storyData.id && storyData.userId) {
         try {
-          await saveStory({ ...storyData, generatedImages: updatedImages }, storyData.userId);
-          console.log('Auto-saved story with new scene image');
+          await saveStory({ ...storyData, generatedImages: allImages }, storyData.userId);
+          console.log('Auto-saved story with new/updated scene image');
         } catch (error) {
           console.error('Failed to auto-save story:', error);
         }
@@ -763,7 +788,7 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
                             </Tooltip>
                             <div className="flex items-start gap-1.5 text-xs text-muted-foreground">
                               <ChevronsRight className="h-3.5 w-3.5 text-green-500 mt-0.5 flex-shrink-0"/>
-                              <p className="text-xs leading-relaxed">
+                              <p className="text-xs leading-relaxed break-all"> {/* Added break-all */}
                                 <span className="font-medium text-foreground/80">Action:</span> {actionPrompt.actionDescription || 'No action defined'}
                               </p>
                             </div>
