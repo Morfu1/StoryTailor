@@ -749,32 +749,25 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
                         )}
                         
                         {actionPrompt && (
-                            <div className="mt-2 space-y-2">
-                                <Tooltip>
-                                    <TooltipTrigger asChild>
-                                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-default">
-                                            <ListMusic className="h-3.5 w-3.5 text-blue-500"/>
-                                            <span>Narration Chunk: {actionPrompt.chunkIndex !== undefined ? actionPrompt.chunkIndex + 1 : 'N/A'}</span>
-                                        </div>
-                                    </TooltipTrigger>
-                                    <TooltipContent side="bottom" align="start" className="max-w-xs">
-                                        <p className="text-xs leading-relaxed">{actionPrompt.chunkText || "No narration text available for this chunk."}</p>
-                                    </TooltipContent>
-                                </Tooltip>
-                                <Tooltip>
-                                    <TooltipTrigger asChild>
-                                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-default">
-                                            <ChevronsRight className="h-3.5 w-3.5 text-green-500"/>
-                                            <span className="truncate max-w-[200px] sm:max-w-[300px]">
-                                                Action: {actionPrompt.actionDescription || 'No action defined'}
-                                            </span>
-                                        </div>
-                                    </TooltipTrigger>
-                                    <TooltipContent side="bottom" align="start" className="max-w-xs">
-                                        <p className="text-xs leading-relaxed">{actionPrompt.actionDescription || "No action description available."}</p>
-                                    </TooltipContent>
-                                </Tooltip>
+                          <div className="mt-2 space-y-2">
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <div className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-default">
+                                  <ListMusic className="h-3.5 w-3.5 text-blue-500"/>
+                                  <span>Narration Chunk: {actionPrompt.chunkIndex !== undefined ? actionPrompt.chunkIndex + 1 : 'N/A'}</span>
+                                </div>
+                              </TooltipTrigger>
+                              <TooltipContent side="bottom" align="start" className="max-w-xs">
+                                <p className="text-xs leading-relaxed">{actionPrompt.chunkText || "No narration text available for this chunk."}</p>
+                              </TooltipContent>
+                            </Tooltip>
+                            <div className="flex items-start gap-1.5 text-xs text-muted-foreground">
+                              <ChevronsRight className="h-3.5 w-3.5 text-green-500 mt-0.5 flex-shrink-0"/>
+                              <p className="text-xs leading-relaxed">
+                                <span className="font-medium text-foreground/80">Action:</span> {actionPrompt.actionDescription || 'No action defined'}
+                              </p>
                             </div>
+                          </div>
                         )}
 
                         {existingImage?.imageUrl && (
@@ -844,4 +837,3 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
     </Card>
   );
 }
-
