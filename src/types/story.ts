@@ -1,3 +1,4 @@
+
 import type { Timestamp, FieldValue } from 'firebase/firestore';
 import type { ImageStyleId } from './imageStyles';
 
@@ -8,18 +9,19 @@ export interface StoryCharacterLocationItemPrompts {
 }
 
 export interface GeneratedImage {
-  requestPrompt: string; // The full prompt sent to the API, including styles
-  originalPrompt: string; // The character/item/location description
+  sceneIndex: number; // Index corresponding to storyData.imagePrompts THIS IS THE PRIMARY KEY FOR A SCENE IMAGE
+  originalPrompt: string; // The text of the prompt used to generate THIS image (snapshot)
+  requestPrompt: string;  // The prompt after system expansions, sent to AI (useful for debugging/seeing what AI got)
   imageUrl: string;
-  isChapterGenerated?: boolean; // Flag to identify images generated through chapter generation
-  chapterNumber?: number; // The chapter number this image belongs to
-  expandedPrompt?: string; // The full prompt with all @Entity references expanded
+  isChapterGenerated?: boolean; // Flag to identify images generated through chapter generation (less relevant now with sceneIndex)
+  chapterNumber?: number; // The chapter number this image belongs to (less relevant now with sceneIndex)
   chunkId?: string; // The narration chunk ID this image belongs to
   chunkIndex?: number; // The narration chunk index this image belongs to
   history?: {
+    sceneIndex: number;
+    originalPrompt: string; // Snapshot of the prompt for this historical version
+    requestPrompt: string;
     imageUrl: string;
-    originalPrompt: string;
-    expandedPrompt?: string; // The full prompt with all @Entity references expanded
     timestamp: Date;
   }[]; // To store previous versions of this image
 }
@@ -64,8 +66,8 @@ export interface PageTimelineTrack {
 
 
 export interface ActionPrompt {
-  sceneIndex: number;
-  originalPrompt: string;
+  sceneIndex: number; // Crucially links this action to an imagePrompt by its index
+  originalPrompt: string; // The canonical prompt text from storyData.imagePrompts[sceneIndex]
   actionDescription: string; // Simple action description for animation
   chunkText: string; // Original narration chunk text that generated this scene
   chunkId?: string; // The narration chunk ID this prompt belongs to
@@ -84,9 +86,9 @@ export interface Story {
   elevenLabsVoiceId?: string; // To store the selected ElevenLabs voice ID
   narrationVoice?: string; // Voice name (e.g., "Laura")
   narrationVoiceId?: string; // Voice ID from ElevenLabs (alias for elevenLabsVoiceId)
-  imagePrompts?: string[];
-  generatedImages?: GeneratedImage[];
-  actionPrompts?: ActionPrompt[]; // Action prompts for future use
+  imagePrompts?: string[]; // Array of scene prompts. The index is the sceneIndex.
+  generatedImages?: GeneratedImage[]; // Stores the *latest* image for each sceneIndex.
+  actionPrompts?: ActionPrompt[]; // Action prompts for future use, linked by sceneIndex
   imageStyleId?: ImageStyleId; // Selected image generation style
   timelineTracks?: PageTimelineTrack[]; // To store the state of the timeline
   imageProvider?: string; // e.g., "picsart", "stability"

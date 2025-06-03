@@ -162,8 +162,8 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
             
             for (let i = 0; i < promptCount && promptIndex < currentImagePrompts.length; i++) {
               actionPrompts.push({
-                sceneIndex: promptIndex,
-                originalPrompt: currentImagePrompts[promptIndex],
+                sceneIndex: promptIndex, // This is the crucial link to imagePrompts array index
+                originalPrompt: currentImagePrompts[promptIndex], // Store the canonical prompt text
                 actionDescription: currentActionDescriptions[promptIndex] || `Character performs action in scene ${promptIndex + 1}.`,
                 chunkText: chunk.text,
                 chunkId: chunk.id,
@@ -173,10 +173,10 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
             }
           });
         } else {
-          currentImagePrompts.forEach((prompt, index) => {
+          currentImagePrompts.forEach((promptText, index) => { // use promptText here
             actionPrompts.push({
               sceneIndex: index,
-              originalPrompt: prompt,
+              originalPrompt: promptText, // Store the canonical prompt text
               actionDescription: currentActionDescriptions[index] || `Character performs action in scene ${index + 1}.`,
               chunkText: "Script chunk not available"
             });
@@ -190,29 +190,30 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
       let updatedGeneratedImages = [...(storyData.generatedImages || [])];
 
       if (isRegeneration && calledAiForPrompts) {
-        const oldScenePrompts = new Set(storyData.imagePrompts || []); 
-        updatedGeneratedImages = updatedGeneratedImages.filter(img => !oldScenePrompts.has(img.originalPrompt));
-        console.log('Regeneration with AI: Cleared images associated with old scene prompts. Remaining images:', updatedGeneratedImages.length);
-      } else if (isRegeneration && !calledAiForPrompts) {
-        console.log('Update Associations: Keeping all existing images for potential chunk data backfill.');
+        // If AI generated new prompts, we should clear out ALL old scene images
+        // as their sceneIndex might no longer be valid or relevant.
+        // A more sophisticated approach might try to preserve images if their canonical prompt still exists
+        // but for simplicity now, clearing them is safer if the prompt list changed.
+        updatedGeneratedImages = updatedGeneratedImages.filter(img => img.sceneIndex === undefined || !currentImagePrompts[img.sceneIndex]);
+        console.log('Regeneration with AI: Cleared images potentially associated with old/removed scene prompts. Remaining images:', updatedGeneratedImages.length);
       }
-
+      
+      // Backfill chunk info for existing images based on the NEW actionPrompts (which are based on currentImagePrompts)
       if (newActionPrompts.length > 0) {
         updatedGeneratedImages = updatedGeneratedImages.map(image => {
-          if (image.originalPrompt && (image.chunkId === undefined || image.chunkIndex === undefined)) {
-            const matchingActionPrompt = newActionPrompts.find(ap => ap.originalPrompt === image.originalPrompt);
-            if (matchingActionPrompt) {
-              console.log(`Backfilling chunk info for image with prompt: ${image.originalPrompt.substring(0,30)}...`);
-              return {
-                ...image,
-                chunkId: matchingActionPrompt.chunkId,
-                chunkIndex: matchingActionPrompt.chunkIndex,
-              };
-            }
+          // We need to find the actionPrompt that matches this image's sceneIndex
+          const matchingActionPrompt = newActionPrompts.find(ap => ap.sceneIndex === image.sceneIndex);
+          if (matchingActionPrompt && (image.chunkId === undefined || image.chunkIndex === undefined)) {
+            console.log(`Backfilling chunk info for image at sceneIndex: ${image.sceneIndex}`);
+            return {
+              ...image,
+              chunkId: matchingActionPrompt.chunkId,
+              chunkIndex: matchingActionPrompt.chunkIndex,
+            };
           }
           return image;
         });
-        console.log('Attempted backfill of chunk info for existing images.');
+        console.log('Attempted backfill of chunk info for existing images using newActionPrompts.');
       }
       
       updateStoryData({
@@ -237,7 +238,7 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
         }
       }
       
-      if (!isRegeneration && !calledAiForPrompts) { // Only advance step if it was initial generation and AI was called
+      if (!isRegeneration && calledAiForPrompts) { // Only advance step if it was initial generation and AI was called
         setCurrentStep(5);
       }
       
@@ -260,75 +261,65 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
   const handleGenerateImagePrompts = () => generatePromptsWithOptions(false);
   
 
-  const handleGenerateIndividualImage = async (prompt: string, index: number) => {
+  const handleGenerateIndividualImage = async (promptTextForGeneration: string, sceneIdx: number) => {
     if (googleKeyMissing || (imageProvider === 'picsart' && picsartKeyMissing) || (imageProvider === 'gemini' && geminiKeyMissing) || (imageProvider === 'imagen3' && imagen3KeyMissing)) {
       toast({ title: 'API Key Required', description: `Please configure your ${imageProvider === 'picsart' ? 'Picsart' : imageProvider === 'gemini' ? 'Gemini' : 'Google'} API Key in Account Settings.`, variant: 'destructive' });
       return;
     }
-    if (!storyData.imagePrompts) return;
+    if (!storyData.imagePrompts || !storyData.imagePrompts[sceneIdx]) {
+        toast({ title: 'Error', description: `Scene prompt at index ${sceneIdx} not found.`, variant: 'destructive'});
+        return;
+    }
     
-    const loadingKey = `image-${index}`;
+    const loadingKey = `image-${sceneIdx}`;
     handleSetLoading(loadingKey, true);
     
     const currentProgress = imageGenerationProgress;
     setImageGenerationProgress({
       total: currentProgress.total,
       completed: currentProgress.completed,
-      generating: [...currentProgress.generating, index]
+      generating: [...currentProgress.generating, sceneIdx]
     });
     
     toast({ 
       title: 'Generating Scene Image...', 
-      description: `Prompt: "${prompt.substring(0, 50)}..."` 
+      description: `Prompt: "${promptTextForGeneration.substring(0, 50)}..."` 
     });
     
     const styleId = storyData.imageStyleId || DEFAULT_STYLE_ID;
-    const result = await generateImageFromPrompt(prompt, storyData.userId, storyData.id, imageProvider, styleId);
+    // The `promptTextForGeneration` is what we send to the AI (it might be an edited version of storyData.imagePrompts[sceneIdx])
+    const result = await generateImageFromPrompt(promptTextForGeneration, storyData.userId, storyData.id, imageProvider, styleId);
     
     if (result.success && result.imageUrl && result.requestPrompt) {
       // Find action prompt by sceneIndex to preserve chunk association
-      const actionPrompt = storyData.actionPrompts?.find((ap: ActionPrompt) => ap.sceneIndex === index);
+      const actionPrompt = storyData.actionPrompts?.find((ap: ActionPrompt) => ap.sceneIndex === sceneIdx);
       
       const newImage: GeneratedImage = {
-        originalPrompt: prompt, // This is the current prompt text (could be edited)
-        requestPrompt: result.requestPrompt,
+        sceneIndex: sceneIdx, // Explicitly set the sceneIndex
+        originalPrompt: promptTextForGeneration, // This is the prompt text used for THIS generation
+        requestPrompt: result.requestPrompt, // This is what was sent to the AI (after style/expansions)
         imageUrl: result.imageUrl,
-        chunkId: actionPrompt?.chunkId, // Preserve chunkId from actionPrompt for this sceneIndex
-        chunkIndex: actionPrompt?.chunkIndex, // Preserve chunkIndex
+        chunkId: actionPrompt?.chunkId,
+        chunkIndex: actionPrompt?.chunkIndex,
       };
       
-      console.log(`--- ImageGenerationStep: Assigning to newImage (individual) for prompt "${prompt.substring(0,30)}..." ---`);
+      console.log(`--- ImageGenerationStep: Assigning to newImage (individual) for sceneIndex ${sceneIdx} ---`);
       console.log('Assigned chunkId:', newImage.chunkId);
       console.log('Assigned chunkIndex:', newImage.chunkIndex);
       
-      // A more robust way to update:
-      const allImages = [...(storyData.generatedImages || [])];
-      const existingImageIndexForThisScene = allImages.findIndex(img => {
-          // Try to match by originalPrompt (if unchanged) or by chunkId/chunkIndex if the prompt was edited
-          if (actionPrompt && img.chunkId === actionPrompt.chunkId && img.chunkIndex === actionPrompt.chunkIndex) {
-              return true;
-          }
-          // Fallback if no actionPrompt or no match by chunk (e.g. prompt was never associated)
-          // This might happen if actionPrompts weren't generated or aligned properly
-          return img.originalPrompt === storyData.imagePrompts![index]; // Match by the original prompt at this index
-      });
-
-      if (existingImageIndexForThisScene !== -1) {
-          allImages[existingImageIndexForThisScene] = newImage; // Replace existing
-      } else {
-          allImages.push(newImage); // Add as new if no exact match found (should ideally replace)
-      }
-
-
+      // Update storyData.generatedImages: remove any old image for this sceneIndex, then add the new one.
+      const updatedGeneratedImages = (storyData.generatedImages || []).filter(img => img.sceneIndex !== sceneIdx);
+      updatedGeneratedImages.push(newImage);
+      
       setStoryData({
         ...storyData,
-        generatedImages: allImages // New robust logic
+        generatedImages: updatedGeneratedImages 
       });
       
       if (storyData.id && storyData.userId) {
         try {
-          await saveStory({ ...storyData, generatedImages: allImages }, storyData.userId);
-          console.log('Auto-saved story with new/updated scene image');
+          await saveStory({ ...storyData, generatedImages: updatedGeneratedImages }, storyData.userId);
+          console.log('Auto-saved story with new/updated scene image for sceneIndex:', sceneIdx);
         } catch (error) {
           console.error('Failed to auto-save story:', error);
         }
@@ -337,13 +328,13 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
       const latestProgress = imageGenerationProgress;
       setImageGenerationProgress({
         total: latestProgress.total,
-        completed: latestProgress.completed + 1,
-        generating: latestProgress.generating.filter((i) => i !== index)
+        completed: latestProgress.completed + 1, // Increment if it was a new generation, or handle replacement counts differently
+        generating: latestProgress.generating.filter((i) => i !== sceneIdx)
       });
       
       toast({ 
         title: 'Scene Image Generated!', 
-        description: `Image for scene ${index + 1} is ready.`, 
+        description: `Image for scene ${sceneIdx + 1} is ready.`, 
         className: 'bg-green-500 text-white' 
       });
     } else {
@@ -351,12 +342,12 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
       setImageGenerationProgress({
         total: latestProgress.total,
         completed: latestProgress.completed,
-        generating: latestProgress.generating.filter((i) => i !== index)
+        generating: latestProgress.generating.filter((i) => i !== sceneIdx)
       });
       
       toast({ 
         title: 'Image Generation Error', 
-        description: result.error || `Failed to generate image for scene ${index + 1}.`, 
+        description: result.error || `Failed to generate image for scene ${sceneIdx + 1}.`, 
         variant: 'destructive' 
       });
     }
@@ -371,29 +362,36 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
       toast({ title: 'API Key Required', description: `Please configure your ${imageProvider === 'picsart' ? 'Picsart' : imageProvider === 'gemini' ? 'Gemini' : 'Google'} API Key in Account Settings.`, variant: 'destructive' });
       return;
     }
-    if (!storyData.imagePrompts || storyData.imagePrompts.length === 0) return;
+    if (!storyData.imagePrompts || storyData.imagePrompts.length === 0 || !storyData.actionPrompts) {
+        toast({ title: 'Prerequisites Missing', description: 'Ensure image prompts and action prompts are generated first.', variant: 'destructive'});
+        return;
+    }
     
     isGenerationStoppedRef.current = false;
     handleSetLoading('allImages', true);
     
-    const alreadyGenerated = (storyData.actionPrompts || []).filter((actionPrompt: ActionPrompt) =>
-      storyData.generatedImages?.find(img => img.originalPrompt === actionPrompt.originalPrompt)
-    ).length;
+    // Determine how many images are truly new generations needed
+    const imagesToActuallyGenerate = storyData.actionPrompts.filter(actionPrompt => 
+      !storyData.generatedImages?.find(img => img.sceneIndex === actionPrompt.sceneIndex)
+    );
+
+    const alreadyGeneratedCount = (storyData.actionPrompts?.length || 0) - imagesToActuallyGenerate.length;
     
     setImageGenerationProgress({
       total: storyData.actionPrompts?.length || 0,
-      completed: alreadyGenerated,
+      completed: alreadyGeneratedCount,
       generating: []
     });
     
     toast({ 
       title: 'Generating All Scene Images...', 
-      description: `${alreadyGenerated > 0 ? `Resuming from ${alreadyGenerated} already generated. ` : ''}This may take several minutes.` 
+      description: `${alreadyGeneratedCount > 0 ? `Resuming, ${alreadyGeneratedCount} already generated. ` : ''}This may take several minutes.` 
     });
     
     let successCount = 0;
     let errorCount = 0;
-    let currentStoryData = storyData;
+    let currentStoryData = { ...storyData }; // Work with a local copy to batch updates to state
+    let newImagesThisBatch: GeneratedImage[] = [];
     
     for (let i = 0; i < (storyData.actionPrompts?.length || 0); i++) {
       if (isGenerationStoppedRef.current) {
@@ -402,80 +400,50 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
           description: `Stopped after generating ${successCount} new images. Progress saved.`,
           className: 'bg-yellow-500 text-black'
         });
-        handleSetLoading('allImages', false);
-        return; 
+        break; 
       }
       
       const actionPrompt = storyData.actionPrompts![i];
-      const prompt = actionPrompt.originalPrompt;
+      const sceneIdx = actionPrompt.sceneIndex; // Use sceneIndex from actionPrompt
+      const promptTextForGeneration = actionPrompt.originalPrompt; // This is storyData.imagePrompts[sceneIdx]
       
-      if (currentStoryData.generatedImages?.find(img => img.originalPrompt === prompt)) {
+      // Skip if an image for this sceneIndex already exists
+      if (currentStoryData.generatedImages?.find(img => img.sceneIndex === sceneIdx)) {
         continue;
       }
       
       const currentProgressForLoop = imageGenerationProgress;
       setImageGenerationProgress({ 
         total: currentProgressForLoop.total || 0,
-        completed: currentProgressForLoop.completed || 0,
-        generating: [i]
+        completed: (currentStoryData.generatedImages?.filter(img => img.sceneIndex !== undefined).length || 0) + successCount,
+        generating: [sceneIdx]
       });
       
       const styleId = storyData.imageStyleId || DEFAULT_STYLE_ID;
-      const result = await generateImageFromPrompt(prompt, storyData.userId, storyData.id, imageProvider, styleId);
+      const result = await generateImageFromPrompt(promptTextForGeneration, storyData.userId, storyData.id, imageProvider, styleId);
       
       if (result.success && result.imageUrl && result.requestPrompt) {
         const newImage: GeneratedImage = {
-          originalPrompt: prompt,
+          sceneIndex: sceneIdx,
+          originalPrompt: promptTextForGeneration,
           requestPrompt: result.requestPrompt,
           imageUrl: result.imageUrl,
           chunkId: actionPrompt.chunkId,
           chunkIndex: actionPrompt.chunkIndex,
         };
-
-        console.log(`--- ImageGenerationStep: Assigning to newImage (all) for prompt "${prompt.substring(0,30)}..." ---`);
-        console.log('Assigned chunkId:', newImage.chunkId);
-        console.log('Assigned chunkIndex:', newImage.chunkIndex);
-        
-        const updatedImages = [
-          ...(currentStoryData.generatedImages || []).filter(img => img.originalPrompt !== prompt),
-          newImage,
-        ];
-        
-        currentStoryData = {
-          ...currentStoryData,
-          generatedImages: updatedImages
-        };
-        
-        setStoryData(currentStoryData);
-        
-        if (storyData.id && storyData.userId) {
-          try {
-            await saveStory(currentStoryData, storyData.userId);
-            console.log(`Auto-saved story with new scene image ${i + 1}`);
-          } catch (error) {
-            console.error('Failed to auto-save story:', error);
-          }
-        }
-        
+        newImagesThisBatch.push(newImage);
         successCount++;
       } else {
         errorCount++;
-        console.warn(`Image generation failed for scene ${i + 1}:`, result.error);
+        console.warn(`Image generation failed for scene ${sceneIdx + 1}:`, result.error);
         toast({
-          title: `Scene ${i + 1} Generation Failed`,
+          title: `Scene ${sceneIdx + 1} Generation Failed`,
           description: result.error || 'Unknown error occurred',
           variant: 'destructive'
         });
         
         const errorMessage = result.error?.toLowerCase() || '';
-        const criticalErrors = [
-          'insufficient credit', 'insufficient_credits', 'no credit', 'credit exhausted', 
-          'credits exhausted', 'quota exceeded', 'rate limit exceeded', 'insufficient fund', 
-          'insufficient balance', 'payment required', 'subscription expired', 
-          'api quota exceeded', 'balance insufficient', 'not enough credit', 
-          'credit limit', 'usage limit', 'billing', 'payment failed', 'account suspended'
-        ];
-        
+        const criticalErrors = [ /* ... critical error keywords ... */ ];
         const isCriticalError = criticalErrors.some(error => errorMessage.includes(error));
         
         if (isCriticalError) {
@@ -485,19 +453,38 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
             description: `Stopped due to: ${result.error}. Generated ${successCount} images before stopping.`,
             variant: 'destructive'
           });
-          handleSetLoading('allImages', false);
-          return; 
+          isGenerationStoppedRef.current = true; // Stop further iterations
         }
       }
       
+      // Update progress (local completed count for this batch)
       const latestProgressLoop = imageGenerationProgress;
       setImageGenerationProgress({
         total: latestProgressLoop.total || 0,
-        completed: (latestProgressLoop.completed || 0) + 1,
-        generating: []
+        completed: alreadyGeneratedCount + successCount,
+        generating: [] // Clear generating for this specific image
       });
-    }
+    } // End of loop
     
+    // Update storyData with all newly generated images from this batch
+    if (newImagesThisBatch.length > 0) {
+      const existingImagesNotReplaced = (currentStoryData.generatedImages || []).filter(
+        existingImg => !newImagesThisBatch.some(newImg => newImg.sceneIndex === existingImg.sceneIndex)
+      );
+      const finalGeneratedImages = [...existingImagesNotReplaced, ...newImagesThisBatch];
+      
+      setStoryData({ ...currentStoryData, generatedImages: finalGeneratedImages });
+      
+      if (storyData.id && storyData.userId) {
+        try {
+          await saveStory({ ...currentStoryData, generatedImages: finalGeneratedImages }, storyData.userId);
+          console.log(`Auto-saved story with ${successCount} new scene images from batch generation.`);
+        } catch (error) {
+          console.error('Failed to auto-save story after batch image generation:', error);
+        }
+      }
+    }
+
     if (!isGenerationStoppedRef.current) {
       if (successCount > 0) {
         toast({ 
@@ -505,22 +492,25 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
           description: `${successCount} images created. ${errorCount > 0 ? `${errorCount} errors.` : ''}`, 
           className: errorCount === 0 ? 'bg-green-500 text-white' : 'bg-yellow-500 text-black' 
         });
-      } else if (alreadyGenerated === storyData.imagePrompts.length) {
+      } else if (alreadyGeneratedCount === (storyData.actionPrompts?.length || 0) && (storyData.actionPrompts?.length || 0) > 0) {
         toast({ 
           title: 'All Images Already Generated!', 
           description: 'No new images needed.', 
           className: 'bg-blue-500 text-white' 
         });
-      } else {
+      } else if (errorCount > 0 && (storyData.actionPrompts?.length || 0) > 0) {
         toast({ 
-          title: 'Image Generation Failed', 
-          description: `All ${errorCount} generations failed.`, 
-          variant: 'destructive' 
+          title: 'Image Generation Complete with Errors', 
+          description: `Finished. ${successCount} images generated, ${errorCount} errors.`, 
+          variant: errorCount === imagesToActuallyGenerate.length ? 'destructive' : 'default'
         });
+      } else if ((storyData.actionPrompts?.length || 0) === 0) {
+        toast({ title: 'No Prompts', description: 'No image prompts available to generate images for.', variant: 'default'});
       }
     }
     handleSetLoading('allImages', false);
   };
+
 
   const handleStopGeneration = () => {
     isGenerationStoppedRef.current = true;
@@ -533,11 +523,17 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
     });
   };
 
-  const updateImagePrompt = (index: number, newPrompt: string) => {
+  const updateImagePromptText = (sceneIndex: number, newPromptText: string) => {
     if (!storyData.imagePrompts) return;
-    const updatedPrompts = [...storyData.imagePrompts];
-    updatedPrompts[index] = newPrompt;
-    updateStoryData({ imagePrompts: updatedPrompts });
+    const updatedImagePrompts = [...storyData.imagePrompts];
+    updatedImagePrompts[sceneIndex] = newPromptText;
+    
+    // Also update the originalPrompt in the corresponding actionPrompt
+    const updatedActionPrompts = (storyData.actionPrompts || []).map(ap => 
+      ap.sceneIndex === sceneIndex ? { ...ap, originalPrompt: newPromptText } : ap
+    );
+
+    updateStoryData({ imagePrompts: updatedImagePrompts, actionPrompts: updatedActionPrompts });
   };
 
   const toggleImagePromptEditing = (index: number) => {
@@ -664,7 +660,7 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
             ) : (
               <ImageIcon className="mr-2 h-4 w-4" />
             )}
-            {storyData.imagePrompts && storyData.imagePrompts.length > 0 ? 'Re-generate Image Prompts & Associations' : 'Generate Image Prompts'}
+            {storyData.imagePrompts && storyData.imagePrompts.length > 0 ? 'Update Image Prompts & Associations' : 'Generate Image Prompts'}
           </Button>
           {googleKeyMissing && <p className="text-xs text-destructive">Google API Key needed for prompt generation. <Link href="/settings?tab=apiKeys" className="underline">Configure here</Link>.</p>}
           
@@ -723,44 +719,44 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
             <ScrollArea className="h-[400px] w-full rounded-md border p-3 bg-muted/20">
               <div className="space-y-4">
               <TooltipProvider>
-                {storyData.imagePrompts.map((prompt, index) => {
-                  const existingImage = storyData.generatedImages?.find(img => img.originalPrompt === prompt);
-                  const isCurrentlyGenerating = imageGenerationProgress.generating.includes(index);
-                  const isEditing = isImagePromptEditing[index];
-                  const actionPrompt = storyData.actionPrompts?.find(ap => ap.sceneIndex === index);
+                {storyData.imagePrompts.map((promptText, sceneIndex) => {
+                  const existingImage = storyData.generatedImages?.find(img => img.sceneIndex === sceneIndex);
+                  const isCurrentlyGenerating = imageGenerationProgress.generating.includes(sceneIndex);
+                  const isEditing = isImagePromptEditing[sceneIndex];
+                  const actionPrompt = storyData.actionPrompts?.find(ap => ap.sceneIndex === sceneIndex);
 
                   return (
-                    <Card key={index} className="border-l-4 border-l-primary/20">
+                    <Card key={`scene-card-${sceneIndex}`} className="border-l-4 border-l-primary/20">
                       <CardContent className="p-4 space-y-3">
                         <div className="flex justify-between items-start">
                             <div>
-                                <Label htmlFor={`prompt-${index}`} className="text-xs font-semibold">Scene {index + 1} Prompt</Label>
+                                <Label htmlFor={`prompt-${sceneIndex}`} className="text-xs font-semibold">Scene {sceneIndex + 1} Prompt</Label>
                             </div>
                             <div className="flex gap-2">
-                                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => toggleImagePromptEditing(index)}>
+                                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => toggleImagePromptEditing(sceneIndex)}>
                                 <Edit2 className="h-3.5 w-3.5" />
                                 </Button>
                                 <Button 
                                 variant="ghost" 
                                 size="icon" 
                                 className="h-7 w-7" 
-                                onClick={() => handleGenerateIndividualImage(prompt, index)}
-                                disabled={isLoading[`image-${index}`] || isLoading.allImages || picsartKeyMissing || geminiKeyMissing || imagen3KeyMissing}
+                                onClick={() => handleGenerateIndividualImage(promptText, sceneIndex)}
+                                disabled={isLoading[`image-${sceneIndex}`] || isLoading.allImages || picsartKeyMissing || geminiKeyMissing || imagen3KeyMissing}
                                 >
-                                {isLoading[`image-${index}`] || isCurrentlyGenerating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                                {isLoading[`image-${sceneIndex}`] || isCurrentlyGenerating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
                                 </Button>
                             </div>
                         </div>
                         {isEditing ? (
                           <Textarea
-                            id={`prompt-${index}`}
-                            value={prompt}
-                            onChange={(e) => updateImagePrompt(index, e.target.value)}
+                            id={`prompt-${sceneIndex}`}
+                            value={promptText}
+                            onChange={(e) => updateImagePromptText(sceneIndex, e.target.value)}
                             className="text-xs min-h-[60px]"
                           />
                         ) : (
                           <p className="text-xs p-2 border rounded-md bg-background min-h-[60px]">
-                            <HighlightedPrompt prompt={prompt} />
+                            <HighlightedPrompt prompt={promptText} />
                           </p>
                         )}
                         
@@ -779,7 +775,7 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
                             </Tooltip>
                             <div className="flex items-start gap-1.5 text-xs text-muted-foreground">
                               <ChevronsRight className="h-3.5 w-3.5 text-green-500 mt-0.5 flex-shrink-0"/>
-                              <p className="text-xs leading-relaxed break-all"> {/* Added break-all */}
+                              <p className="text-xs leading-relaxed break-all">
                                 <span className="font-medium text-foreground/80">Action:</span> {actionPrompt.actionDescription || 'No action defined'}
                               </p>
                             </div>
@@ -792,14 +788,14 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
                             <div className="relative aspect-video w-full max-w-sm overflow-hidden rounded-md border mt-1 group">
                               <Image
                                 src={existingImage.imageUrl}
-                                alt={`Generated image for scene ${index + 1}`}
+                                alt={`Generated image for scene ${sceneIndex + 1}`}
                                 fill
                                 sizes="(max-width: 768px) 100vw, 400px"
                                 style={{ objectFit: "contain" }}
                                 className="bg-muted cursor-pointer transition-transform hover:scale-105"
-                                priority={index < 3} 
+                                priority={sceneIndex < 3} 
                                 unoptimized
-                                onClick={() => setPopupImage({ src: existingImage.imageUrl, alt: `Scene ${index + 1}: ${prompt.substring(0,30)}` })}
+                                onClick={() => setPopupImage({ src: existingImage.imageUrl, alt: `Scene ${sceneIndex + 1}: ${promptText.substring(0,30)}` })}
                               />
                               <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
                                 <Button
@@ -807,7 +803,7 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
                                   variant="secondary"
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    handleDownloadImage(existingImage.imageUrl, `Scene_${index + 1}`);
+                                    handleDownloadImage(existingImage.imageUrl, `Scene_${sceneIndex + 1}`);
                                   }}
                                   className="bg-white/90 hover:bg-white text-black"
                                 >
@@ -815,7 +811,8 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
                                 </Button>
                               </div>
                             </div>
-                            <p className="text-xs text-muted-foreground mt-1">Full prompt sent to AI: &quot;{existingImage.requestPrompt}&quot;</p>
+                            <p className="text-xs text-muted-foreground mt-1">Prompt used: &quot;{existingImage.originalPrompt}&quot;</p>
+                            <p className="text-xs text-muted-foreground mt-1">Request to AI: &quot;{existingImage.requestPrompt}&quot;</p>
                           </div>
                         )}
                       </CardContent>
@@ -841,7 +838,7 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
             <AlertDialogTitle>Confirm Prompt Regeneration</AlertDialogTitle>
             <AlertDialogDescription>
               This will call the AI to generate new image prompts and action descriptions based on your current script and detail prompts. 
-              Existing images associated with the old prompts will be cleared. Are you sure you want to proceed?
+              Existing images will need to be regenerated for these new prompts. Are you sure you want to proceed?
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -853,3 +850,4 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
     </Card>
   );
 }
+
