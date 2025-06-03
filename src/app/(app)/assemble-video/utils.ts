@@ -135,6 +135,12 @@ export const parseEntityReferences = (prompt: string, storyData: Story | null): 
   const locationPrompts = storyData?.detailsPrompts?.locationPrompts || "";
   const itemPrompts = storyData?.detailsPrompts?.itemPrompts || "";
 
+  // Helper function to normalize references for robust comparison
+  const normalizeRefForComparison = (ref: string): string => {
+    if (!ref.startsWith('@')) return ref.toLowerCase().replace(/[^a-z0-9]/g, '');
+    return '@' + ref.substring(1).toLowerCase().replace(/[^a-z0-9]/g, '');
+  };
+
   const parsedPrompt = prompt.replace(entityRegex, (matchedRef, capturedName) => {
     const originalRef = `@${capturedName}`; // Reconstruct the full @reference
     console.log(`[parseEntityReferences] Processing entity reference: ${originalRef} (captured name: ${capturedName})`);
@@ -143,11 +149,14 @@ export const parseEntityReferences = (prompt: string, storyData: Story | null): 
     let actualEntityName: string | null = null;
     let entityType: 'character' | 'item' | 'location' | null = null;
 
+    const normalizedOriginalRef = normalizeRefForComparison(originalRef);
+
     // Check characters
     for (const charName of entityNames.characters) {
       const generatedRef = nameToReference(charName);
-      console.log(`[DEBUG] Comparing prompt ref "${originalRef}" (lowercase: "${originalRef.toLowerCase()}") with generated ref "${generatedRef}" (lowercase: "${generatedRef.toLowerCase()}") for character "${charName}" (Original: "${charName}")`);
-      if (generatedRef.toLowerCase() === originalRef.toLowerCase()) {
+      const normalizedGeneratedRef = normalizeRefForComparison(generatedRef);
+      console.log(`[DEBUG] Comparing prompt ref "${originalRef}" (norm: "${normalizedOriginalRef}") with generated ref "${generatedRef}" (norm: "${normalizedGeneratedRef}") for char "${charName}"`);
+      if (normalizedGeneratedRef === normalizedOriginalRef) {
         actualEntityName = charName;
         entityType = 'character';
         break;
@@ -158,8 +167,9 @@ export const parseEntityReferences = (prompt: string, storyData: Story | null): 
     if (!actualEntityName) {
       for (const itemName of entityNames.items) {
         const generatedRef = nameToReference(itemName);
-        console.log(`[DEBUG] Comparing prompt ref "${originalRef}" (lowercase: "${originalRef.toLowerCase()}") with generated ref "${generatedRef}" (lowercase: "${generatedRef.toLowerCase()}") for item "${itemName}" (Original: "${itemName}")`);
-        if (generatedRef.toLowerCase() === originalRef.toLowerCase()) {
+        const normalizedGeneratedRef = normalizeRefForComparison(generatedRef);
+        console.log(`[DEBUG] Comparing prompt ref "${originalRef}" (norm: "${normalizedOriginalRef}") with generated ref "${generatedRef}" (norm: "${normalizedGeneratedRef}") for item "${itemName}"`);
+        if (normalizedGeneratedRef === normalizedOriginalRef) {
           actualEntityName = itemName;
           entityType = 'item';
           break;
@@ -171,8 +181,9 @@ export const parseEntityReferences = (prompt: string, storyData: Story | null): 
     if (!actualEntityName) {
       for (const locName of entityNames.locations) {
         const generatedRef = nameToReference(locName);
-        console.log(`[DEBUG] Comparing prompt ref "${originalRef}" (lowercase: "${originalRef.toLowerCase()}") with generated ref "${generatedRef}" (lowercase: "${generatedRef.toLowerCase()}") for location "${locName}" (Original: "${locName}")`);
-        if (generatedRef.toLowerCase() === originalRef.toLowerCase()) {
+        const normalizedGeneratedRef = normalizeRefForComparison(generatedRef);
+        console.log(`[DEBUG] Comparing prompt ref "${originalRef}" (norm: "${normalizedOriginalRef}") with generated ref "${generatedRef}" (norm: "${normalizedGeneratedRef}") for loc "${locName}"`);
+        if (normalizedGeneratedRef === normalizedOriginalRef) {
           actualEntityName = locName;
           entityType = 'location';
           break;
