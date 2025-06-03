@@ -301,14 +301,6 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
       console.log('Assigned chunkId:', newImage.chunkId);
       console.log('Assigned chunkIndex:', newImage.chunkIndex);
       
-      const updatedImages = [
-        ...(storyData.generatedImages || []).filter(img => img.originalPrompt !== prompt), // Remove old image if prompt text matches
-        newImage,
-      ];
-      // If the prompt text was edited, we need to ensure the *old* image (if any) for this *index* is replaced.
-      // The filter above handles if the prompt text hasn't changed.
-      // If prompt text changed, we need a different approach to replace by index.
-      
       // A more robust way to update:
       const allImages = [...(storyData.generatedImages || [])];
       const existingImageIndexForThisScene = allImages.findIndex(img => {
@@ -330,7 +322,6 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
 
       setStoryData({
         ...storyData,
-        // generatedImages: updatedImages // Old logic
         generatedImages: allImages // New robust logic
       });
       

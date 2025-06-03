@@ -11,8 +11,8 @@ import { generateTitle, generateScript } from '@/actions/storyActions'; // Kept 
 import { saveStory } from '@/actions/firestoreStoryActions'; // Changed for saveStory
 import { prepareScriptChunksAI } from '@/utils/narrationUtils';
 import { useToast } from '@/hooks/use-toast';
-import { useState, useCallback } from 'react'; // Removed useEffect
-import { debounce } from '@/utils/debounce';
+import { useState, useCallback, useRef, useEffect } from 'react';
+import { debounce, type DebouncedFunction } from '@/utils/debounce';
 import type { UseStoryStateReturn } from '@/hooks/useStoryState';
 
 interface StoryPromptStepProps {
@@ -39,8 +39,10 @@ export function StoryPromptStep({ storyState }: StoryPromptStepProps) {
 
   const googleKeyMissing = !apiKeysLoading && !userApiKeys?.googleApiKey;
 
-  const autoSaveStory = useCallback(
-    debounce(async (title: string, script: string) => {
+  const debouncedSaveFnRef = useRef<DebouncedFunction<[string, string]> | null>(null);
+
+  useEffect(() => {
+    debouncedSaveFnRef.current = debounce(async (title: string, script: string) => {
       if (!title.trim() || !script.trim() || !storyData.userId) return;
       if (googleKeyMissing && activeTab === 'ai-generate') return;
 
@@ -48,14 +50,14 @@ export function StoryPromptStep({ storyState }: StoryPromptStepProps) {
       try {
         const narrationChunks = await prepareScriptChunksAI(script, storyData.userId);
         
-        const updatedStoryDataInternal = { // Renamed to avoid conflict with storyData from closure
+        const updatedStoryDataInternal = { 
           ...storyData,
           title: title.trim(),
           generatedScript: script,
           narrationChunks
         };
         
-        const saveResult = await saveStory(updatedStoryDataInternal, storyData.userId); // Uses saveStory from firestoreStoryActions
+        const saveResult = await saveStory(updatedStoryDataInternal, storyData.userId);
         
         if (saveResult.success) {
           if (saveResult.storyId && !storyData.id) {
@@ -68,10 +70,9 @@ export function StoryPromptStep({ storyState }: StoryPromptStepProps) {
             toast({
               title: 'Story Saved!',
               description: 'Your story has been automatically saved.',
-            }); // Added missing closing parenthesis for toast
+            });
           } else {
-            // Existing story updated
-            updateStoryData({ // Update local state even for existing story
+            updateStoryData({ 
               title: title.trim(),
               generatedScript: script,
               narrationChunks
@@ -98,9 +99,20 @@ export function StoryPromptStep({ storyState }: StoryPromptStepProps) {
       } finally {
         setIsAutoSaving(false);
       }
-    }, 1000), // Assuming a 1000ms debounce delay, adjust if needed
-    [storyData, googleKeyMissing, activeTab, updateStoryData, toast, prepareScriptChunksAI, saveStory, setIsAutoSaving]
-  );
+    }, 1000);
+
+    return () => {
+      if (debouncedSaveFnRef.current) {
+        debouncedSaveFnRef.current.cancel();
+      }
+    };
+  }, [storyData, googleKeyMissing, activeTab, updateStoryData, toast, setIsAutoSaving]); // Removed prepareScriptChunksAI, saveStory
+
+  const autoSaveStory = useCallback((title: string, script: string) => {
+    if (debouncedSaveFnRef.current) {
+      debouncedSaveFnRef.current(title, script);
+    }
+  }, []); // This function is now stable
 
   const handleManualScriptChange = (value: string) => {
     setManualScript(value);
@@ -436,4 +448,3 @@ export function StoryPromptStep({ storyState }: StoryPromptStepProps) {
     </Card>
   );
 }
-
