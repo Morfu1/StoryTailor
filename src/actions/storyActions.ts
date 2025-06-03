@@ -1,3 +1,4 @@
+
 "use server";
 
 import { genkit } from 'genkit';
@@ -752,7 +753,17 @@ export async function generateImageFromImagen3(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         instances: [{ prompt: requestPrompt }],
-        parameters: { sampleCount: 1, aspectRatio: "16:9", personGeneration: "ALLOW_ADULT" }
+        parameters: { 
+          sampleCount: 1, 
+          aspectRatio: "16:9", 
+          personGeneration: "ALLOW_ADULT",
+          safetySettings: [ // Added more permissive safety settings
+            { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
+            { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
+            { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
+            { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
+          ],
+        }
       }),
     });
 
@@ -764,10 +775,12 @@ export async function generateImageFromImagen3(
     const result = await response.json();
     const predictions = result.predictions;
     if (!predictions || predictions.length === 0) {
+      console.error("Imagen 3 API returned no predictions. Full response:", JSON.stringify(result, null, 2));
       return { success: false, error: "No image data returned from Imagen 3 API", requestPrompt };
     }
     const imageData = predictions[0]?.bytesBase64Encoded;
     if (!imageData) {
+      console.error("Imagen 3 API returned prediction but no image bytes. Full response:", JSON.stringify(result, null, 2));
       return { success: false, error: "No image bytes in Imagen 3 response", requestPrompt };
     }
 
@@ -941,3 +954,4 @@ async function pollForPicsArtImage(
   }
   return { success: false, error: "Image generation timed out after polling.", requestPrompt };
 }
+
