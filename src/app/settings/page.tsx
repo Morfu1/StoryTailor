@@ -92,12 +92,12 @@ export default function SettingsPage() {
     const result = await getUserApiKeys(user.uid);
     if (result.success && result.data) {
       setApiKeys(result.data);
-      // After fetching API keys, try to fetch credits if Picsart key exists
-      if (result.data.picsartApiKey) {
-        fetchCredits(); 
-      } else {
+      // API keys fetched. Credits will be loaded on manual refresh.
+      if (!result.data.picsartApiKey) {
+        setCredits(null); // Clear any existing credits
         setCreditsError("Please enter your Picsart API key to view credits.");
-        setLoadingCredits(false); // No key, so no loading for credits
+      } else {
+        setCreditsError(null); // Clear error if key exists, ready for refresh
       }
     } else {
       toast({
@@ -105,10 +105,12 @@ export default function SettingsPage() {
         description: result.error || 'Could not load your API keys.',
         variant: 'destructive',
       });
-      setLoadingCredits(false); // No keys, so no loading for credits
+      setCredits(null); // Clear any existing credits
+      setCreditsError("Could not load API keys, cannot determine Picsart key status.");
     }
     setLoadingApiKeys(false);
-  }, [user, fetchCredits, toast, setLoadingApiKeys, setApiKeys, setCreditsError, setLoadingCredits]);
+    setLoadingCredits(false); // Ensure credits are not in loading state
+  }, [user, toast, setLoadingApiKeys, setApiKeys, setCredits, setCreditsError, setLoadingCredits]);
 
   useEffect(() => {
     if (user) {
@@ -137,10 +139,16 @@ export default function SettingsPage() {
     const result = await saveUserApiKeys(user.uid, apiKeys);
     if (result.success) {
       toast({ title: 'API Keys Saved', description: 'Your API keys have been successfully saved.', className: 'bg-green-500 text-white' });
-      // After saving, if Picsart key was just added, fetch credits
-      if (apiKeys.picsartApiKey && (!credits || creditsError)) {
-        fetchCredits();
+      // API keys saved. If Picsart key is now available, user can refresh credits.
+      // If Picsart key was removed, clear credits and show appropriate message.
+      if (!apiKeys.picsartApiKey) {
+        setCredits(null);
+        setCreditsError("Please enter your Picsart API key to view credits.");
+      } else if (creditsError && creditsError.includes("Picsart API key")) {
+        // If key was just added, clear the "enter key" error.
+        setCreditsError(null); 
       }
+      // No automatic fetchCredits call here.
     } else {
       toast({ title: 'Error Saving API Keys', description: result.error || 'Failed to save API keys.', variant: 'destructive' });
     }
@@ -345,6 +353,10 @@ export default function SettingsPage() {
                     </Alert>
                   )}
                 </div>
+              ) : apiKeys.picsartApiKey ? (
+                <div className="text-sm text-muted-foreground py-4 text-center">
+                  Click the <RefreshCw className="inline h-4 w-4 mx-1" /> button to load your credit balance.
+                </div>
               ) : null}
             </CardContent>
           </Card>
@@ -370,5 +382,3 @@ export default function SettingsPage() {
     </>
   );
 }
-
-    
