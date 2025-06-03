@@ -1,4 +1,5 @@
 
+
 "use server";
 
 import { genkit } from 'genkit';
@@ -677,8 +678,9 @@ export async function generateImageFromImagen3(
   }
   const apiKey = userKeysResult.data.googleApiKey;
 
-  let finalPromptParts: string[] = ["Here are the descriptions of the entities involved:\n"];
-  let styleStringApplicable: string | undefined;
+  const descriptionParts: string[] = ["Here are the descriptions of the entities involved:"];
+  const sceneInstructionParts: string[] = ["\nNow, generate an image depicting the following scene:"];
+  let actionPromptPart = originalPrompt; // Start with the original prompt containing @placeholders
 
   if (userId && storyId) {
     try {
@@ -686,41 +688,42 @@ export async function generateImageFromImagen3(
       const storyResult = await getStory(storyId, userId);
       if (storyResult.success && storyResult.data) {
         const { nameToReference, extractEntityNames } = await import('@/app/(app)/assemble-video/utils');
-        const entityReferencesInPrompt = originalPrompt.match(/@[A-Za-z0-9_.-]+/g) || [];
+        const entityReferencesInPrompt = Array.from(new Set(originalPrompt.match(/@[A-Za-z0-9_.-]+/g) || [])); // Unique references
         
-        if (entityReferencesInPrompt.length > 0) {
-          const allEntityNamesFromStory = extractEntityNames(storyResult.data);
-          const uniqueEntityRefs = [...new Set(entityReferencesInPrompt)]; // Process each unique @ref only once
+        const allEntityNamesFromStory = extractEntityNames(storyResult.data);
+        
+        for (const ref of entityReferencesInPrompt) {
+          let actualEntityName: string | null = null;
+          let entityType: 'character' | 'item' | 'location' | null = null;
+          let descriptionText: string | null = null;
 
-          for (const ref of uniqueEntityRefs) {
-            let actualEntityName: string | null = null;
-            let entityType: 'character' | 'item' | 'location' | null = null;
-            let descriptionText: string | null = null;
-
-            // Check characters
-            for (const charName of allEntityNamesFromStory.characters) { if (nameToReference(charName) === ref) { actualEntityName = charName; entityType = 'character'; break; } }
-            if (!actualEntityName) { for (const itemName of allEntityNamesFromStory.items) { if (nameToReference(itemName) === ref) { actualEntityName = itemName; entityType = 'item'; break; } } }
-            if (!actualEntityName) { for (const locName of allEntityNamesFromStory.locations) { if (nameToReference(locName) === ref) { actualEntityName = locName; entityType = 'location'; break; } } }
+          // Check characters
+          for (const charName of allEntityNamesFromStory.characters) { if (nameToReference(charName) === ref) { actualEntityName = charName; entityType = 'character'; break; } }
+          if (!actualEntityName) { for (const itemName of allEntityNamesFromStory.items) { if (nameToReference(itemName) === ref) { actualEntityName = itemName; entityType = 'item'; break; } } }
+          if (!actualEntityName) { for (const locName of allEntityNamesFromStory.locations) { if (nameToReference(locName) === ref) { actualEntityName = locName; entityType = 'location'; break; } } }
+          
+          if (actualEntityName && entityType) {
+            const promptsSection = entityType === 'character' ? storyResult.data.detailsPrompts?.characterPrompts || ''
+                                : entityType === 'item' ? storyResult.data.detailsPrompts?.itemPrompts || ''
+                                : storyResult.data.detailsPrompts?.locationPrompts || '';
             
-            if (actualEntityName && entityType) {
-              const promptsSection = entityType === 'character' ? storyResult.data.detailsPrompts?.characterPrompts || ''
-                                  : entityType === 'item' ? storyResult.data.detailsPrompts?.itemPrompts || ''
-                                  : storyResult.data.detailsPrompts?.locationPrompts || '';
-              
-              const escapedEntityName = actualEntityName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-              const entityPattern = new RegExp(`^\\s*${escapedEntityName}\\s*\\n(.*?)(?=\\n\\n|$)`, "ms");
-              const entityMatch = promptsSection.match(entityPattern);
-              
-              if (entityMatch && entityMatch[1]) {
-                descriptionText = entityMatch[1].trim();
-                finalPromptParts.push(`Entity: ${actualEntityName}\nDescription: ${descriptionText}\n---DIVIDER---\n`);
-              } else {
-                console.warn(`[Imagen3] No description found for ${entityType} "${actualEntityName}" (ref: ${ref}). Including name only.`);
-                finalPromptParts.push(`Entity: ${actualEntityName}\nDescription: (No detailed description provided)\n---DIVIDER---\n`);
-              }
+            const escapedEntityName = actualEntityName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const entityPattern = new RegExp(`^\\s*${escapedEntityName}\\s*\\n(.*?)(?=\\n\\n|$)`, "ms");
+            const entityMatch = promptsSection.match(entityPattern);
+            
+            if (entityMatch && entityMatch[1]) {
+              descriptionText = entityMatch[1].trim();
+              descriptionParts.push(`Entity: ${actualEntityName}\nDescription: ${descriptionText}\n---DIVIDER---`);
+              // Remove the @placeholder from the action part if its description is found
+              actionPromptPart = actionPromptPart.replace(ref, actualEntityName);
             } else {
-              console.warn(`[Imagen3] Entity for reference "${ref}" not found in story data. Ref will remain in scene instruction.`);
+              console.warn(`[Imagen3] No description found for ${entityType} "${actualEntityName}" (ref: ${ref}). Name will remain in scene instruction.`);
+              descriptionParts.push(`Entity: ${actualEntityName}\nDescription: (No detailed description provided for direct API use)\n---DIVIDER---`);
+              // @ref remains in actionPromptPart if no description found
             }
+          } else {
+            console.warn(`[Imagen3] Entity for reference "${ref}" not found in story data. Ref will remain in scene instruction.`);
+            // @ref remains in actionPromptPart
           }
         }
       } else {
@@ -729,12 +732,12 @@ export async function generateImageFromImagen3(
     } catch (error) { console.warn("[generateImageFromImagen3] Error processing placeholders:", error); }
   }
   
-  // Add the scene instruction (original prompt with @placeholders)
-  finalPromptParts.push(`\nNow, generate an image depicting the following scene:\n${originalPrompt}`);
-
-  let basePrompt = finalPromptParts.join('\n');
+  sceneInstructionParts.push(actionPromptPart); // Add the (potentially modified) action prompt
+  
+  let basePrompt = descriptionParts.join('\n') + '\n' + sceneInstructionParts.join('\n');
 
   // Apply style
+  let styleStringApplicable: string | undefined;
   if (styleId) {
     try {
       const { getStylePromptForProvider } = await import('@/utils/imageStyleUtils');
@@ -767,7 +770,7 @@ export async function generateImageFromImagen3(
         parameters: { 
           sampleCount: 1, 
           aspectRatio: "16:9", 
-          personGeneration: "ALLOW_ADULT", // Consider implications
+          personGeneration: "ALLOW_ALL", 
           safetySettings: [ 
             { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
             { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
@@ -970,4 +973,5 @@ async function pollForPicsArtImage(
   }
   return { success: false, error: "Image generation timed out after polling.", requestPrompt };
 }
+
 
