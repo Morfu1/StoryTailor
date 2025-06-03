@@ -22,19 +22,19 @@ async function renderVideoInBackground(
   defaultHeight: number,
   defaultFPS: number
 ): Promise<void> {
-  const jobInputHostDir = path.join(process.cwd(), '.tmp-docker-input', jobId);
-  const jobOutputHostDir = path.join(process.cwd(), '.tmp-docker-output', jobId);
-  fs.mkdirSync(jobInputHostDir, { recursive: true });
-  fs.mkdirSync(jobOutputHostDir, { recursive: true });
+  const jobTempInputDir = path.join(process.cwd(), '.tmp-remotion-input', jobId);
+  const jobTempOutputDir = path.join(process.cwd(), '.tmp-remotion-output', jobId);
+  fs.mkdirSync(jobTempInputDir, { recursive: true });
+  fs.mkdirSync(jobTempOutputDir, { recursive: true });
 
   try {
-    console.log(`Starting background rendering for job ${jobId}`);
+    console.log(`Starting background Remotion rendering for job ${jobId}`);
     updateJobStatus(jobId, { status: 'processing', progress: 10 });
 
-    console.log('Downloading assets for rendering to host directory:', jobInputHostDir);
+    console.log('Downloading assets for rendering to temp directory:', jobTempInputDir);
     updateJobStatus(jobId, { progress: 20 });
     
-    const { localImages, localAudioChunks, imageDimensions } = await downloadAssetsForRendering(images, audioChunks, jobInputHostDir);
+    const { localImages, localAudioChunks, imageDimensions } = await downloadAssetsForRendering(images, audioChunks, jobTempInputDir);
 
     let videoWidth = defaultWidth;
     let videoHeight = defaultHeight;
@@ -48,11 +48,11 @@ async function renderVideoInBackground(
       console.log(`No image dimensions detected, using default: ${videoWidth}x${videoHeight}`);
     }
     
-    console.log(`Rendering video using Docker for job ${jobId}`);
+    console.log(`Preparing video rendering with Remotion CLI for job ${jobId}`);
     updateJobStatus(jobId, { progress: 30 });
 
-    const propsForDocker: Omit<StoryVideoProps, 'width' | 'height' | 'fps'> & { width?: number, height?: number, fps?: number, detectedDimensions?: {width: number, height: number} } = {
-      images: localImages, // These paths are relative to jobInputHostDir's "remotion-assets"
+    const propsForRemotion: Omit<StoryVideoProps, 'width' | 'height' | 'fps'> & { width?: number, height?: number, fps?: number, detectedDimensions?: {width: number, height: number} } = {
+      images: localImages, // These paths are relative to jobTempInputDir's "remotion-assets"
       audioChunks: localAudioChunks,
       storyTitle,
       width: videoWidth,
@@ -60,41 +60,98 @@ async function renderVideoInBackground(
       fps: optimalFPS,
       detectedDimensions: imageDimensions,
     };
-    const propsJsonPathOnHost = path.join(jobInputHostDir, 'props.json');
-    fs.writeFileSync(propsJsonPathOnHost, JSON.stringify(propsForDocker, null, 2));
+    const propsJsonPathOnHost = path.join(jobTempInputDir, 'props.json');
+    fs.writeFileSync(propsJsonPathOnHost, JSON.stringify(propsForRemotion, null, 2));
 
     const outputVideoFilename = `${storyTitle.replace(/[^a-zA-Z0-9]/g, '_')}_${jobId}.mp4`;
     
-    // Hypothetical Docker command structure
-    const dockerCommand = [
-      'docker run --rm',
-      `-v "${jobInputHostDir}:/input:ro"`, // Mount host input dir to /input in container (read-only)
-      `-v "${jobOutputHostDir}:/output"`,   // Mount host output dir to /output in container
-      'storytailor-render', // Replace with your actual Docker image name
-      'node render.mjs',
-      '--props /input/props.json',
-      `--output /output/${outputVideoFilename}`,
-      '--composition StoryVideo' // Assuming StoryVideo is your main composition ID
-    ].join(' ');
+    const outputVideoPathOnHost = path.join(jobTempOutputDir, outputVideoFilename);
+    const remotionEntryPoint = 'src/remotion/index.ts'; // Adjust if your entry point is different
+    const compositionId = 'StoryVideo'; // Adjust if your composition ID is different
 
-    console.log(`[renderVideoInBackground] Hypothetical Docker command for Firebase Studio to adapt:\n${dockerCommand}`);
-    updateJobStatus(jobId, { progress: 40, status: 'processing' }); // Indicate it's now waiting for Docker
+    // Ensure propsJsonPathOnHost is correctly escaped for the shell if it contains spaces, etc.
+    // For npx remotion render, props can be a JSON string or a path to a JSON file.
+    // Using a path is cleaner.
+    const renderCommand = `npx remotion render ${remotionEntryPoint} ${compositionId} ${outputVideoPathOnHost} --props=${propsJsonPathOnHost} --log=verbose`;
 
-    // SIMULATE DOCKER RUN & VIDEO OUTPUT FOR TESTING (REMOVE IN PRODUCTION)
-    // This part is where Firebase Studio (or your orchestration) would run Docker and place the video.
-    // For now, we'll just log and set status.
-    // In a real setup, you'd await Docker completion and then proceed.
-    console.log(`Job ${jobId} is now 'processing'. Waiting for external Docker execution and video output.`);
-    // The actual update to 'completed' status and downloadUrl would happen *after* Docker finishes
-    // and the video file is confirmed in jobOutputHostDir. This part needs external orchestration.
+    console.log(`[renderVideoInBackground] Executing Remotion CLI command for job ${jobId}:\n${renderCommand}`);
+    updateJobStatus(jobId, { progress: 40, status: 'processing' });
+
+    const child = exec(renderCommand, { cwd: process.cwd() }, async (error, stdout, stderr) => {
+      activeRenderProcesses.delete(jobId); // Remove from active processes
+
+      if (error) {
+        console.error(`Remotion render failed for job ${jobId}:`, error);
+        console.error(`Stderr: ${stderr}`);
+        updateJobStatus(jobId, { 
+          status: 'error', 
+          error: `Remotion render failed: ${error.message}. Stderr: ${stderr}`,
+          progress: 100
+        });
+        cleanupRemotionAssets(jobId);
+        return;
+      }
+
+      console.log(`Remotion render stdout for job ${jobId}: ${stdout}`);
+      if (stderr) {
+        console.warn(`Remotion render stderr for job ${jobId}: ${stderr}`);
+      }
+
+      if (!fs.existsSync(outputVideoPathOnHost) || fs.statSync(outputVideoPathOnHost).size === 0) {
+        console.error(`Render completed but output file is missing or empty for job ${jobId}: ${outputVideoPathOnHost}`);
+        updateJobStatus(jobId, { 
+          status: 'error', 
+          error: 'Render completed but output file is missing or empty.',
+          progress: 100
+        });
+        cleanupRemotionAssets(jobId);
+        return;
+      }
+      
+      updateJobStatus(jobId, { progress: 90 });
+      console.log(`Video rendered successfully for job ${jobId} to ${outputVideoPathOnHost}`);
+
+      try {
+        const downloadUrl = await saveVideoForDownload(outputVideoPathOnHost, storyId);
+        updateJobStatus(jobId, { 
+          status: 'completed', 
+          downloadUrl, 
+          progress: 100 
+        });
+        console.log(`Video saved for download for job ${jobId}: ${downloadUrl}`);
+        // Input assets are cleaned up by cleanupRemotionAssets, output (video) was moved by saveVideoForDownload
+        // cleanupRemotionAssets will clean both .tmp-docker-input and .tmp-docker-output
+        cleanupRemotionAssets(jobId); 
+      } catch (saveError) {
+        console.error(`Failed to save video for download for job ${jobId}:`, saveError);
+        updateJobStatus(jobId, { 
+          status: 'error', 
+          error: saveError instanceof Error ? saveError.message : String(saveError),
+          progress: 100
+        });
+        cleanupRemotionAssets(jobId);
+      }
+    });
+
+    activeRenderProcesses.set(jobId, child);
+    console.log(`Remotion render process started for job ${jobId} with PID: ${child.pid}`);
+
+    // Handle cancellation (e.g., if the job is deleted via API while rendering)
+    // This requires a way to signal cancellation to this process.
+    // For now, if the server restarts, activeRenderProcesses is cleared.
 
   } catch (error) {
-    console.error(`Background preparation for Docker rendering failed for job ${jobId}:`, error);
+    console.error(`Error in renderVideoInBackground for job ${jobId}:`, error);
     updateJobStatus(jobId, { 
       status: 'error', 
       error: error instanceof Error ? error.message : String(error) 
     });
-    cleanupRemotionAssets(jobId); // Clean up input/output dirs on error
+    // If an error occurs before exec, it's caught here.
+    updateJobStatus(jobId, { 
+      status: 'error', 
+      error: error instanceof Error ? error.message : String(error) 
+    });
+    cleanupRemotionAssets(jobId);
   }
 }
 
@@ -127,7 +184,7 @@ export async function POST(req: Request) {
     ensureDownloadsDirectory();
     const { images, audioChunks, storyTitle, storyId }: RenderVideoRequest = await req.json();
 
-    console.log('Render video request received (for Docker):', {
+    console.log('Render video request received:', {
       imagesCount: images?.length || 0,
       audioChunksCount: audioChunks?.length || 0,
       storyTitle,
@@ -158,8 +215,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Missing story ID' }, { status: 400 });
     }
 
-    // Start background preparation and logging of Docker command (don't await)
-    prepareInputsForDockerRender( // Renamed from renderVideoInBackground
+    // Start background Remotion rendering process (don't await)
+    renderVideoInBackground(
       job.id,
       images, // Pass GeneratedImage[]
       audioChunks,
@@ -169,14 +226,14 @@ export async function POST(req: Request) {
       1080,
       15 
     ).catch(error => {
-      console.error(`Background Docker input preparation failed for job ${job.id}:`, error);
-      // Status is already updated to 'error' inside prepareInputsForDockerRender if it fails there.
+      console.error(`Background Remotion rendering process failed for job ${job.id}:`, error);
+      // Status is already updated to 'error' inside renderVideoInBackground if it fails there.
     });
 
     return NextResponse.json({ 
       jobId: job.id,
-      message: 'Video rendering inputs being prepared. Docker execution is next.',
-      status: 'processing' // Initial status, Docker run is awaited externally
+      message: 'Video rendering process started with Remotion CLI.',
+      status: 'processing' // Initial status, Remotion CLI run is awaited.
     });
   } catch (error) {
     console.error('Error in POST /api/render-video:', error);

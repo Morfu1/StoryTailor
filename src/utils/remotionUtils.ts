@@ -130,40 +130,41 @@ interface LocalImageWithMetadata {
 
 export const downloadAssetsForRendering = async (
   images: (string | GeneratedImage)[],
-  audioChunks: NarrationChunk[]
+  audioChunks: NarrationChunk[],
+  targetDirectory: string // Added targetDirectory argument
 ): Promise<{ localImages: LocalImageWithMetadata[]; localAudioChunks: NarrationChunk[]; imageDimensions?: { width: number; height: number } }> => {
   if (!isNode) {
     throw new Error('Asset downloading is only supported on the server side');
   }
   
-  const publicDir = path.join(process.cwd(), 'public');
-  const assetsDir = path.join(publicDir, 'remotion-assets');
+  // Use targetDirectory for assets, creating a 'remotion-assets' subdirectory within it
+  const assetsDir = path.join(targetDirectory, 'remotion-assets');
   fs.mkdirSync(assetsDir, { recursive: true });
   
-  console.log(`Downloading ${images.length} images and ${audioChunks.length} audio chunks...`);
+  console.log(`Downloading ${images.length} images and ${audioChunks.length} audio chunks to ${assetsDir}...`);
   
   let detectedDimensions: { width: number; height: number } | undefined;
-  const placeholderLocalPath = 'remotion-assets/placeholder.jpg';
+  const placeholderFilename = 'placeholder.jpg';
+  const placeholderLocalPath = `remotion-assets/${placeholderFilename}`; // Relative path for Remotion props
 
-  // Create placeholder image once
+  // Create placeholder image once in the target assets directory
   try {
     const placeholderData = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
-    fs.writeFileSync(path.join(assetsDir, 'placeholder.jpg'), placeholderData);
+    fs.writeFileSync(path.join(assetsDir, placeholderFilename), placeholderData);
   } catch (error) {
     console.error('Failed to create placeholder image:', error);
-    // Not throwing, as placeholder might not be strictly necessary if all images download
   }
   
-  // Cleanup previous assets
+  // Cleanup previous assets in the target assets directory
   try {
     const existingFiles = fs.readdirSync(assetsDir);
     for (const file of existingFiles) {
-      if (file !== 'placeholder.jpg') { // Don't delete the placeholder we just made
+      if (file !== placeholderFilename) { 
         fs.unlinkSync(path.join(assetsDir, file));
       }
     }
   } catch (error) {
-    console.warn('Could not clean up previous assets:', error);
+    console.warn(`Could not clean up previous assets in ${assetsDir}:`, error);
   }
   
   const processedImages: LocalImageWithMetadata[] = await Promise.all(
@@ -206,17 +207,19 @@ export const downloadAssetsForRendering = async (
       placeholderReturnObject.chunkIndex = chunkIndex;
       placeholderReturnObject.originalPrompt = originalPrompt;
 
+      // If imageUrl already points to a path within the target assetsDir, check if it exists
+      // This logic might be complex if imageUrls can be absolute or relative in different ways.
+      // For now, assume imageUrls are external URLs or need to be downloaded.
+      // If an image is already in `assetsDir` (e.g. `targetDirectory/remotion-assets/some-image.jpg`),
+      // and `imageUrl` is `remotion-assets/some-image.jpg`, this check might be needed.
+      // However, the current flow seems to imply downloading everything.
+      // Let's simplify by assuming all non-placeholder images are downloaded.
 
-      if (imageUrl.startsWith('remotion-assets/')) {
-        const fullPath = path.join(publicDir, imageUrl);
-        if (fs.existsSync(fullPath)) {
-          console.log(`Image ${index} already a local asset: ${imageUrl}`);
-          return { localPath: imageUrl, originalUrl: imageUrl, chunkId, chunkIndex, originalPrompt };
-        } else {
-          console.warn(`Image ${index} references non-existent local asset: ${fullPath}, attempting download.`);
-          // Continue to download logic if local asset is missing
-        }
-      }
+      // The check `imageUrl.startsWith('remotion-assets/')` was tied to `publicDir`.
+      // Now `assetsDir` is dynamic. The `localPath` returned should be relative to `assetsDir`'s parent.
+      // e.g. if assetsDir is `/abs/path/to/.tmp-docker-input/<jobId>/remotion-assets`,
+      // localPath should be `remotion-assets/image-0.jpg`.
+      // This is consistent with current `localPath` construction.
       
       try {
         console.log(`Downloading image ${index}: ${imageUrl.substring(0, 50)}...`);
@@ -274,16 +277,11 @@ export const downloadAssetsForRendering = async (
         return chunk; // Return original chunk
       }
       
-      // If already a local asset path, verify and use
-      if (chunk.audioUrl.startsWith('remotion-assets/')) {
-        const fullPath = path.join(publicDir, chunk.audioUrl);
-        if (fs.existsSync(fullPath) && fs.statSync(fullPath).size > 0) {
-          return chunk; // Already local and valid
-        }
-        // If local path is invalid, proceed to download
-        console.warn(`Audio chunk ${index} references non-existent local asset: ${chunk.audioUrl}, attempting download.`);
-      }
-      
+      // Similar to images, the check `chunk.audioUrl.startsWith('remotion-assets/')`
+      // was tied to `publicDir`. Now `assetsDir` is dynamic.
+      // The `audioUrl` in the returned chunk should be relative like `remotion-assets/audio-0.wav`.
+      // This is consistent with current `audioUrl` update logic.
+
       try {
         console.log(`Downloading audio chunk ${index}: ${chunk.audioUrl.substring(0, 50)}...`);
         const response = await fetch(chunk.audioUrl);
@@ -378,39 +376,29 @@ export const saveVideoForDownload = async (
 };
 
 /**
- * Cleans up temporary assets created during Remotion rendering.
+ * Cleans up temporary assets created for a specific Docker rendering job.
  */
-export const cleanupRemotionAssets = (): void => {
+export const cleanupRemotionAssets = (jobId: string): void => {
   if (!isNode) {
     console.warn('Asset cleanup is only supported on the server side');
     return;
   }
 
-  const publicDir = path.join(process.cwd(), 'public');
-  const assetsDir = path.join(publicDir, 'remotion-assets');
+  const jobTempInputDir = path.join(process.cwd(), '.tmp-remotion-input', jobId);
+  const jobTempOutputDir = path.join(process.cwd(), '.tmp-remotion-output', jobId);
 
-  try {
-    if (fs.existsSync(assetsDir)) {
-      const files = fs.readdirSync(assetsDir);
-      for (const file of files) {
-        // Optionally, keep placeholder or other essential files
-        // if (file === 'placeholder.jpg') continue; 
-        fs.unlinkSync(path.join(assetsDir, file));
+  const dirsToClean = [jobTempInputDir, jobTempOutputDir];
+
+  for (const dir of dirsToClean) {
+    try {
+      if (fs.existsSync(dir)) {
+        fs.rmSync(dir, { recursive: true, force: true });
+        console.log(`Cleaned up directory: ${dir}`);
+      } else {
+        console.log(`Directory not found, no cleanup needed: ${dir}`);
       }
-      console.log(`Cleaned up assets in ${assetsDir}`);
+    } catch (error) {
+      console.error(`Error cleaning up directory ${dir}:`, error);
     }
-  } catch (error) {
-    console.error(`Error cleaning up Remotion assets in ${assetsDir}:`, error);
-  }
-
-  // Also clean up the main temp directory for renders if it exists
-  const renderTmpDir = path.join(process.cwd(), '.tmp-remotion-render');
-  try {
-    if (fs.existsSync(renderTmpDir)) {
-      fs.rmSync(renderTmpDir, { recursive: true, force: true });
-      console.log(`Cleaned up render temp directory ${renderTmpDir}`);
-    }
-  } catch (error) {
-    console.error(`Error cleaning up render temp directory ${renderTmpDir}:`, error);
   }
 };
