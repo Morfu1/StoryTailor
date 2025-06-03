@@ -682,29 +682,49 @@ export async function generateImageFromImagen3(
       const storyResult = await getStory(storyId, userId);
       if (storyResult.success && storyResult.data) {
         const { nameToReference, extractEntityNames } = await import('@/app/(app)/assemble-video/utils');
-        const entityReferences = originalPrompt.match(/@[A-Za-z0-9]+/g) || [];
+        // Updated regex to include underscores and hyphens in @references
+        const entityReferences = originalPrompt.match(/@[A-Za-z0-9_-]+/g) || [];
         if (entityReferences.length > 0) {
           const entityNames = extractEntityNames(storyResult.data);
           let placeholderDescriptions = "";
           for (const ref of entityReferences) {
-            // const entityName = ref.substring(1).trim(); // Unused
             let actualEntityName: string | null = null;
             let entityType: 'character' | 'item' | 'location' | null = null;
             for (const characterName of entityNames.characters) { if (nameToReference(characterName) === ref) { actualEntityName = characterName; entityType = 'character'; break; } }
             if (!actualEntityName) { for (const itemName of entityNames.items) { if (nameToReference(itemName) === ref) { actualEntityName = itemName; entityType = 'item'; break; } } }
             if (!actualEntityName) { for (const locationName of entityNames.locations) { if (nameToReference(locationName) === ref) { actualEntityName = locationName; entityType = 'location'; break; } } }
+            
             if (actualEntityName && entityType) {
-              // const entityName = actualEntityName; // entityName was assigned but never used.
-              const promptsSection = entityType === 'character' ? storyResult.data.detailsPrompts?.characterPrompts || '' : entityType === 'item' ? storyResult.data.detailsPrompts?.itemPrompts || '' : storyResult.data.detailsPrompts?.locationPrompts || '';
-              const entityPattern = new RegExp(actualEntityName.replace(/[.*+?^${}()|[\]\\]/g, '\\\\$&') + "\\\\s*\\\\n+(.*?)(?=\\\\n\\\\n|$)", "s");
+              const promptsSection = entityType === 'character' ? storyResult.data.detailsPrompts?.characterPrompts || ''
+                                  : entityType === 'item' ? storyResult.data.detailsPrompts?.itemPrompts || ''
+                                  : storyResult.data.detailsPrompts?.locationPrompts || '';
+              
+              const escapedEntityName = actualEntityName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+              // Updated regex to allow leading whitespace before the entity name and use 'ms' flags
+              const entityPattern = new RegExp(`^\\s*${escapedEntityName}\\s*\\n(.*?)(?=\\n\\n|$)`, "ms");
               const entityMatch = promptsSection.match(entityPattern);
+              
               if (entityMatch && entityMatch[1]) {
-                placeholderDescriptions += `${actualEntityName}, ${entityMatch[1].trim()}\\n-----------\\n`;
+                placeholderDescriptions += `${actualEntityName}\n${entityMatch[1].trim()}\n`;
+              } else {
+                console.warn(`[Imagen3] No description found for ${entityType} "${actualEntityName}" (ref: ${ref}). Regex used: /^\\s*${escapedEntityName}\\s*\\n(.*?)(?=\\n\\n|$)/ms`);
               }
+            } else {
+              console.warn(`[Imagen3] Entity for reference "${ref}" not found in story data (characters: ${entityNames.characters.join(', ')}, items: ${entityNames.items.join(', ')}, locations: ${entityNames.locations.join(', ')}).`);
             }
           }
-          if (placeholderDescriptions) { requestPrompt = `${placeholderDescriptions}${originalPrompt}`; }
+          if (placeholderDescriptions) { 
+            const cleanedOriginalPrompt = originalPrompt.replace(/@/g, ''); // Remove @ symbols from the action part
+            requestPrompt = `${placeholderDescriptions.trim()}\n${cleanedOriginalPrompt}`; 
+            console.log(`[Imagen3] Prepended descriptions and cleaned original. New base prompt: ${requestPrompt}`);
+          } else {
+            console.warn("[Imagen3] No placeholder descriptions were generated. Original prompt will be used as base.");
+          }
+        } else {
+          console.log("[Imagen3] No @-references found in original prompt for placeholder expansion.");
         }
+      } else {
+        console.warn("[Imagen3] Failed to get story data or story data is empty for placeholder expansion.");
       }
     } catch (error) { console.warn("[generateImageFromImagen3] Error processing placeholders:", error); }
   }
