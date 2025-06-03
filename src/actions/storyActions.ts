@@ -28,7 +28,7 @@ import {
 
 
 // import { firebaseAdmin, dbAdmin } from '@/lib/firebaseAdmin'; // Unused based on lint
-import type { ElevenLabsVoice } from '@/types/story'; // Story, GeneratedImage, AdminTimestamp might be used later
+import type { ElevenLabsVoice, GeneratedImage } from '@/types/story'; // Story, AdminTimestamp might be used later
 // import type { Timestamp as AdminTimestamp } from 'firebase-admin/firestore'; // Unused based on lint
 // import { revalidatePath } from 'next/cache'; // Unused based on lint
 import { getUserApiKeys } from './apiKeyActions';
@@ -54,7 +54,7 @@ const scriptPromptTemplate = 'You are a script writer for animated videos. Your 
 
 const characterPromptsPromptTemplate = 'You are an expert prompt engineer specializing in creating descriptions for text-to-image AI models (like DALL-E, Midjourney, or Flux Dex model).\n' +
 'Based on the following story script, generate detailed visual descriptions for the main characters, key items, and important locations.\n' +
-'These descriptions will be used as prompts for an AI image generator to create visuals for the story.\n\n' +
+'These descriptions will be used as an AI image generator to create visuals for the story.\n\n' +
 '{{#if stylePrompt}}\n' +
 '**ARTISTIC STYLE REQUIREMENTS:**\n' +
 'Incorporate these style characteristics into all descriptions: {{{stylePrompt}}}\n' +
@@ -641,6 +641,7 @@ export async function generateImageFromGemini(
     }
 
     if (!imageData) {
+      console.error("No image data from Gemini. Full API response:", JSON.stringify(result, null, 2));
       return { success: false, error: "No image data returned from Gemini API", requestPrompt };
     }
 
@@ -676,21 +677,22 @@ export async function generateImageFromImagen3(
   }
   const apiKey = userKeysResult.data.googleApiKey;
 
-  let requestPrompt = originalPrompt;
+  let basePrompt = originalPrompt;
   if (userId && storyId) {
     try {
-      const { getStory } = await import('@/actions/firestoreStoryActions'); // Local import for cyclic dep avoidance
+      const { getStory } = await import('@/actions/firestoreStoryActions'); 
       const storyResult = await getStory(storyId, userId);
       if (storyResult.success && storyResult.data) {
         const { nameToReference, extractEntityNames } = await import('@/app/(app)/assemble-video/utils');
-        // Updated regex to include underscores and hyphens in @references
         const entityReferences = originalPrompt.match(/@[A-Za-z0-9_-]+/g) || [];
+        const descriptionParts: string[] = [];
+
         if (entityReferences.length > 0) {
           const entityNames = extractEntityNames(storyResult.data);
-          let placeholderDescriptions = "";
           for (const ref of entityReferences) {
             let actualEntityName: string | null = null;
             let entityType: 'character' | 'item' | 'location' | null = null;
+            
             for (const characterName of entityNames.characters) { if (nameToReference(characterName) === ref) { actualEntityName = characterName; entityType = 'character'; break; } }
             if (!actualEntityName) { for (const itemName of entityNames.items) { if (nameToReference(itemName) === ref) { actualEntityName = itemName; entityType = 'item'; break; } } }
             if (!actualEntityName) { for (const locationName of entityNames.locations) { if (nameToReference(locationName) === ref) { actualEntityName = locationName; entityType = 'location'; break; } } }
@@ -701,63 +703,66 @@ export async function generateImageFromImagen3(
                                   : storyResult.data.detailsPrompts?.locationPrompts || '';
               
               const escapedEntityName = actualEntityName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-              // Updated regex to allow leading whitespace before the entity name and use 'ms' flags
               const entityPattern = new RegExp(`^\\s*${escapedEntityName}\\s*\\n(.*?)(?=\\n\\n|$)`, "ms");
               const entityMatch = promptsSection.match(entityPattern);
               
               if (entityMatch && entityMatch[1]) {
-                placeholderDescriptions += `${actualEntityName}\n${entityMatch[1].trim()}\n`;
+                descriptionParts.push(`${actualEntityName}\n${entityMatch[1].trim()}`);
               } else {
-                console.warn(`[Imagen3] No description found for ${entityType} "${actualEntityName}" (ref: ${ref}). Regex used: /^\\s*${escapedEntityName}\\s*\\n(.*?)(?=\\n\\n|$)/ms`);
+                console.warn(`[Imagen3] No description found for ${entityType} "${actualEntityName}" (ref: ${ref}).`);
               }
             } else {
-              console.warn(`[Imagen3] Entity for reference "${ref}" not found in story data (characters: ${entityNames.characters.join(', ')}, items: ${entityNames.items.join(', ')}, locations: ${entityNames.locations.join(', ')}).`);
+              console.warn(`[Imagen3] Entity for reference "${ref}" not found in story data.`);
             }
           }
-          if (placeholderDescriptions) { 
-            const cleanedOriginalPrompt = originalPrompt.replace(/@/g, ''); // Remove @ symbols from the action part
-            requestPrompt = `${placeholderDescriptions.trim()}\n${cleanedOriginalPrompt}`; 
-            console.log(`[Imagen3] Prepended descriptions and cleaned original. New base prompt: ${requestPrompt}`);
-          } else {
-            console.warn("[Imagen3] No placeholder descriptions were generated. Original prompt will be used as base.");
-          }
-        } else {
-          console.log("[Imagen3] No @-references found in original prompt for placeholder expansion.");
         }
+        
+        const cleanedActionPrompt = originalPrompt.replace(/@/g, ''); 
+        let finalPromptParts: string[] = [];
+
+        if (descriptionParts.length > 0) {
+          finalPromptParts.push(...descriptionParts);
+        }
+        finalPromptParts.push(cleanedActionPrompt); 
+
+        basePrompt = finalPromptParts.join('\n-----\n');
+        console.log(`[Imagen3] Constructed base prompt with separators: ${basePrompt}`);
+
       } else {
-        console.warn("[Imagen3] Failed to get story data or story data is empty for placeholder expansion.");
+        console.warn("[Imagen3] Failed to get story data for placeholder expansion.");
       }
     } catch (error) { console.warn("[generateImageFromImagen3] Error processing placeholders:", error); }
   }
 
+  let requestPromptWithStyle = basePrompt;
   if (styleId) {
     try {
       const { applyStyleToPrompt } = await import('@/utils/imageStyleUtils');
-      requestPrompt = applyStyleToPrompt(requestPrompt || originalPrompt, styleId as string, 'imagen3');
+      requestPromptWithStyle = applyStyleToPrompt(basePrompt, styleId as string, 'imagen3');
     } catch (error) { console.warn("[generateImageFromImagen3] Failed to apply style:", error); }
   } else if (userId && storyId) {
     try {
-      const { getStory } = await import('@/actions/firestoreStoryActions'); // Local import
+      const { getStory } = await import('@/actions/firestoreStoryActions'); 
       const storyResult = await getStory(storyId, userId);
       if (storyResult.success && storyResult.data?.imageStyleId) {
         const { applyStyleToPrompt } = await import('@/utils/imageStyleUtils');
-        requestPrompt = applyStyleToPrompt(requestPrompt || originalPrompt, storyResult.data.imageStyleId as string, 'imagen3');
+        requestPromptWithStyle = applyStyleToPrompt(basePrompt, storyResult.data.imageStyleId as string, 'imagen3');
       }
     } catch (error) { console.warn("[generateImageFromImagen3] Failed to apply style from story:", error); }
   }
 
   try {
-    console.log(`Calling Imagen 3 API with prompt: "${requestPrompt}" using user's key.`);
+    console.log(`Calling Imagen 3 API with prompt: "${requestPromptWithStyle}" using user's key.`);
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key=${apiKey}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        instances: [{ prompt: requestPrompt }],
+        instances: [{ prompt: requestPromptWithStyle }],
         parameters: { 
           sampleCount: 1, 
           aspectRatio: "16:9", 
           personGeneration: "ALLOW_ADULT",
-          safetySettings: [ // Added more permissive safety settings
+          safetySettings: [ 
             { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
             { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
             { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
@@ -767,21 +772,22 @@ export async function generateImageFromImagen3(
       }),
     });
 
+    const result = await response.json(); // Parse JSON once
+
     if (!response.ok) {
-      const errorText = await response.text();
-      console.error("Imagen 3 API Error Response:", errorText);
-      return { success: false, error: `Imagen 3 API request failed: ${response.status}`, requestPrompt };
+      console.error("Imagen 3 API Error Response:", JSON.stringify(result, null, 2));
+      return { success: false, error: `Imagen 3 API request failed: ${response.status} - ${result?.error?.message || 'Unknown error'}`, requestPrompt: requestPromptWithStyle };
     }
-    const result = await response.json();
+    
     const predictions = result.predictions;
     if (!predictions || predictions.length === 0) {
       console.error("Imagen 3 API returned no predictions. Full response:", JSON.stringify(result, null, 2));
-      return { success: false, error: "No image data returned from Imagen 3 API", requestPrompt };
+      return { success: false, error: "No image data returned from Imagen 3 API", requestPrompt: requestPromptWithStyle };
     }
     const imageData = predictions[0]?.bytesBase64Encoded;
     if (!imageData) {
       console.error("Imagen 3 API returned prediction but no image bytes. Full response:", JSON.stringify(result, null, 2));
-      return { success: false, error: "No image bytes in Imagen 3 response", requestPrompt };
+      return { success: false, error: "No image bytes in Imagen 3 response", requestPrompt: requestPromptWithStyle };
     }
 
     if (userId && storyId) {
@@ -790,17 +796,17 @@ export async function generateImageFromImagen3(
         const imageName = `imagen3_${Date.now()}_${safePrompt}`;
         const imageBuffer = Buffer.from(imageData, 'base64');
         const firebaseUrl = await uploadImageBufferToFirebaseStorage(imageBuffer, userId, storyId, imageName, 'image/png');
-        return { success: true, imageUrl: firebaseUrl, requestPrompt };
+        return { success: true, imageUrl: firebaseUrl, requestPrompt: requestPromptWithStyle };
       } catch (uploadError) {
         console.error("Error uploading image to Firebase Storage:", uploadError);
-        return { success: true, imageUrl: `data:image/png;base64,${imageData}`, requestPrompt };
+        return { success: true, imageUrl: `data:image/png;base64,${imageData}`, requestPrompt: requestPromptWithStyle };
       }
     }
-    return { success: true, imageUrl: `data:image/png;base64,${imageData}`, requestPrompt };
+    return { success: true, imageUrl: `data:image/png;base64,${imageData}`, requestPrompt: requestPromptWithStyle };
   } catch (error: unknown) {
     console.error("Error calling Imagen 3 API:", error);
     const message = error instanceof Error ? error.message : "An unknown error occurred while generating the image.";
-    return { success: false, error: message, requestPrompt };
+    return { success: false, error: message, requestPrompt: requestPromptWithStyle };
   }
 }
 
