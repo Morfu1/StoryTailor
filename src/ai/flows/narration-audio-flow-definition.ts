@@ -34,20 +34,23 @@ export const generateNarrationAudioFlow = ai.defineFlow(
           return { error: 'Script is empty or contains only whitespace' };
         }
         if (input.script.length < 5) { console.warn('[generateNarrationAudioFlow] Script is very short'); }
-        if (input.script.endsWith('...') || !input.script.match(/[.!?]$/)) {
-          if (!input.script.match(/[.!?]$/)) { input.script = input.script.trim() + '.'; }
-        }
+        // Removed automatic period appending logic
         
         const voiceConfig: { name: string; languageCode?: string } = {
           name: input.voiceId || "Zephyr", 
         };
         if (input.languageCode) { voiceConfig.languageCode = input.languageCode; }
 
+        // Escape inner quotes and wrap the whole script in quotes
+        const escapedScript = input.script.replace(/"/g, '\\"');
+        const textToSend = `"${escapedScript}"`;
+        console.log(`[TTS DEBUG] Sending to Google TTS API (wrapped & escaped): ${textToSend}`); // DEBUG LOG
+
         const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${googleApiModelToUse}:generateContent?key=${googleUserApiKey}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            contents: [ { parts: [{ text: input.script }] } ],
+            contents: [ { parts: [{ text: textToSend }] } ], // Use wrapped and escaped text
             generationConfig: {
               responseModalities: ["AUDIO"],
               speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceConfig.name } } }

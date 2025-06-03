@@ -958,6 +958,3 @@ async function pollForPicsArtImage(
   }
   return { success: false, error: "Image generation timed out after polling.", requestPrompt };
 }
-
-
-

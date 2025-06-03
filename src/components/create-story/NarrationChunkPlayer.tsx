@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { ConvertibleAudioPlayer } from '@/components/ConvertibleAudioPlayer';
-import { Mic, Loader2, CheckCircle } from 'lucide-react';
+import { Mic, Loader2, CheckCircle, RefreshCw } from 'lucide-react'; // Added RefreshCw
 import type { NarrationChunk } from '@/types/narration';
 import type { UseStoryStateReturn } from '@/hooks/useStoryState';
 
@@ -54,26 +54,46 @@ export function NarrationChunkPlayer({
                 )}
               </span>
               
-              {narrationSource === 'generate' && !isCompleted && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => onGenerateChunk(index)}
-                  disabled={isDisabled}
-                  className="text-xs"
-                >
-                  {isCurrentlyProcessing ? (
-                    <>
-                      <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                      Generating...
-                    </>
-                  ) : (
-                    <>
-                      <Mic className="mr-1 h-3 w-3" />
-                      Generate
-                    </>
+              {narrationSource === 'generate' && (
+                <>
+                  {!isCompleted && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => onGenerateChunk(index)}
+                      disabled={isDisabled}
+                      className="text-xs"
+                    >
+                      {isCurrentlyProcessing ? (
+                        <>
+                          <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                          Generating...
+                        </>
+                      ) : (
+                        <>
+                          <Mic className="mr-1 h-3 w-3" />
+                          Generate
+                        </>
+                      )}
+                    </Button>
                   )}
-                </Button>
+                  {isCompleted && (
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      onClick={() => onGenerateChunk(index)}
+                      disabled={isDisabled} // This is true if isCurrentlyProcessing for this chunk
+                      className="h-7 w-7"
+                      aria-label={isCurrentlyProcessing ? "Regenerating audio chunk" : "Regenerate audio chunk"}
+                    >
+                      {isCurrentlyProcessing ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <RefreshCw className="h-3.5 w-3.5" />
+                      )}
+                    </Button>
+                  )}
+                </>
               )}
             </div>
             
