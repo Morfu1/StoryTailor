@@ -1,3 +1,4 @@
+
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { ImageIcon, Loader2, Download } from 'lucide-react';
@@ -60,9 +61,10 @@ export function DetailImageManager({ storyState, promptType, promptsString, show
         originalPrompt: individualPrompt,
         requestPrompt: result.requestPrompt,
         imageUrl: result.imageUrl,
+        // sceneIndex is not applicable for detail images
+        sceneIndex: -1, // Or some other indicator that it's not a scene image
       };
       
-      // Add to generatedImages, ensuring no duplicates for the exact same originalPrompt
       const updatedImages = [
         ...(storyData.generatedImages || []).filter(img => img.originalPrompt !== individualPrompt),
         newImage,
@@ -72,7 +74,6 @@ export function DetailImageManager({ storyState, promptType, promptsString, show
         generatedImages: updatedImages
       });
       
-      // Auto-save the story with the new image
       if (storyData.id && storyData.userId) {
         try {
           const storyToSave = { ...storyData, generatedImages: updatedImages };
@@ -115,7 +116,6 @@ export function DetailImageManager({ storyState, promptType, promptsString, show
 
     for (let i = 0; i < allParsedPrompts.length; i++) {
       const { description, type, key, name } = allParsedPrompts[i];
-      // Skip if already generated for this description during this batch or previously
       if (newImages.find(img => img.originalPrompt === description)) {
         console.log(`Skipping already processed prompt: ${description}`);
         continue;
@@ -128,7 +128,7 @@ export function DetailImageManager({ storyState, promptType, promptsString, show
       const result = await generateImageFromPrompt(description, storyData.userId, storyData.id, imageProvider, styleId);
       if (result.success && result.imageUrl && result.requestPrompt) {
         newImages = newImages.filter(img => img.originalPrompt !== description);
-        newImages.push({ originalPrompt: description, requestPrompt: result.requestPrompt, imageUrl: result.imageUrl });
+        newImages.push({ originalPrompt: description, requestPrompt: result.requestPrompt, imageUrl: result.imageUrl, sceneIndex: -1 });
         successCount++;
       } else {
         errorCount++;
@@ -139,7 +139,6 @@ export function DetailImageManager({ storyState, promptType, promptsString, show
     
     updateStoryData({ generatedImages: newImages });
 
-    // Auto-save the story with the new images
     if (storyData.id && storyData.userId && successCount > 0) {
       try {
         await saveStory({ ...storyData, generatedImages: newImages }, storyData.userId);
@@ -152,7 +151,7 @@ export function DetailImageManager({ storyState, promptType, promptsString, show
     if (successCount > 0) {
       toast({ title: 'Finished Generating Images!', description: `${successCount} images generated. ${errorCount > 0 ? `${errorCount} errors.` : ''}`, className: errorCount === 0 ? 'bg-green-500 text-white' : 'bg-yellow-500 text-black' });
     } else if (errorCount > 0 && allParsedPrompts.length > 0) {
-      toast({ title: 'Image Generation Failed', description: `All ${errorCount} image generations failed. Please check prompts and try again.`, variant: 'destructive' });
+       toast({ title: 'Image Generation Failed', description: `All ${errorCount} image generations failed. Please check prompts and try again.`, variant: 'destructive' });
     } else if (allParsedPrompts.length > 0) {
        toast({ title: 'No New Images Generated', description: 'All detail prompts may have already been processed or there were no new prompts to process.', variant: 'default' });
     }
@@ -188,7 +187,6 @@ export function DetailImageManager({ storyState, promptType, promptsString, show
     }
   };
 
-  // Handle "Generate All" button case
   if (showGenerateAllButton && promptType === 'All') {
     return (
       <Button 
@@ -293,7 +291,7 @@ export function DetailImageManager({ storyState, promptType, promptsString, show
                     </Button>
                   </div>
                 </div>
-                <p className="text-xs text-muted-foreground mt-1">Full prompt: &quot;{existingImage.requestPrompt}&quot;</p>
+                <p className="text-xs text-muted-foreground mt-1 whitespace-pre-wrap">Full prompt: &quot;{existingImage.requestPrompt}&quot;</p>
               </div>
             )}
           </div>
@@ -309,3 +307,4 @@ export function DetailImageManager({ storyState, promptType, promptsString, show
     </div>
   );
 }
+

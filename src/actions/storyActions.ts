@@ -666,7 +666,7 @@ export async function generateImageFromGemini(
 }
 
 export async function generateImageFromImagen3(
-  originalPrompt: string,
+  originalPrompt: string, // This is the prompt with @placeholders, e.g. "@Mika sniffs @JuicyApple"
   userId: string,
   storyId?: string,
   styleId?: string
@@ -677,25 +677,30 @@ export async function generateImageFromImagen3(
   }
   const apiKey = userKeysResult.data.googleApiKey;
 
-  let basePrompt = originalPrompt;
+  let finalPromptParts: string[] = ["Here are the descriptions of the entities involved:\n"];
+  let styleStringApplicable: string | undefined;
+
   if (userId && storyId) {
     try {
       const { getStory } = await import('@/actions/firestoreStoryActions'); 
       const storyResult = await getStory(storyId, userId);
       if (storyResult.success && storyResult.data) {
         const { nameToReference, extractEntityNames } = await import('@/app/(app)/assemble-video/utils');
-        const entityReferences = originalPrompt.match(/@[A-Za-z0-9_-]+/g) || [];
-        const descriptionParts: string[] = [];
+        const entityReferencesInPrompt = originalPrompt.match(/@[A-Za-z0-9_.-]+/g) || [];
+        
+        if (entityReferencesInPrompt.length > 0) {
+          const allEntityNamesFromStory = extractEntityNames(storyResult.data);
+          const uniqueEntityRefs = [...new Set(entityReferencesInPrompt)]; // Process each unique @ref only once
 
-        if (entityReferences.length > 0) {
-          const entityNames = extractEntityNames(storyResult.data);
-          for (const ref of entityReferences) {
+          for (const ref of uniqueEntityRefs) {
             let actualEntityName: string | null = null;
             let entityType: 'character' | 'item' | 'location' | null = null;
-            
-            for (const characterName of entityNames.characters) { if (nameToReference(characterName) === ref) { actualEntityName = characterName; entityType = 'character'; break; } }
-            if (!actualEntityName) { for (const itemName of entityNames.items) { if (nameToReference(itemName) === ref) { actualEntityName = itemName; entityType = 'item'; break; } } }
-            if (!actualEntityName) { for (const locationName of entityNames.locations) { if (nameToReference(locationName) === ref) { actualEntityName = locationName; entityType = 'location'; break; } } }
+            let descriptionText: string | null = null;
+
+            // Check characters
+            for (const charName of allEntityNamesFromStory.characters) { if (nameToReference(charName) === ref) { actualEntityName = charName; entityType = 'character'; break; } }
+            if (!actualEntityName) { for (const itemName of allEntityNamesFromStory.items) { if (nameToReference(itemName) === ref) { actualEntityName = itemName; entityType = 'item'; break; } } }
+            if (!actualEntityName) { for (const locName of allEntityNamesFromStory.locations) { if (nameToReference(locName) === ref) { actualEntityName = locName; entityType = 'location'; break; } } }
             
             if (actualEntityName && entityType) {
               const promptsSection = entityType === 'character' ? storyResult.data.detailsPrompts?.characterPrompts || ''
@@ -707,52 +712,53 @@ export async function generateImageFromImagen3(
               const entityMatch = promptsSection.match(entityPattern);
               
               if (entityMatch && entityMatch[1]) {
-                descriptionParts.push(`${actualEntityName}\n${entityMatch[1].trim()}`);
+                descriptionText = entityMatch[1].trim();
+                finalPromptParts.push(`Entity: ${actualEntityName}\nDescription: ${descriptionText}\n---DIVIDER---\n`);
               } else {
-                console.warn(`[Imagen3] No description found for ${entityType} "${actualEntityName}" (ref: ${ref}).`);
+                console.warn(`[Imagen3] No description found for ${entityType} "${actualEntityName}" (ref: ${ref}). Including name only.`);
+                finalPromptParts.push(`Entity: ${actualEntityName}\nDescription: (No detailed description provided)\n---DIVIDER---\n`);
               }
             } else {
-              console.warn(`[Imagen3] Entity for reference "${ref}" not found in story data.`);
+              console.warn(`[Imagen3] Entity for reference "${ref}" not found in story data. Ref will remain in scene instruction.`);
             }
           }
         }
-        
-        const cleanedActionPrompt = originalPrompt.replace(/@/g, ''); 
-        let finalPromptParts: string[] = [];
-
-        if (descriptionParts.length > 0) {
-          finalPromptParts.push(...descriptionParts);
-        }
-        finalPromptParts.push(cleanedActionPrompt); 
-
-        basePrompt = finalPromptParts.join('\n-----\n');
-        console.log(`[Imagen3] Constructed base prompt with separators: ${basePrompt}`);
-
       } else {
         console.warn("[Imagen3] Failed to get story data for placeholder expansion.");
       }
     } catch (error) { console.warn("[generateImageFromImagen3] Error processing placeholders:", error); }
   }
+  
+  // Add the scene instruction (original prompt with @placeholders)
+  finalPromptParts.push(`\nNow, generate an image depicting the following scene:\n${originalPrompt}`);
 
-  let requestPromptWithStyle = basePrompt;
+  let basePrompt = finalPromptParts.join('\n');
+
+  // Apply style
   if (styleId) {
     try {
-      const { applyStyleToPrompt } = await import('@/utils/imageStyleUtils');
-      requestPromptWithStyle = applyStyleToPrompt(basePrompt, styleId as string, 'imagen3');
-    } catch (error) { console.warn("[generateImageFromImagen3] Failed to apply style:", error); }
+      const { getStylePromptForProvider } = await import('@/utils/imageStyleUtils');
+      styleStringApplicable = getStylePromptForProvider(styleId as string, 'imagen3');
+    } catch (error) { console.warn("[generateImageFromImagen3] Failed to apply style from styleId:", error); }
   } else if (userId && storyId) {
     try {
       const { getStory } = await import('@/actions/firestoreStoryActions'); 
       const storyResult = await getStory(storyId, userId);
       if (storyResult.success && storyResult.data?.imageStyleId) {
-        const { applyStyleToPrompt } = await import('@/utils/imageStyleUtils');
-        requestPromptWithStyle = applyStyleToPrompt(basePrompt, storyResult.data.imageStyleId as string, 'imagen3');
+        const { getStylePromptForProvider } = await import('@/utils/imageStyleUtils');
+        styleStringApplicable = getStylePromptForProvider(storyResult.data.imageStyleId as string, 'imagen3');
       }
     } catch (error) { console.warn("[generateImageFromImagen3] Failed to apply style from story:", error); }
   }
 
+  if (styleStringApplicable) {
+    basePrompt += `\n\nUse the following artistic style:\n${styleStringApplicable}`;
+  }
+  
+  const requestPromptWithStyle = basePrompt;
+
   try {
-    console.log(`Calling Imagen 3 API with prompt: "${requestPromptWithStyle}" using user's key.`);
+    console.log(`Calling Imagen 3 API with structured prompt: \n"${requestPromptWithStyle}"\nUsing user's key.`);
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key=${apiKey}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -761,7 +767,7 @@ export async function generateImageFromImagen3(
         parameters: { 
           sampleCount: 1, 
           aspectRatio: "16:9", 
-          personGeneration: "ALLOW_ADULT",
+          personGeneration: "ALLOW_ADULT", // Consider implications
           safetySettings: [ 
             { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
             { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
@@ -772,7 +778,7 @@ export async function generateImageFromImagen3(
       }),
     });
 
-    const result = await response.json(); // Parse JSON once
+    const result = await response.json(); 
 
     if (!response.ok) {
       console.error("Imagen 3 API Error Response:", JSON.stringify(result, null, 2));
@@ -822,25 +828,29 @@ export async function generateImageFromPrompt(
   }
 
   if (provider === 'imagen3') {
+    // For Imagen3, originalPrompt is the scene instruction with @placeholders
+    // It will be structured internally by generateImageFromImagen3
     return generateImageFromImagen3(originalPrompt, userId, storyId, styleId);
   }
 
+  // Picsart provider logic
   const userKeysResult = await getUserApiKeys(userId);
   if (!userKeysResult.success || !userKeysResult.data?.picsartApiKey) {
     return { success: false, error: "Picsart API key not configured by user. Please set it in Account Settings." };
   }
   const picsartApiKey = userKeysResult.data.picsartApiKey;
 
-  let processedPrompt = originalPrompt;
+  let processedPrompt = originalPrompt; // This is the prompt with @placeholders
   if (userId && storyId) {
     try {
-      const { getStory } = await import('@/actions/firestoreStoryActions'); // Local import for cyclic dep avoidance
+      const { getStory } = await import('@/actions/firestoreStoryActions'); 
       const storyResult = await getStory(storyId, userId);
       if (storyResult.success && storyResult.data) {
         const { parseEntityReferences } = await import('@/app/(app)/assemble-video/utils');
+        // For Picsart (Flux), we expand the @references directly into the prompt.
         processedPrompt = parseEntityReferences(originalPrompt, storyResult.data);
       }
-    } catch (error) { console.warn("Failed to replace placeholders, using original prompt:", error); }
+    } catch (error) { console.warn("Failed to replace placeholders for Picsart, using original prompt:", error); }
   }
 
   let finalPrompt = processedPrompt || "high quality image";
@@ -848,16 +858,16 @@ export async function generateImageFromPrompt(
     try {
       const { applyStyleToPrompt } = await import('@/utils/imageStyleUtils');
       finalPrompt = applyStyleToPrompt(finalPrompt, styleId as string, provider);
-    } catch (error) { console.warn("Failed to apply style:", error); }
+    } catch (error) { console.warn("Failed to apply style for Picsart:", error); }
   } else if (userId && storyId) {
     try {
-      const { getStory } = await import('@/actions/firestoreStoryActions'); // Local import
+      const { getStory } = await import('@/actions/firestoreStoryActions'); 
       const storyResult = await getStory(storyId, userId);
       if (storyResult.success && storyResult.data?.imageStyleId) {
         const { applyStyleToPrompt } = await import('@/utils/imageStyleUtils');
         finalPrompt = applyStyleToPrompt(finalPrompt, storyResult.data.imageStyleId as string, provider);
       }
-    } catch (error) { console.warn("Failed to apply style from story:", error); }
+    } catch (error) { console.warn("Failed to apply style from story for Picsart:", error); }
   }
 
   const requestPrompt = finalPrompt;
