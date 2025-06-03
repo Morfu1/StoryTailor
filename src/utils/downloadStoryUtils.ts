@@ -1,5 +1,6 @@
+
 import JSZip from 'jszip';
-import { Story } from '@/types/story';
+import { Story, GeneratedImage } from '@/types/story'; // Added GeneratedImage
 
 /**
  * Add WAV headers to raw PCM data from Google TTS
@@ -40,8 +41,6 @@ function addWavHeadersToBuffer(pcmData: ArrayBuffer): ArrayBuffer {
   view.setUint32(36, 0x64617461, false); // "data"
   view.setUint32(40, pcmBytes, true); // Data size
   
-  // Copy PCM data
-  // const headerArray = new Uint8Array(buffer, 0, headerSize); // Unused
   const dataArray = new Uint8Array(buffer, headerSize);
   const pcmArray = new Uint8Array(pcmData);
   dataArray.set(pcmArray);
@@ -56,7 +55,6 @@ export async function downloadStoryAsZip(storyData: Story) {
 
   const zip = new JSZip();
   
-  // Helper function to safely fetch file from URL
   const fetchFile = async (url: string, isAudio = false): Promise<Blob | null> => {
     try {
       const response = await fetch(url);
@@ -66,29 +64,17 @@ export async function downloadStoryAsZip(storyData: Story) {
       }
       
       if (isAudio) {
-        // Handle audio files - check if it's raw PCM from Google TTS or complete file from ElevenLabs
         const arrayBuffer = await response.arrayBuffer();
         const view = new Uint8Array(arrayBuffer);
-        
-        // Check for WAV header (RIFF)
         const isWav = view[0] === 0x52 && view[1] === 0x49 && view[2] === 0x46 && view[3] === 0x46;
+        const isMp3 = (view[0] === 0x49 && view[1] === 0x44 && view[2] === 0x33) || 
+                      (view[0] === 0xFF && (view[1] & 0xE0) === 0xE0);
         
-        // Check for MP3 header (ID3 tag or MP3 frame sync)
-        const isMp3 = (view[0] === 0x49 && view[1] === 0x44 && view[2] === 0x33) || // ID3 tag
-                      (view[0] === 0xFF && (view[1] & 0xE0) === 0xE0); // MP3 frame sync
+        if (isWav) return new Blob([arrayBuffer], { type: 'audio/wav' });
+        if (isMp3) return new Blob([arrayBuffer], { type: 'audio/mpeg' });
         
-        if (isWav) {
-          // Already a complete WAV file
-          return new Blob([arrayBuffer], { type: 'audio/wav' });
-        } else if (isMp3) {
-          // Complete MP3 file from ElevenLabs - return as is
-          return new Blob([arrayBuffer], { type: 'audio/mpeg' });
-        } else {
-          // This is raw PCM data from Google TTS, add WAV headers
-          console.log('Converting raw PCM data from Google TTS to WAV format for download');
-          const wavBuffer = addWavHeadersToBuffer(arrayBuffer);
-          return new Blob([wavBuffer], { type: 'audio/wav' });
-        }
+        const wavBuffer = addWavHeadersToBuffer(arrayBuffer);
+        return new Blob([wavBuffer], { type: 'audio/wav' });
       } else {
         return await response.blob();
       }
@@ -98,7 +84,6 @@ export async function downloadStoryAsZip(storyData: Story) {
     }
   };
 
-  // Helper function to extract filename from URL
   const getFilenameFromUrl = (url: string, fallbackName: string): string => {
     try {
       const urlPath = new URL(url).pathname;
@@ -109,107 +94,85 @@ export async function downloadStoryAsZip(storyData: Story) {
     }
   };
 
-  // 1. Character_Locations_Items_Images folder
   const charactersImagesFolder = zip.folder('Character_Locations_Items_Images');
-  
-  // Filter for detail images (character/location/item images)
-  // These are images whose originalPrompt is NOT in the imagePrompts array (scene prompts)
   if (charactersImagesFolder && storyData.generatedImages) {
-    const scenePrompts = storyData.imagePrompts || [];
     const detailImages = storyData.generatedImages.filter(image => 
-      image.originalPrompt && !scenePrompts.includes(image.originalPrompt)
+      (image.sceneIndex === undefined || image.sceneIndex < 0) && image.imageUrl
     );
     
     for (let i = 0; i < detailImages.length; i++) {
       const image = detailImages[i];
-      if (image.imageUrl) {
-        const imageBlob = await fetchFile(image.imageUrl);
-        if (imageBlob) {
-          const filename = getFilenameFromUrl(image.imageUrl, `detail_${i + 1}.jpg`);
-          const safeName = image.originalPrompt.substring(0, 50).replace(/[^a-zA-Z0-9]/g, '_');
-          charactersImagesFolder.file(`detail_${i + 1}_${safeName}_${filename}`, imageBlob);
-        }
+      const imageBlob = await fetchFile(image.imageUrl!);
+      if (imageBlob) {
+        const filename = getFilenameFromUrl(image.imageUrl!, `detail_${i + 1}.jpg`);
+        const safeName = image.originalPrompt.substring(0, 50).replace(/[^a-zA-Z0-9]/g, '_');
+        charactersImagesFolder.file(`detail_${i + 1}_${safeName}_${filename}`, imageBlob);
       }
     }
   }
 
-  // 2. Character_Locations_Items_Prompts folder
   const charactersPromptsFolder = zip.folder('Character_Locations_Items_Prompts');
   if (charactersPromptsFolder && storyData.detailsPrompts) {
-    let detailPrompts = '=== STORY DETAILS PROMPTS ===\n\n';
-    
+    let detailPromptsText = '=== STORY DETAILS PROMPTS ===\n\n';
     if (storyData.detailsPrompts.characterPrompts) {
-      detailPrompts += '=== CHARACTER PROMPTS ===\n\n';
-      detailPrompts += storyData.detailsPrompts.characterPrompts + '\n\n';
+      detailPromptsText += '=== CHARACTER PROMPTS ===\n\n' + storyData.detailsPrompts.characterPrompts + '\n\n';
     }
-
     if (storyData.detailsPrompts.locationPrompts) {
-      detailPrompts += '=== LOCATION PROMPTS ===\n\n';
-      detailPrompts += storyData.detailsPrompts.locationPrompts + '\n\n';
+      detailPromptsText += '=== LOCATION PROMPTS ===\n\n' + storyData.detailsPrompts.locationPrompts + '\n\n';
     }
-
     if (storyData.detailsPrompts.itemPrompts) {
-      detailPrompts += '=== ITEM PROMPTS ===\n\n';
-      detailPrompts += storyData.detailsPrompts.itemPrompts + '\n\n';
+      detailPromptsText += '=== ITEM PROMPTS ===\n\n' + storyData.detailsPrompts.itemPrompts + '\n\n';
     }
-
-    charactersPromptsFolder.file('character_locations_items_prompts.txt', detailPrompts);
+    charactersPromptsFolder.file('character_locations_items_prompts.txt', detailPromptsText);
   }
 
-  // 3. Scene_Images folder
   const sceneImagesFolder = zip.folder('Scene_Images');
   if (sceneImagesFolder && storyData.imagePrompts && storyData.generatedImages) {
-    const allGeneratedImages = storyData.generatedImages;
+    // Create a map of sceneIndex to GeneratedImage for quick lookup and ensure we only get one image per sceneIndex
+    const sceneImagesMap = new Map<number, GeneratedImage>();
+    storyData.generatedImages.forEach(img => {
+      if (img.sceneIndex !== undefined && img.sceneIndex >= 0 && img.imageUrl) {
+        // If an image for this sceneIndex already exists, this logic will take the last one encountered,
+        // which should be the most recent if array is ordered by generation or update time.
+        sceneImagesMap.set(img.sceneIndex, img);
+      }
+    });
 
-    for (let sceneIndex = 0; sceneIndex < storyData.imagePrompts.length; sceneIndex++) {
-      const currentScenePrompt = storyData.imagePrompts[sceneIndex];
-      
-      // Find the image that matches this specific scene prompt.
-      // This assumes that 'originalPrompt' on a GeneratedImage is the main scene prompt from Step 4.
-      const imageForScene = allGeneratedImages.find(img => img.originalPrompt === currentScenePrompt);
-
-      if (imageForScene && imageForScene.imageUrl) {
+    for (let sceneIdx = 0; sceneIdx < storyData.imagePrompts.length; sceneIdx++) {
+      const imageForScene = sceneImagesMap.get(sceneIdx);
+      if (imageForScene) {
         const imageBlob = await fetchFile(imageForScene.imageUrl);
         if (imageBlob) {
           const baseFilename = getFilenameFromUrl(imageForScene.imageUrl, `image.jpg`);
           const chapterInfo = imageForScene.chapterNumber ? `_chapter_${imageForScene.chapterNumber}` : '';
-          // Use sceneIndex + 1 for 1-based scene numbering in filename, ensuring correct order
-          sceneImagesFolder.file(`scene_${sceneIndex + 1}${chapterInfo}_${baseFilename}`, imageBlob);
+          sceneImagesFolder.file(`scene_${sceneIdx + 1}${chapterInfo}_${baseFilename}`, imageBlob);
         }
       } else {
-        // Log a warning if an image for a specific scene prompt isn't found.
-        // This helps in debugging but doesn't stop the zip creation for other available images.
-        console.warn(`[DownloadZip] No image found for scene ${sceneIndex + 1} (prompt: "${currentScenePrompt.substring(0, 50)}...")`);
+        console.warn(`[DownloadZip] No image found for scene index ${sceneIdx}.`);
       }
     }
   }
 
-  // 4. Scene_Prompts folder
   const scenePromptsFolder = zip.folder('Scene_Prompts');
   if (scenePromptsFolder && storyData.imagePrompts) {
-    let scenePrompts = '=== SCENE IMAGE PROMPTS ===\n\n';
+    let scenePromptsText = '=== SCENE IMAGE PROMPTS ===\n\n';
     storyData.imagePrompts.forEach((prompt: string, index: number) => {
-      scenePrompts += `Scene ${index + 1}:\n${prompt}\n\n`;
+      scenePromptsText += `Scene ${index + 1}:\n${prompt}\n\n`;
     });
-    scenePromptsFolder.file('scene_image_prompts.txt', scenePrompts);
+    scenePromptsFolder.file('scene_image_prompts.txt', scenePromptsText);
   }
 
-  // NEW: Action_Prompts folder
   const actionPromptsFolder = zip.folder('Action_prompts');
   if (actionPromptsFolder && storyData.actionPrompts && storyData.actionPrompts.length > 0) {
     let actionPromptsText = '=== ACTION PROMPTS ===\n\n';
-    storyData.actionPrompts.forEach((prompt, index) => {
-      // Assuming sceneIndex in ActionPrompt is 0-based, so adding 1 for display
-      // Or if actionPrompts are already ordered, use the loop index.
-      // The ActionPrompt interface has sceneIndex, let's use that if available and reliable,
-      // otherwise, the array index + 1 is a good fallback.
-      // For now, using index + 1 as a simple approach.
-      actionPromptsText += `Scene ${prompt.sceneIndex !== undefined ? prompt.sceneIndex + 1 : index + 1}:\n${prompt.actionDescription}\n\n`;
+    // Sort action prompts by sceneIndex to ensure correct order in the text file
+    const sortedActionPrompts = [...storyData.actionPrompts].sort((a, b) => (a.sceneIndex || 0) - (b.sceneIndex || 0));
+    sortedActionPrompts.forEach((prompt) => {
+      actionPromptsText += `Scene ${prompt.sceneIndex !== undefined ? prompt.sceneIndex + 1 : 'N/A'}:\nAction: ${prompt.actionDescription}\nOriginal Prompt: ${prompt.originalPrompt}\nNarration Chunk: ${prompt.chunkText}\n\n`;
     });
     actionPromptsFolder.file('action_prompts.txt', actionPromptsText);
   }
 
-  // 5. Scene_Audio folder
   const sceneAudioFolder = zip.folder('Scene_Audio');
   if (sceneAudioFolder && storyData.narrationChunks) {
     for (let i = 0; i < storyData.narrationChunks.length; i++) {
@@ -217,82 +180,59 @@ export async function downloadStoryAsZip(storyData: Story) {
       if (chunk.audioUrl) {
         const audioBlob = await fetchFile(chunk.audioUrl, true);
         if (audioBlob) {
-          // Use appropriate extension based on the blob type
           const extension = audioBlob.type === 'audio/mpeg' ? 'mp3' : 'wav';
-          sceneAudioFolder.file(`chunk_${i + 1}.${extension}`, audioBlob);
+          sceneAudioFolder.file(`chunk_${chunk.index !== undefined ? chunk.index + 1 : i + 1}.${extension}`, audioBlob);
         }
       }
     }
   }
 
-  // Add main narration audio if exists
   if (sceneAudioFolder && storyData.narrationAudioUrl) {
     const mainAudioBlob = await fetchFile(storyData.narrationAudioUrl, true);
     if (mainAudioBlob) {
-      // Use appropriate extension based on the blob type
       const extension = mainAudioBlob.type === 'audio/mpeg' ? 'mp3' : 'wav';
       sceneAudioFolder.file(`full_narration.${extension}`, mainAudioBlob);
     }
   }
 
-  // 6. Story_Text folder
   const storyTextFolder = zip.folder('Story_Text');
   if (storyTextFolder) {
-    // Main story text
     if (storyData.generatedScript) {
       storyTextFolder.file('story_script.txt', storyData.generatedScript);
     }
-
-    // Audio chunks text
     if (storyData.narrationChunks && storyData.narrationChunks.length > 0) {
       let chunksText = '=== AUDIO CHUNKS ===\n\n';
-      storyData.narrationChunks.forEach((chunk: { text: string; id?: string; audioUrl?: string; duration?: number; index?: number }, index: number) => {
-        chunksText += `Chunk ${index + 1}:\n${chunk.text}\n\n`;
+      storyData.narrationChunks.forEach((chunk, index) => {
+        chunksText += `Chunk ${chunk.index !== undefined ? chunk.index + 1 : index + 1}:\n${chunk.text}\n\n`;
       });
       storyTextFolder.file('audio_chunks.txt', chunksText);
     }
-
-    // Initial prompt
     if (storyData.userPrompt) {
       storyTextFolder.file('initial_prompt.txt', storyData.userPrompt);
     }
   }
 
-  // 7. Tools_Used folder
   const toolsUsedFolder = zip.folder('Tools_Used');
   if (toolsUsedFolder) {
     let toolsInfo = '=== AI TOOLS USED ===\n\n';
-
-    // Audio AI details
-    if (storyData.elevenLabsVoiceId) {
+    if (storyData.elevenLabsVoiceId || (storyData.narrationVoice && storyData.narrationVoice.toLowerCase().includes('google'))) {
       toolsInfo += '=== AUDIO GENERATION ===\n';
-      toolsInfo += 'Service: ElevenLabs\n';
-      toolsInfo += `Voice ID: ${storyData.elevenLabsVoiceId}\n`;
-      toolsInfo += 'Language: English\n';
-      toolsInfo += 'Format: MP3\n\n';
+      toolsInfo += `Service: ${storyData.elevenLabsVoiceId ? 'ElevenLabs' : 'Google TTS'}\n`;
+      if(storyData.elevenLabsVoiceId) toolsInfo += `Voice ID: ${storyData.elevenLabsVoiceId}\n`;
+      if(storyData.narrationVoice && storyData.narrationVoice.toLowerCase().includes('google')) toolsInfo += `Voice Name: ${storyData.narrationVoice}\n`;
+      toolsInfo += 'Format: MP3 or WAV\n\n';
     }
-
-    // Image AI details
-    if (storyData.generatedImages && storyData.generatedImages.length > 0) {
+    if (storyData.imageProvider) {
       toolsInfo += '=== IMAGE GENERATION ===\n';
-      toolsInfo += 'Service: Flux (via Replicate)\n';
-      toolsInfo += 'Model: flux-schnell\n';
-      toolsInfo += 'Format: JPEG\n';
-      toolsInfo += 'Resolution: 1024x1024\n\n';
+      toolsInfo += `Service: ${storyData.imageProvider}\n`;
+      if(storyData.imageStyleId) toolsInfo += `Style ID: ${storyData.imageStyleId}\n`;
+      toolsInfo += 'Format: PNG/JPEG\n\n';
     }
-
-    // Story generation details
-    toolsInfo += '=== STORY GENERATION ===\n';
-    toolsInfo += 'Service: Google Gemini (via Genkit)\n';
-    toolsInfo += 'Model: gemini-1.5-flash\n\n';
-
+    toolsInfo += '=== STORY GENERATION ===\nService: Google Gemini (via Genkit)\nModel: gemini-1.5-flash (or equivalent based on implementation)\n\n';
     toolsUsedFolder.file('ai_tools_details.txt', toolsInfo);
   }
 
-  // Generate and download the zip file
   const content = await zip.generateAsync({ type: 'blob' });
-  
-  // Create download link
   const url = window.URL.createObjectURL(content);
   const link = document.createElement('a');
   link.href = url;

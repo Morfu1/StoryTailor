@@ -1,3 +1,4 @@
+
 import type { Story, GeneratedImage } from '@/types/story';
 
 export interface ParsedPrompt {
@@ -95,77 +96,66 @@ export const categorizeImages = (storyData: Story) => {
   const items: GeneratedImage[] = [];
   const scenes: GeneratedImage[] = [];
 
-  if (!storyData.generatedImages) {
+  if (!storyData.generatedImages || storyData.generatedImages.length === 0) {
     return { characters, locations, items, scenes };
   }
 
-  console.log('=== CATEGORIZE IMAGES DEBUG ===');
-  console.log('Total generatedImages:', storyData.generatedImages.length);
-
-  // Get parsed prompts from step 2
+  // Get parsed prompts from step 2 to identify detail images
   const characterPrompts = parseNamedPrompts(storyData.detailsPrompts?.characterPrompts);
   const locationPrompts = parseNamedPrompts(storyData.detailsPrompts?.locationPrompts);
   const itemPrompts = parseNamedPrompts(storyData.detailsPrompts?.itemPrompts);
 
-  console.log('Character prompts:', characterPrompts.map(p => p.description));
-  console.log('Location prompts:', locationPrompts.map(p => p.description));
-  console.log('Item prompts:', itemPrompts.map(p => p.description));
-  console.log('Scene prompts:', storyData.imagePrompts || []);
-
-  // Create sets for quick lookup
   const characterDescriptions = new Set(characterPrompts.map(p => p.description));
   const locationDescriptions = new Set(locationPrompts.map(p => p.description));
   const itemDescriptions = new Set(itemPrompts.map(p => p.description));
-  const scenePrompts = new Set(storyData.imagePrompts || []);
   
-  // Map to track images by prompt for scene ordering
-  const sceneImagesByPrompt: Record<string, GeneratedImage> = {};
+  // Track processed images by URL to avoid duplicates if multiple categories match (unlikely with sceneIndex)
+  const processedImageUrls = new Set<string>();
 
-  // Track processed images to avoid duplicates by both URL and prompt
-  const processedUrls = new Set<string>();
-  const processedPrompts = new Set<string>();
-  
-  storyData.generatedImages.forEach((image, index) => {
-    console.log(`Processing image ${index}: URL=${image.imageUrl}, Prompt="${image.originalPrompt}"`);
-    
-    // Skip if we've already processed this image URL or this prompt
-    if (processedUrls.has(image.imageUrl) || processedPrompts.has(image.originalPrompt)) {
-      console.log(`  ⚠️ Skipping duplicate - URL: ${processedUrls.has(image.imageUrl)}, Prompt: ${processedPrompts.has(image.originalPrompt)}`);
-      return;
+  storyData.generatedImages.forEach((image) => {
+    if (!image.imageUrl || processedImageUrls.has(image.imageUrl)) {
+      return; // Skip if no URL or already processed
     }
-    processedUrls.add(image.imageUrl);
-    processedPrompts.add(image.originalPrompt);
-    
-    if (characterDescriptions.has(image.originalPrompt)) {
-      console.log(`  ✅ Added to characters: "${image.originalPrompt}"`);
-      characters.push(image);
-    } else if (locationDescriptions.has(image.originalPrompt)) {
-      console.log(`  ✅ Added to locations: "${image.originalPrompt}"`);
-      locations.push(image);
-    } else if (itemDescriptions.has(image.originalPrompt)) {
-      console.log(`  ✅ Added to items: "${image.originalPrompt}"`);
-      items.push(image);
-    } else if (scenePrompts.has(image.originalPrompt)) {
-      console.log(`  ✅ Added to scenes map: "${image.originalPrompt}"`);
-      // Store in map instead of pushing directly to scenes array
-      sceneImagesByPrompt[image.originalPrompt] = image;
-    } else {
-      console.log(`  ❌ No category match for: "${image.originalPrompt}"`);
+
+    let categorized = false;
+    // Check if it's a detail image (sceneIndex is usually undefined or -1 for detail images)
+    if (image.sceneIndex === undefined || image.sceneIndex < 0) {
+      if (characterDescriptions.has(image.originalPrompt)) {
+        characters.push(image);
+        categorized = true;
+      } else if (locationDescriptions.has(image.originalPrompt)) {
+        locations.push(image);
+        categorized = true;
+      } else if (itemDescriptions.has(image.originalPrompt)) {
+        items.push(image);
+        categorized = true;
+      }
+    }
+    // If it was categorized as a detail image, mark URL as processed
+    if (categorized) {
+      processedImageUrls.add(image.imageUrl);
     }
   });
-  
-  // Now add scene images in the exact order they appear in imagePrompts
-  if (storyData.imagePrompts) {
-    storyData.imagePrompts.forEach(prompt => {
-      if (sceneImagesByPrompt[prompt]) {
-        scenes.push(sceneImagesByPrompt[prompt]);
+
+  // For scene images, iterate through the canonical image prompts (storyData.imagePrompts)
+  // and find the corresponding generated image by its sceneIndex.
+  if (storyData.imagePrompts && storyData.generatedImages) {
+    storyData.imagePrompts.forEach((_canonicalPromptText, sceneIdx) => {
+      const imageForScene = storyData.generatedImages?.find(
+        (img) => img.sceneIndex === sceneIdx && img.imageUrl
+      );
+      if (imageForScene && !processedImageUrls.has(imageForScene.imageUrl)) {
+        // Ensure it hasn't been accidentally categorized as a detail image
+        // (e.g., if a scene prompt accidentally matched a detail prompt text)
+        scenes.push(imageForScene);
+        processedImageUrls.add(imageForScene.imageUrl); // Mark as processed for scenes
       }
     });
   }
-
-  console.log('Final counts - Characters:', characters.length, 'Locations:', locations.length, 'Items:', items.length, 'Scenes:', scenes.length);
+  
   return { characters, locations, items, scenes };
 };
+
 
 // Helper function to get scene name for a prompt
 export const getSceneName = (prompt: string, index: number): string => {
@@ -176,32 +166,16 @@ export const getSceneName = (prompt: string, index: number): string => {
 
 // Helper function to count scene images (matching categorizeImages logic)
 export const countSceneImages = (storyData: Story): number => {
-  if (!storyData.generatedImages) {
+  if (!storyData.generatedImages || !storyData.imagePrompts) {
     return 0;
   }
-
-  const scenePrompts = new Set(storyData.imagePrompts || []);
-  
-  // Track processed images to avoid duplicates by both URL and prompt (same as categorizeImages)
-  const processedUrls = new Set<string>();
-  const processedPrompts = new Set<string>();
-  
-  let sceneCount = 0;
-  
-  storyData.generatedImages.forEach((image) => {
-    // Skip if we've already processed this image URL or this prompt
-    if (processedUrls.has(image.imageUrl) || processedPrompts.has(image.originalPrompt)) {
-      return;
-    }
-    processedUrls.add(image.imageUrl);
-    processedPrompts.add(image.originalPrompt);
-    
-    if (scenePrompts.has(image.originalPrompt)) {
-      sceneCount++;
+  let count = 0;
+  storyData.imagePrompts.forEach((_prompt, sceneIdx) => {
+    if (storyData.generatedImages?.some(img => img.sceneIndex === sceneIdx && img.imageUrl)) {
+      count++;
     }
   });
-
-  return sceneCount;
+  return count;
 };
 
 // Helper function to count detail images (non-scene images)
@@ -210,57 +184,50 @@ export const countDetailImages = (storyData: Story): number => {
     return 0;
   }
 
-  const scenePrompts = new Set(storyData.imagePrompts || []);
-  
-  // Track processed images to avoid duplicates by both URL and prompt (same as categorizeImages)
-  const processedUrls = new Set<string>();
-  const processedPrompts = new Set<string>();
+  const characterPrompts = parseNamedPrompts(storyData.detailsPrompts?.characterPrompts);
+  const locationPrompts = parseNamedPrompts(storyData.detailsPrompts?.locationPrompts);
+  const itemPrompts = parseNamedPrompts(storyData.detailsPrompts?.itemPrompts);
+
+  const characterDescriptions = new Set(characterPrompts.map(p => p.description));
+  const locationDescriptions = new Set(locationPrompts.map(p => p.description));
+  const itemDescriptions = new Set(itemPrompts.map(p => p.description));
   
   let detailCount = 0;
-  
+  const processedUrls = new Set<string>();
+
   storyData.generatedImages.forEach((image) => {
-    // Skip if we've already processed this image URL or this prompt
-    if (processedUrls.has(image.imageUrl) || processedPrompts.has(image.originalPrompt)) {
-      return;
-    }
-    processedUrls.add(image.imageUrl);
-    processedPrompts.add(image.originalPrompt);
-    
-    // Count as detail image if it's NOT a scene image
-    if (!scenePrompts.has(image.originalPrompt)) {
-      detailCount++;
+    if (!image.imageUrl || processedUrls.has(image.imageUrl)) return;
+
+    if (image.sceneIndex === undefined || image.sceneIndex < 0) { // Check if it's likely a detail image
+      if (characterDescriptions.has(image.originalPrompt) ||
+          locationDescriptions.has(image.originalPrompt) ||
+          itemDescriptions.has(image.originalPrompt)) {
+        detailCount++;
+        processedUrls.add(image.imageUrl);
+      }
     }
   });
-
   return detailCount;
 };
 
 // Helper function to determine the appropriate step based on story completion
 export const determineCurrentStep = (storyData: Story): number => {
   if (storyData.generatedImages && storyData.generatedImages.length > 0 && 
-      storyData.imagePrompts && storyData.generatedImages.length === storyData.imagePrompts.length) {
-    // All images generated - show step 5 (last completed step)
+      storyData.imagePrompts && countSceneImages(storyData) === storyData.imagePrompts.length && storyData.imagePrompts.length > 0) {
     return 5; 
   } else if (storyData.imagePrompts && storyData.imagePrompts.length > 0) {
-    // Image prompts exist but not all images generated - show step 5 (next step to work on)
-    return 5; 
+    return 4; // If prompts exist, user is on or past step 4 (working on generating images)
   } else if (storyData.narrationChunks && storyData.narrationChunks.length > 0 && storyData.narrationChunks.every(c => c.audioUrl)) {
-    // All narration chunks completed - show step 4 (next step to work on)
     return 4; 
   } else if (storyData.narrationAudioUrl) {
-    // Legacy audio exists - show step 4 (next step to work on)
     return 4; 
   } else if (storyData.narrationChunks && storyData.narrationChunks.length > 0) {
-    // Chunks exist but not all narrated - show step 3 (current step to work on)
     return 3; 
   } else if (storyData.detailsPrompts && (storyData.detailsPrompts.characterPrompts || storyData.detailsPrompts.itemPrompts || storyData.detailsPrompts.locationPrompts)) {
-    // Details prompts exist - show step 3 (next step to work on)
     return 3; 
   } else if (storyData.generatedScript) {
-    // Script exists - show step 2 (next step to work on)
     return 2; 
   } else {
-    // No progress - show step 1
     return 1;
   }
 };
