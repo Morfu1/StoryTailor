@@ -100,116 +100,62 @@ const characterPromptsPromptTemplate = 'You are an expert prompt engineer specia
 'Now, generate the character, item, and location prompts based on the provided script, adhering strictly to the format, style, and level of detail exemplified above. For characters, ensure you include specific physical traits (hair color/style, eye color, skin tone, age) for consistency across image generations. Use lowercase, single-sentence, no-punctuation-ending descriptions.\n';
 
 
-const imagePromptsPromptTemplate = 'You are an expert at creating detailed image prompts optimized for FLUX AI model through PicsArt API. Your goal is to generate prompts that correlate with narration chunks using FLUX-specific techniques.\n\n' +
-'{{#if chunksData}}\n' +
-'**SOUND CHUNK CORRELATION MODE:**\n' +
-'You must generate prompts that correlate with the provided narration chunks. Each chunk has:\n' +
-'- Text content to analyze\n' +
-'- Duration in seconds\n' +
-'- Required number of prompts based on duration\n\n' +
-'Chunk Details:\n' +
-'{{#each chunksData}}\n' +
-'Chunk {{@index}}: "{{text}}" (Duration: {{duration}}s, Required prompts: {{promptCount}})\n' +
-'{{/each}}\n\n' +
-'{{#if isPicsart}}\n' +
-'**FLUX DEV OPTIMIZED PROMPTING FOR PICSART:**\n' +
-'FLUX is exceptionally good at understanding natural language. Use this structure with entity references:\n\n' +
-'1. **Entity Reference System**: Use \'@\' prefix for all characters, locations, and items (e.g., @CharacterName, @LocationName, @ItemName)\n' +
-'2. **Natural Language Approach**: Write prompts as if describing a scene to a human\n' +
-'3. **Subject-Action-Environment Pattern**: Start with the main subject, describe what they\'re doing, then the environment\n' +
-'4. **Specific Visual Details**: Include lighting, camera angles, and artistic style\n\n' +
-'**Flux-Optimized Structure with Entity References:**\n' +
-'"[Camera shot] of @CharacterName [action/emotion/pose] in @LocationName. [Interaction with @ItemName if relevant]. [Lighting description]. [Additional details]."\n\n' +
-'**Example:**\n' +
-'"Close-up shot of @Luna looking up in wonder at floating golden sparkles around her. She\'s standing in @EnchantedForest clearing with dappled sunlight filtering through ancient oak trees. @MagicalSparkles dance around her hands. Warm, magical lighting with soft shadows."\n\n' +
-'**Character Consistency Examples:**\n' +
-'- "@Whiskers sits alertly"\n' +
-'- "@Fuzzy bounces playfully"\n\n' +
-'**CRITICAL REQUIREMENTS:**\n' +
-'- Always use \'@\' prefix before character names (e.g., @Luna, @Hero, @Villain)\n' +
-'- Always use \'@\' prefix before location names (e.g., @Castle, @Forest, @Bedroom)\n' +
-'- Always use \'@\' prefix before important item names (e.g., @Sword, @Crown, @Book)\n' +
-'- Extract character, location, and item names from the provided reference descriptions\n' +
-'- NEVER include character/item/location descriptions when using @placeholders - the @placeholder will be expanded with the full description automatically\n' +
-'- Use present tense for actions\n' +
-'- Be specific about emotions and expressions\n' +
-'- Include environmental context and lighting\n\n' +
-'**ABSOLUTELY FORBIDDEN - DO NOT INCLUDE:**\n' +
-'- Any artistic style descriptors (NO "Digital painting style", "3D rendered", "cartoon style", etc.)\n' +
-'- Art medium references (NO "watercolor", "oil painting", "comic book style", etc.)\n' +
-'- Software references (NO "Unreal Engine", "Blender", "Photoshop", etc.)\n' +
-'- Quality descriptors (NO "highly detailed", "8K", "photorealistic", etc.)\n' +
-'- The artistic style will be handled separately by the system through model configuration, NOT in the prompt text\n\n' +
-'**STYLE HANDLING PHILOSOPHY:**\n' +
-'Style is applied systematically through the imageStyleUtils system after prompt generation. This ensures scene prompts remain clean and focused on content while style is consistently applied across all generated images.\n\n' +
-'{{else}}\n' +
-'**GOOGLE/GEMINI PROMPTING STRUCTURE:**\n' +
-'For Google providers, use more detailed cinematic descriptions with:\n' +
-'- Camera angles and shot types\n' +
-'- Lighting and mood descriptions\n' +
-'- Detailed scene composition\n' +
-'- Character emotions and expressions\n' +
-'{{/if}}\n\n' +
-'{{else}}\n' +
-'**FALLBACK MODE (when no chunks provided):**\n' +
-'Analyze the script and identify {{numImages}} key scenes that need visualization using FLUX-optimized natural language descriptions.\n' +
-'{{/if}}\n\n' +
-'**CHARACTER REFERENCE:**\n' +
-'{{{characterPrompts}}}\n\n' +
-'**CRITICAL NAMING CONSISTENCY:**\n' +
-'When referencing characters, items, or locations in your image prompts, you MUST ONLY use entities that exist in the reference sections above, prefixed with @.\n\n' +
-'MANDATORY RULES:\n' +
-'1. ONLY use @placeholders for entities listed in the CHARACTER REFERENCE, LOCATION REFERENCE, and ITEM REFERENCE sections\n' +
-'2. NEVER create @placeholders for entities not in these reference sections\n' +
-'3. Convert entity names to PascalCase when creating @references (e.g., "Old Man Grumbles" becomes @OldManGrumbles)\n' +
-'4. Do NOT include descriptions alongside @placeholders - they will be expanded automatically\n\n' +
-'For example, if the character reference shows:\n' +
-'"Rosie Recycle\n' +
-'a young girl with..."\n\n' +
-'Then use: @RosieRecycle (no description needed)\n\n' +
-'If the character reference shows:\n' +
-'"Old Man Grumbles\n' +
-'an elderly man with..."\n\n' +
-'Then use: @OldManGrumbles (no description needed)\n\n' +
-'**CHARACTER CONSISTENCY REQUIREMENTS:**\n' +
-'- Character descriptions are automatically provided through @placeholders\n' +
-'- Focus on character actions, emotions, and interactions with environment\n' +
-'- Use @placeholders for all characters, items, and locations from the reference sections\n' +
-'- Do not duplicate descriptions that are already in the @placeholder expansions\n\n' +
-'**REGENERATION NOTICE:**\n' +
-'⚠️ After implementing these character consistency requirements, you MUST regenerate:\n' +
-'1. All character prompt descriptions to include specific physical traits\n' +
-'2. All character reference images with consistent visual features\n' +
-'3. All location and item images to match the updated style\n' +
-'4. Existing story content to use the new consistent character descriptions\n\n' +
-'**LOCATION REFERENCE:**\n' +
-'{{{locationPrompts}}}\n\n' +
-'**ITEM REFERENCE:**\n' +
-'{{{itemPrompts}}}\n\n' +
-'**STORY SCRIPT:**\n' +
-'{{{script}}}\n\n' +
-'{{#if chunksData}}\n' +
-'**INSTRUCTIONS:**\n' +
-'For each narration chunk, create {{#each chunksData}}{{promptCount}} prompt(s) for chunk {{@index}}, {{/each}} ensuring they match the narrative content and flow smoothly between scenes. Focus on key emotional moments, character interactions, and scene transitions.\n\n' +
-'Total prompts needed: {{numImages}}\n\n' +
-'**ALSO GENERATE ACTION PROMPTS:**\n' +
-'For each image prompt, create a corresponding simple action description that describes the specific movements/actions characters perform in that scene. These are for animation purposes.\n\n' +
-'Action prompts should be:\n' +
-'- Simple, clear descriptions of character movements\n' +
-'- Focus on physical actions (walking, jumping, blinking, tail wagging, etc.)\n' +
-'- Describe what each character does in that specific scene\n' +
-'- Keep them concise and animation-focused\n\n' +
-'Examples:\n' +
-'- "The kitten\'s fur gently rises and falls as it sleeps."\n' +
-'- "The kitten leaps forward and waves its paws."\n' +
-'- "The white kitten takes a few steps forward and wags its tail. The grey cat blinks and turns its head."\n\n' +
-'{{else}}\n' +
-'Generate exactly {{numImages}} FLUX-optimized image prompts based on the script\'s key visual moments.\n' +
-'{{/if}}\n\n' +
-'**OUTPUT FORMAT:**\n' +
-'Return your response as a JSON object with two keys:\n' +
-'1. "imagePrompts": An array of exactly {{numImages}} strings, each optimized for FLUX AI model\n' +
-'2. "actionPrompts": An array of exactly {{numImages}} strings, each describing simple character movements for that scene';
+const imagePromptsPromptTemplate = `You are an expert at creating detailed image prompts optimized for various AI image generation models.
+Your goal is to generate prompts that VISUALIZE specific NARRATION CHUNKS from a story.
+
+**REFERENCES (Use these for @EntityName placeholders):**
+CHARACTER REFERENCE:
+{{{characterPrompts}}}
+
+LOCATION REFERENCE:
+{{{locationPrompts}}}
+
+ITEM REFERENCE:
+{{{itemPrompts}}}
+
+**FULL STORY SCRIPT (for context):**
+{{{script}}}
+
+**INSTRUCTIONS FOR IMAGE PROMPT GENERATION:**
+
+{{#if chunksData}}
+**SOUND CHUNK CORRELATION MODE:**
+You MUST generate prompts that DIRECTLY VISUALIZE the content of EACH narration chunk provided below.
+For each chunk, you need to generate a specific number of image prompts as indicated.
+
+{{#each chunksData}}
+**Narration Chunk {{@index}} (Duration: {{duration}}s, Required prompts: {{promptCount}}):**
+"{{text}}"
+
+**For THIS CHUNK, generate {{promptCount}} image prompt(s). Each prompt MUST:**
+1.  **Visualize THIS CHUNK's content**: The image should depict characters, actions, and settings explicitly mentioned or clearly implied in THIS narration chunk.
+2.  **Include a SPECIFIC Location**: Use an @LocationName from the LOCATION REFERENCE. If no location is directly mentioned in the chunk, infer the most logical @LocationName based on the chunk's content, the overall story script, and available location references. DO NOT invent new locations; use only those in the LOCATION REFERENCE.
+3.  **Follow Prompt Structure**: "[Camera shot, e.g., Wide shot, Close-up] of @CharacterName [action/emotion/pose, e.g., looking thoughtful, running quickly] IN @LocationName. [Interaction with @ItemName if relevant, e.g., holding @MagicWand]. [Lighting/mood, e.g., Sunny morning, Dark and stormy night]. [Key visual details from THIS narration chunk]."
+    *   Example: "Eye-level medium shot of @Rusty trotting through @ForestPath IN @WhisperingWoods. He is sniffing the ground curiously. Morning light filters through the canopy."
+4.  **Use @Placeholders Correctly**: ONLY use @placeholders for entities listed in the CHARACTER, LOCATION, and ITEM REFERENCE sections. Convert entity names to PascalCase for @references (e.g., "Old Man Grumbles" becomes @OldManGrumbles). Do NOT include descriptions alongside @placeholders; they will be expanded automatically.
+5.  **No Style Descriptors**: ABSOLUTELY DO NOT include artistic style descriptors (like "3D rendered", "cartoon style", "photorealistic", "watercolor"). Style is handled separately.
+6.  **Natural Language**: Write prompts as if describing a scene to a human. Use present tense.
+---
+{{/each}}
+
+**ALSO GENERATE CORRESPONDING ACTION PROMPTS:**
+For EACH image prompt you create above, also generate a simple action description for animation purposes.
+Action prompts should be:
+- Simple, clear descriptions of character movements/actions in that specific scene.
+- Focus on physical actions (e.g., "@Rusty is walking", "@Owl blinks slowly", "@Squirrel scurries up a tree").
+- Keep them concise and animation-focused.
+
+{{else}}
+**FALLBACK MODE (No narration chunks provided):**
+Analyze the full STORY SCRIPT and identify {{numImages}} key scenes that need visualization.
+For each scene, generate one image prompt and one corresponding action prompt, following all the rules above (especially including a @LocationName and adhering to the prompt structure).
+{{/if}}
+
+**OUTPUT FORMAT (Strict JSON):**
+Return your response as a JSON object with two keys:
+1.  "imagePrompts": An array of strings, where each string is an image prompt. The total number of image prompts must be exactly {{numImages}}.
+2.  "actionPrompts": An array of strings, where each string is an action prompt corresponding to the image prompt at the same index. The total number of action prompts must also be exactly {{numImages}}.
+`;
 
 const scriptChunksPromptTemplate = 'You are a movie director and script editor who thinks visually. Your task is to split the following story script into meaningful visual scenes/chunks. Each chunk will have a corresponding image generated and narration audio, so think like you\'re creating an animated storybook.\n\n' +
 'Think like a movie director analyzing a script:\n' +
@@ -519,24 +465,58 @@ export async function generateImagePrompts(input: GenerateImagePromptsInput): Pr
         } else {
             numImages = Math.max(1, Math.ceil(input.audioDurationSeconds * (5 / 60)));
         }
+        
+        // Prepare template variables
+        const templateInput = {
+            characterPrompts: input.characterPrompts || '',
+            locationPrompts: input.locationPrompts || '',
+            itemPrompts: input.itemPrompts || '',
+            script: input.script,
+            chunksData: chunksDataForPrompt,
+            numImages: numImages,
+            isPicsart: input.isPicsart, // Keep this if template uses it, otherwise remove
+            imageProvider: input.imageProvider // Keep this if template uses it
+        };
 
-        let finalPrompt = imagePromptsPromptTemplate
-            .replace('{{{characterPrompts}}}', input.characterPrompts || '')
-            .replace('{{{locationPrompts}}}', input.locationPrompts || '')
-            .replace('{{{itemPrompts}}}', input.itemPrompts || '')
-            .replace('{{{script}}}', input.script);
-
-        if (chunksDataForPrompt) {
-            const chunkDetailsText = chunksDataForPrompt.map((c, i) => `Chunk ${i}: "${c.text}" (Duration: ${c.duration}s, Required prompts: ${c.promptCount})`).join('\\n');
-            finalPrompt = finalPrompt.replace('{{#if chunksData}}Chunk Details:{{#each chunksData}}...{{/each}}{{else}}Fallback Mode{{/if}}', `Chunk Details:\\n${chunkDetailsText}`);
-        } else {
-            finalPrompt = finalPrompt.replace('{{#if chunksData}}Chunk Details:{{#each chunksData}}...{{/each}}{{else}}Fallback Mode{{/if}}', `Fallback Mode: Analyze the script and identify ${numImages} key scenes...`);
+        // Simple Handlebars-like replacement (only for direct matches, not for loops or conditionals)
+        // For a full Handlebars implementation, you'd need a library.
+        // This is a simplified version for direct variable replacement.
+        let finalPrompt = imagePromptsPromptTemplate;
+        for (const key in templateInput) {
+            if (Object.prototype.hasOwnProperty.call(templateInput, key)) {
+                const value = (templateInput as any)[key]; // Type assertion
+                if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+                    finalPrompt = finalPrompt.replace(new RegExp(`{{{${key}}}}`, 'g'), String(value));
+                    finalPrompt = finalPrompt.replace(new RegExp(`{{${key}}}`, 'g'), String(value)); // Also handle non-triple-stash
+                }
+            }
         }
-        // Replace numImages in the prompt body and isPicsart condition
-        finalPrompt = finalPrompt.replace(/{{numImages}}/g, numImages.toString());
-        finalPrompt = finalPrompt.replace('{{#if isPicsart}}', input.isPicsart ? '' : '{{#if false}}'); // Effectively remove picsart block if not isPicsart
-        finalPrompt = finalPrompt.replace('{{/if}}', input.isPicsart ? '' : '{{/if}}');
 
+        // Manual replacement for the chunksData loop if chunksDataForPrompt exists
+        if (chunksDataForPrompt) {
+            let chunkDetailsBlock = "";
+            chunksDataForPrompt.forEach((chunk, index) => {
+                chunkDetailsBlock += `**Narration Chunk ${index} (Duration: ${chunk.duration}s, Required prompts: ${chunk.promptCount}):**\n"${chunk.text}"\n\n`;
+                chunkDetailsBlock += `**For THIS CHUNK, generate ${chunk.promptCount} image prompt(s). Each prompt MUST:**\n`;
+                chunkDetailsBlock += `1.  Directly visualize the events, characters, and setting described in THIS CHUNK.\n`;
+                chunkDetailsBlock += `2.  Include a specific @LocationName. If the location is not explicitly stated in the chunk, infer the most logical @LocationName based on the chunk's content, the overall story script, and available location references. DO NOT invent new locations; use only those in the LOCATION REFERENCE.\n`;
+                chunkDetailsBlock += `3.  Follow Prompt Structure: "[Camera shot, e.g., Wide shot, Close-up] of @CharacterName [action/emotion/pose, e.g., looking thoughtful, running quickly] IN @LocationName. [Interaction with @ItemName if relevant, e.g., holding @MagicWand]. [Lighting/mood, e.g., Sunny morning, Dark and stormy night]. [Key visual details from THIS narration chunk]."\n`;
+                chunkDetailsBlock += `    *   Example: "Eye-level medium shot of @Rusty trotting through @ForestPath IN @WhisperingWoods. He is sniffing the ground curiously. Morning light filters through the canopy."\n`;
+                chunkDetailsBlock += `4.  Use @Placeholders Correctly: ONLY use @placeholders for entities listed in the CHARACTER, LOCATION, and ITEM REFERENCE sections. Convert entity names to PascalCase for @references (e.g., "Old Man Grumbles" becomes @OldManGrumbles). Do NOT include descriptions alongside @placeholders; they will be expanded automatically.\n`;
+                chunkDetailsBlock += `5.  No Style Descriptors: ABSOLUTELY DO NOT include artistic style descriptors (like "3D rendered", "cartoon style", "photorealistic", "watercolor"). Style is handled separately.\n`;
+                chunkDetailsBlock += `6.  Natural Language: Write prompts as if describing a scene to a human. Use present tense.\n---\n`;
+            });
+            const chunkLogicRegex = /\{\{#if chunksData\}\}(.|\n)*?\{\{\/if\}\}/;
+            finalPrompt = finalPrompt.replace(chunkLogicRegex, `**SOUND CHUNK CORRELATION MODE:**\n You MUST generate prompts that DIRECTLY VISUALIZE the content of EACH narration chunk provided below.\n For each chunk, you need to generate a specific number of image prompts as indicated.\n\n${chunkDetailsBlock}`);
+        } else {
+            // Fallback mode if no chunks
+            const fallbackRegex = /\{\{#if chunksData\}\}(.|\n)*?\{\{else\}\}((.|\n)*?)\{\{\/if\}\}/;
+            const fallbackMatch = finalPrompt.match(fallbackRegex);
+            if (fallbackMatch && fallbackMatch[2]) {
+                finalPrompt = finalPrompt.replace(fallbackRegex, fallbackMatch[2]);
+            }
+        }
+        // End of simplified Handlebars-like replacement
 
         const { output } = await localAi.generate({
             prompt: finalPrompt,
@@ -678,8 +658,7 @@ export async function generateImageFromImagen3(
   }
   const apiKey = userKeysResult.data.googleApiKey;
 
-  const descriptionParts: string[] = ["Here are the descriptions of the entities involved:"];
-  const sceneInstructionParts: string[] = ["\nNow, generate an image depicting the following scene:"];
+  const descriptionParts: string[] = [];
   let actionPromptPart = originalPrompt; // Start with the original prompt containing @placeholders
 
   if (userId && storyId) {
@@ -692,6 +671,10 @@ export async function generateImageFromImagen3(
         
         const allEntityNamesFromStory = extractEntityNames(storyResult.data);
         
+        if (entityReferencesInPrompt.length > 0) {
+            descriptionParts.push("Here are the descriptions of the entities involved:");
+        }
+
         for (const ref of entityReferencesInPrompt) {
           let actualEntityName: string | null = null;
           let entityType: 'character' | 'item' | 'location' | null = null;
@@ -713,17 +696,14 @@ export async function generateImageFromImagen3(
             
             if (entityMatch && entityMatch[1]) {
               descriptionText = entityMatch[1].trim();
-              descriptionParts.push(`Entity: ${actualEntityName}\nDescription: ${descriptionText}\n---DIVIDER---`);
-              // Remove the @placeholder from the action part if its description is found
+              descriptionParts.push(`Entity: ${actualEntityName}\nDescription: ${descriptionText}`);
               actionPromptPart = actionPromptPart.replace(ref, actualEntityName);
             } else {
               console.warn(`[Imagen3] No description found for ${entityType} "${actualEntityName}" (ref: ${ref}). Name will remain in scene instruction.`);
-              descriptionParts.push(`Entity: ${actualEntityName}\nDescription: (No detailed description provided for direct API use)\n---DIVIDER---`);
-              // @ref remains in actionPromptPart if no description found
+              descriptionParts.push(`Entity: ${actualEntityName}\nDescription: (No detailed description provided for direct API use)`);
             }
           } else {
             console.warn(`[Imagen3] Entity for reference "${ref}" not found in story data. Ref will remain in scene instruction.`);
-            // @ref remains in actionPromptPart
           }
         }
       } else {
@@ -732,9 +712,14 @@ export async function generateImageFromImagen3(
     } catch (error) { console.warn("[generateImageFromImagen3] Error processing placeholders:", error); }
   }
   
-  sceneInstructionParts.push(actionPromptPart); // Add the (potentially modified) action prompt
+  let structuredPromptParts = [];
+  if (descriptionParts.length > 0) {
+    structuredPromptParts.push(descriptionParts.join('\n-----\n')); // Join descriptions with separator
+  }
+  structuredPromptParts.push("Now, generate an image depicting the following scene:");
+  structuredPromptParts.push(actionPromptPart); // Add the (potentially modified) action prompt
   
-  let basePrompt = descriptionParts.join('\n') + '\n' + sceneInstructionParts.join('\n');
+  let basePrompt = structuredPromptParts.join('\n\n'); // Join sections with double newline
 
   // Apply style
   let styleStringApplicable: string | undefined;
@@ -973,5 +958,6 @@ async function pollForPicsArtImage(
   }
   return { success: false, error: "Image generation timed out after polling.", requestPrompt };
 }
+
 
 

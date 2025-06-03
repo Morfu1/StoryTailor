@@ -18,147 +18,62 @@ const generateImagePromptsPrompt = ai.definePrompt({
     })).optional()
   })},
   output: {schema: GenerateImagePromptsOutputSchema},
-  prompt: `You are an expert at creating detailed image prompts optimized for FLUX AI model through PicsArt API. Your goal is to generate prompts that correlate with narration chunks using FLUX-specific techniques.
+  prompt: `You are an expert at creating detailed image prompts optimized for various AI image generation models.
+Your goal is to generate prompts that VISUALIZE specific NARRATION CHUNKS from a story.
+
+**REFERENCES (Use these for @EntityName placeholders):**
+CHARACTER REFERENCE:
+{{{characterPrompts}}}
+
+LOCATION REFERENCE:
+{{{locationPrompts}}}
+
+ITEM REFERENCE:
+{{{itemPrompts}}}
+
+**FULL STORY SCRIPT (for context):**
+{{{script}}}
+
+**INSTRUCTIONS FOR IMAGE PROMPT GENERATION:**
 
 {{#if chunksData}}
 **SOUND CHUNK CORRELATION MODE:**
-You must generate prompts that correlate with the provided narration chunks. Each chunk has:
-- Text content to analyze
-- Duration in seconds
-- Required number of prompts based on duration
+You MUST generate prompts that DIRECTLY VISUALIZE the content of EACH narration chunk provided below.
+For each chunk, you need to generate a specific number of image prompts as indicated.
 
-Chunk Details:
 {{#each chunksData}}
-Chunk {{@index}}: "{{text}}" (Duration: {{duration}}s, Required prompts: {{promptCount}})
+**Narration Chunk {{@index}} (Duration: {{duration}}s, Required prompts: {{promptCount}}):**
+"{{text}}"
+
+**For THIS CHUNK, generate {{promptCount}} image prompt(s). Each prompt MUST:**
+1.  **Visualize THIS CHUNK's content**: The image should depict characters, actions, and settings explicitly mentioned or clearly implied in THIS narration chunk.
+2.  **Include a SPECIFIC Location**: Use an @LocationName from the LOCATION REFERENCE. If no location is directly mentioned in the chunk, infer the most logical @LocationName based on the chunk's content, the overall story script, and available location references. DO NOT invent new locations; use only those in the LOCATION REFERENCE.
+3.  **Follow Prompt Structure**: "[Camera shot, e.g., Wide shot, Close-up] of @CharacterName [action/emotion/pose, e.g., looking thoughtful, running quickly] IN @LocationName. [Interaction with @ItemName if relevant, e.g., holding @MagicWand]. [Lighting/mood, e.g., Sunny morning, Dark and stormy night]. [Key visual details from THIS narration chunk]."
+    *   Example: "Eye-level medium shot of @Rusty trotting through @ForestPath IN @WhisperingWoods. He is sniffing the ground curiously. Morning light filters through the canopy."
+4.  **Use @Placeholders Correctly**: ONLY use @placeholders for entities listed in the CHARACTER, LOCATION, and ITEM REFERENCE sections. Convert entity names to PascalCase for @references (e.g., "Old Man Grumbles" becomes @OldManGrumbles). Do NOT include descriptions alongside @placeholders; they will be expanded automatically.
+5.  **No Style Descriptors**: ABSOLUTELY DO NOT include artistic style descriptors (like "3D rendered", "cartoon style", "photorealistic", "watercolor"). Style is handled separately.
+6.  **Natural Language**: Write prompts as if describing a scene to a human. Use present tense.
+---
 {{/each}}
 
-{{#if isPicsart}}
-**FLUX DEV OPTIMIZED PROMPTING FOR PICSART:**
-FLUX is exceptionally good at understanding natural language. Use this structure with entity references:
-
-1. **Entity Reference System**: Use '@' prefix for all characters, locations, and items (e.g., @CharacterName, @LocationName, @ItemName)
-2. **Natural Language Approach**: Write prompts as if describing a scene to a human
-3. **Subject-Action-Environment Pattern**: Start with the main subject, describe what they're doing, then the environment
-4. **Specific Visual Details**: Include lighting, camera angles, and artistic style
-
-**Flux-Optimized Structure with Entity References:**
-"[Camera shot] of @CharacterName [action/emotion/pose] in @LocationName. [Interaction with @ItemName if relevant]. [Lighting description]. [Additional details]."
-
-**Example:**
-"Close-up shot of @Luna looking up in wonder at floating golden sparkles around her. She's standing in @EnchantedForest clearing with dappled sunlight filtering through ancient oak trees. @MagicalSparkles dance around her hands. Warm, magical lighting with soft shadows."
-
-**Character Consistency Examples:**
-- "@Whiskers sits alertly"
-- "@Fuzzy bounces playfully"
-
-**CRITICAL REQUIREMENTS:**
-- Always use '@' prefix before character names (e.g., @Luna, @Hero, @Villain)
-- Always use '@' prefix before location names (e.g., @Castle, @Forest, @Bedroom)
-- Always use '@' prefix before important item names (e.g., @Sword, @Crown, @Book)
-- Extract character, location, and item names from the provided reference descriptions
-- NEVER include character/item/location descriptions when using @placeholders - the @placeholder will be expanded with the full description automatically
-- Use present tense for actions
-- Be specific about emotions and expressions
-- Include environmental context and lighting
-
-**ABSOLUTELY FORBIDDEN - DO NOT INCLUDE:**
-- Any artistic style descriptors (NO "Digital painting style", "3D rendered", "cartoon style", etc.)
-- Art medium references (NO "watercolor", "oil painting", "comic book style", etc.)
-- Software references (NO "Unreal Engine", "Blender", "Photoshop", etc.)
-- Quality descriptors (NO "highly detailed", "8K", "photorealistic", etc.)
-- The artistic style will be handled separately by the system through model configuration, NOT in the prompt text
-
-**STYLE HANDLING PHILOSOPHY:**
-Style is applied systematically through the imageStyleUtils system after prompt generation. This ensures scene prompts remain clean and focused on content while style is consistently applied across all generated images.
-
-{{else}}
-**GOOGLE/GEMINI PROMPTING STRUCTURE:**
-For Google providers, use more detailed cinematic descriptions with:
-- Camera angles and shot types
-- Lighting and mood descriptions
-- Detailed scene composition
-- Character emotions and expressions
-{{/if}}
-
-{{else}}
-**FALLBACK MODE (when no chunks provided):**
-Analyze the script and identify {{numImages}} key scenes that need visualization using FLUX-optimized natural language descriptions.
-{{/if}}
-
-**CHARACTER REFERENCE:**
-{{{characterPrompts}}}
-
-**CRITICAL NAMING CONSISTENCY:**
-When referencing characters, items, or locations in your image prompts, you MUST ONLY use entities that exist in the reference sections above, prefixed with @. 
-
-MANDATORY RULES:
-1. ONLY use @placeholders for entities listed in the CHARACTER REFERENCE, LOCATION REFERENCE, and ITEM REFERENCE sections
-2. NEVER create @placeholders for entities not in these reference sections
-3. Convert entity names to PascalCase when creating @references (e.g., "Old Man Grumbles" becomes @OldManGrumbles)
-4. Do NOT include descriptions alongside @placeholders - they will be expanded automatically
-
-For example, if the character reference shows:
-"Rosie Recycle
-a young girl with..."
-
-Then use: @RosieRecycle (no description needed)
-
-If the character reference shows:
-"Old Man Grumbles  
-an elderly man with..."
-
-Then use: @OldManGrumbles (no description needed)
-
-**CHARACTER CONSISTENCY REQUIREMENTS:**
-- Character descriptions are automatically provided through @placeholders
-- Focus on character actions, emotions, and interactions with environment
-- Use @placeholders for all characters, items, and locations from the reference sections
-- Do not duplicate descriptions that are already in the @placeholder expansions
-
-**REGENERATION NOTICE:**
-⚠️ After implementing these character consistency requirements, you MUST regenerate:
-1. All character prompt descriptions to include specific physical traits
-2. All character reference images with consistent visual features
-3. All location and item images to match the updated style
-4. Existing story content to use the new consistent character descriptions
-
-**LOCATION REFERENCE:**
-{{{locationPrompts}}}
-
-**ITEM REFERENCE:**
-{{{itemPrompts}}}
-
-**STORY SCRIPT:**
-{{{script}}}
-
-{{#if chunksData}}
-**INSTRUCTIONS:**
-For each narration chunk, create {{#each chunksData}}{{promptCount}} prompt(s) for chunk {{@index}}, {{/each}} ensuring they match the narrative content and flow smoothly between scenes. Focus on key emotional moments, character interactions, and scene transitions.
-
-Total prompts needed: {{numImages}}
-
-**ALSO GENERATE ACTION PROMPTS:**
-For each image prompt, create a corresponding simple action description that describes the specific movements/actions characters perform in that scene. These are for animation purposes.
-
+**ALSO GENERATE CORRESPONDING ACTION PROMPTS:**
+For EACH image prompt you create above, also generate a simple action description for animation purposes.
 Action prompts should be:
-- Simple, clear descriptions of character movements
-- Focus on physical actions (walking, jumping, blinking, tail wagging, etc.)
-- Describe what each character does in that specific scene
-- Keep them concise and animation-focused
-
-Examples:
-- "The kitten's fur gently rises and falls as it sleeps."
-- "The kitten leaps forward and waves its paws."
-- "The white kitten takes a few steps forward and wags its tail. The grey cat blinks and turns its head."
+- Simple, clear descriptions of character movements/actions in that specific scene.
+- Focus on physical actions (e.g., "@Rusty is walking", "@Owl blinks slowly", "@Squirrel scurries up a tree").
+- Keep them concise and animation-focused.
 
 {{else}}
-Generate exactly {{numImages}} FLUX-optimized image prompts based on the script's key visual moments.
+**FALLBACK MODE (No narration chunks provided):**
+Analyze the full STORY SCRIPT and identify {{numImages}} key scenes that need visualization.
+For each scene, generate one image prompt and one corresponding action prompt, following all the rules above (especially including a @LocationName and adhering to the prompt structure).
 {{/if}}
 
-**OUTPUT FORMAT:**
+**OUTPUT FORMAT (Strict JSON):**
 Return your response as a JSON object with two keys:
-1. "imagePrompts": An array of exactly {{numImages}} strings, each optimized for FLUX AI model
-2. "actionPrompts": An array of exactly {{numImages}} strings, each describing simple character movements for that scene`,
+1.  "imagePrompts": An array of strings, where each string is an image prompt. The total number of image prompts must be exactly {{numImages}}.
+2.  "actionPrompts": An array of strings, where each string is an action prompt corresponding to the image prompt at the same index. The total number of action prompts must also be exactly {{numImages}}.
+`,
   config: {
     temperature: 0.7,
     maxOutputTokens: 4096,
