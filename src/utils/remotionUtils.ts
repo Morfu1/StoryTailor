@@ -2,6 +2,7 @@
 import path from 'path';
 // import os from 'os'; // Unused
 import fs from 'fs';
+import { exec } from 'child_process';
 import { NarrationChunk } from '@/types/narration';
 
 /**
@@ -132,40 +133,41 @@ export const downloadAssetsForRendering = async (
   images: (string | GeneratedImage)[],
   audioChunks: NarrationChunk[],
   targetDirectory: string // Added targetDirectory argument
-): Promise<{ localImages: LocalImageWithMetadata[]; localAudioChunks: NarrationChunk[]; imageDimensions?: { width: number; height: number } }> => {
+): Promise<{ localImages: LocalImageWithMetadata[]; localAudioChunks: NarrationChunk[]; imageDimensions?: { width: number; height: number }; placeholderAssetPath: string }> => {
   if (!isNode) {
     throw new Error('Asset downloading is only supported on the server side');
   }
   
-  // Use targetDirectory for assets, creating a 'remotion-assets' subdirectory within it
-  const assetsDir = path.join(targetDirectory, 'remotion-assets');
-  fs.mkdirSync(assetsDir, { recursive: true });
+  // Use the project's root public directory for assets
+  const publicDir = path.join(process.cwd(), 'public');
+  fs.mkdirSync(publicDir, { recursive: true });
   
-  console.log(`Downloading ${images.length} images and ${audioChunks.length} audio chunks to ${assetsDir}...`);
-  
-  let detectedDimensions: { width: number; height: number } | undefined;
-  const placeholderFilename = 'placeholder.jpg';
-  const placeholderLocalPath = `remotion-assets/${placeholderFilename}`; // Relative path for Remotion props
-
-  // Create placeholder image once in the target assets directory
+  // Clean any existing files in the public directory (except 'downloads')
   try {
-    const placeholderData = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
-    fs.writeFileSync(path.join(assetsDir, placeholderFilename), placeholderData);
-  } catch (error) {
-    console.error('Failed to create placeholder image:', error);
-  }
-  
-  // Cleanup previous assets in the target assets directory
-  try {
-    const existingFiles = fs.readdirSync(assetsDir);
+    const existingFiles = fs.readdirSync(publicDir);
     for (const file of existingFiles) {
-      if (file !== placeholderFilename) { 
-        fs.unlinkSync(path.join(assetsDir, file));
+      if (file !== 'downloads') { // Preserve the downloads directory
+        const filePath = path.join(publicDir, file);
+        fs.rmSync(filePath, { recursive: true, force: true });
       }
     }
   } catch (error) {
-    console.warn(`Could not clean up previous assets in ${assetsDir}:`, error);
+    console.warn(`Could not clean up files in ${publicDir}:`, error);
   }
+  
+  console.log(`Downloading ${images.length} images and ${audioChunks.length} audio chunks to ${publicDir}...`);
+  
+  let detectedDimensions: { width: number; height: number } | undefined;
+  const placeholderFilename = 'placeholder.jpg';
+
+  // Create placeholder image directly in the assets directory
+  const placeholderData = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
+  const placeholderPath = path.join(publicDir, placeholderFilename);
+  fs.writeFileSync(placeholderPath, placeholderData);
+  console.log(`Created placeholder image at: ${placeholderPath}`);
+  
+  const placeholderPathForProps = placeholderFilename;
+
   
   const processedImages: LocalImageWithMetadata[] = await Promise.all(
     images.map(async (imageInput, index): Promise<LocalImageWithMetadata> => {
@@ -176,7 +178,7 @@ export const downloadAssetsForRendering = async (
 
       // Default return object in case of errors, using the placeholder path
       const placeholderReturnObject: LocalImageWithMetadata = {
-        localPath: placeholderLocalPath,
+        localPath: placeholderPathForProps, // Use placeholder path relative to assets-dir
         originalUrl: typeof imageInput === 'string' ? imageInput : imageInput?.imageUrl,
         chunkId: undefined,
         chunkIndex: undefined,
@@ -244,7 +246,7 @@ export const downloadAssetsForRendering = async (
         }
         
         const filename = `image-${index}.jpg`; // Consider more unique filenames if needed
-        const localFilePath = path.join(assetsDir, filename);
+        const localFilePath = path.join(publicDir, filename);
         fs.writeFileSync(localFilePath, Buffer.from(buffer));
         
         if (!fs.existsSync(localFilePath) || fs.statSync(localFilePath).size === 0) {
@@ -252,9 +254,10 @@ export const downloadAssetsForRendering = async (
           return placeholderReturnObject;
         }
         
-        console.log(`Successfully downloaded image ${index} to remotion-assets/${filename}`);
+        const pathForProps = filename; // Path without public/ prefix for Remotion's staticFile()
+        console.log(`Successfully downloaded image ${index} to ${localFilePath} (for props: ${pathForProps})`);
         return {
-          localPath: `remotion-assets/${filename}`,
+          localPath: pathForProps,
           originalUrl: imageUrl,
           chunkId,
           chunkIndex,
@@ -310,7 +313,7 @@ export const downloadAssetsForRendering = async (
           finalBuffer = Buffer.from(wavBuffer); filename = `audio-${index}.wav`;
         }
         
-        const localAudioPath = path.join(assetsDir, filename);
+        const localAudioPath = path.join(publicDir, filename);
         fs.writeFileSync(localAudioPath, finalBuffer);
         
         if (!fs.existsSync(localAudioPath) || fs.statSync(localAudioPath).size === 0) {
@@ -318,8 +321,9 @@ export const downloadAssetsForRendering = async (
           return { ...chunk, audioUrl: undefined };
         }
         
-        console.log(`Successfully downloaded audio chunk ${index} to remotion-assets/${filename}`);
-        return { ...chunk, audioUrl: `remotion-assets/${filename}` };
+        const pathForProps = filename; // Path without public/ prefix for Remotion's staticFile()
+        console.log(`Successfully downloaded audio chunk ${index} to ${localAudioPath} (for props: ${pathForProps})`);
+        return { ...chunk, audioUrl: pathForProps };
       } catch (error) {
         console.error(`Error downloading audio chunk ${index} (URL: ${chunk.audioUrl}):`, error);
         return { ...chunk, audioUrl: undefined }; // Mark as failed
@@ -332,9 +336,10 @@ export const downloadAssetsForRendering = async (
   console.log(`Successfully processed ${validLocalAudioChunks.length} audio chunks with valid local paths`);
   
   return {
-    localImages: processedImages, // This is now LocalImageWithMetadata[]
+    localImages: processedImages, 
     localAudioChunks: validLocalAudioChunks,
-    imageDimensions: detectedDimensions
+    imageDimensions: detectedDimensions,
+    placeholderAssetPath: placeholderPathForProps // Return the placeholder path relative to assets-dir
   };
 };
 
@@ -342,8 +347,9 @@ export const downloadAssetsForRendering = async (
  * Saves the rendered video to the public directory for download
  */
 export const saveVideoForDownload = async (
-  videoPath: string,
-  storyId: string
+  framesPath: string,
+  storyId: string,
+  defaultFPS: number // Add defaultFPS as a parameter
 ): Promise<string> => {
   if (!isNode) {
     throw new Error('Saving video is only supported on the server side');
@@ -353,22 +359,66 @@ export const saveVideoForDownload = async (
   const downloadsDir = path.join(publicDir, 'downloads', storyId);
   fs.mkdirSync(downloadsDir, { recursive: true });
   
-  const filename = path.basename(videoPath);
-  const destinationPath = path.join(downloadsDir, filename);
+  const timestamp = Date.now();
+  const outputFilename = `video-${storyId}-${timestamp}.mp4`;
+  const destinationPath = path.join(downloadsDir, outputFilename);
   
   try {
-    fs.copyFileSync(videoPath, destinationPath);
-    console.log(`Video copied to ${destinationPath}`);
+    // Use ffmpeg to combine the frame sequence into a video
+    // List all JPG, JPEG, or PNG files in the directory
+    const allFiles = fs.readdirSync(framesPath);
+    console.log(`Files in framesPath (${framesPath}):`, allFiles.join(', '));
+
+    const frameFiles = allFiles
+      .filter(file => file.toLowerCase().endsWith('.jpg') || file.toLowerCase().endsWith('.jpeg') || file.toLowerCase().endsWith('.png'))
+      .map(file => path.join(framesPath, file));
+
+    if (frameFiles.length === 0) {
+      console.error(`No JPG, JPEG, or PNG frames found in ${framesPath}. Contents: ${allFiles.join(', ')}`);
+      throw new Error('No compatible frames (.jpg, .jpeg, .png) found to process.');
+    }
+    console.log(`Found ${frameFiles.length} frames to process: ${frameFiles.map(f => path.basename(f)).join(', ')}`);
     
-    // Clean up the original video from the temp directory
+    // Create a temporary file listing all frame files for FFmpeg
+    const fileListPath = path.join(framesPath, 'framelist.txt');
+    fs.writeFileSync(fileListPath, frameFiles.map(file => `file '${file}'`).join('\n'));
+
+    const ffmpegCommand = `ffmpeg -y -f concat -safe 0 -i "${fileListPath}" -framerate ${defaultFPS} -c:v libx264 -pix_fmt yuv420p -preset medium -crf 23 "${destinationPath}"`;
+    await new Promise<string>((resolve, reject) => {
+      exec(ffmpegCommand, (error: Error | null, stdout: string, stderr: string) => {
+        if (error) {
+          console.error('FFmpeg error:', error);
+          console.error('FFmpeg stderr:', stderr);
+          reject(error);
+        } else {
+          console.log('FFmpeg output:', stdout);
+          resolve(stdout);
+        }
+      });
+    }).then(() => {
+      console.log('FFmpeg rendering completed successfully');
+      console.log(`Video saved to ${destinationPath}`);
+    });
+    
+    // Clean up the original frame files from the temp directory
     try {
-      fs.unlinkSync(videoPath);
-      console.log(`Temporary video file ${videoPath} deleted.`);
+      const files = fs.readdirSync(framesPath);
+      for (const file of files) {
+        // Clean up all processed frame files (jpg, jpeg, png)
+        if (file.toLowerCase().endsWith('.jpg') || file.toLowerCase().endsWith('.jpeg') || file.toLowerCase().endsWith('.png')) {
+          fs.unlinkSync(path.join(framesPath, file));
+        }
+      }
+      // Also remove the temporary framelist.txt
+      if (fs.existsSync(fileListPath)) {
+        fs.unlinkSync(fileListPath);
+      }
+      console.log(`Temporary frame files and list in ${framesPath} deleted.`);
     } catch (cleanupError) {
-      console.warn(`Failed to delete temporary video file ${videoPath}:`, cleanupError);
+      console.warn(`Failed to delete temporary frame files in ${framesPath}:`, cleanupError);
     }
     
-    return `/downloads/${storyId}/${filename}`; // Return public URL
+    return `/downloads/${storyId}/${outputFilename}`; // Return public URL
   } catch (error) {
     console.error('Error saving video for download:', error);
     throw new Error('Failed to save video for download.');
@@ -376,7 +426,7 @@ export const saveVideoForDownload = async (
 };
 
 /**
- * Cleans up temporary assets created for a specific Docker rendering job.
+ * Cleans up temporary assets created for a specific Remotion rendering job.
  */
 export const cleanupRemotionAssets = (jobId: string): void => {
   if (!isNode) {
@@ -384,21 +434,15 @@ export const cleanupRemotionAssets = (jobId: string): void => {
     return;
   }
 
-  const jobTempInputDir = path.join(process.cwd(), '.tmp-remotion-input', jobId);
-  const jobTempOutputDir = path.join(process.cwd(), '.tmp-remotion-output', jobId);
-
-  const dirsToClean = [jobTempInputDir, jobTempOutputDir];
-
-  for (const dir of dirsToClean) {
-    try {
-      if (fs.existsSync(dir)) {
-        fs.rmSync(dir, { recursive: true, force: true });
-        console.log(`Cleaned up directory: ${dir}`);
-      } else {
-        console.log(`Directory not found, no cleanup needed: ${dir}`);
-      }
-    } catch (error) {
-      console.error(`Error cleaning up directory ${dir}:`, error);
+  // Clean up the job's temporary directory
+  const jobTempDir = path.join(process.cwd(), '.tmp-remotion', jobId);
+  
+  try {
+    if (fs.existsSync(jobTempDir)) {
+      fs.rmSync(jobTempDir, { recursive: true, force: true });
+      console.log(`Cleaned up temp directory: ${jobTempDir}`);
     }
+  } catch (error) {
+    console.error(`Error cleaning up temp directory ${jobTempDir}:`, error);
   }
 };

@@ -5,7 +5,7 @@ import { NarrationChunk } from '@/types/narration';
 import { GeneratedImage } from '@/types/story'; 
 import { ensureDownloadsDirectory } from './init-downloads';
 import { createVideoJob, updateJobStatus } from '@/utils/videoJobManager';
-import { exec, ChildProcess } from 'child_process'; 
+import { spawn, ChildProcess } from 'child_process'; // Changed from exec to spawn
 import path from 'path';
 import fs from 'fs';
 
@@ -22,19 +22,27 @@ async function renderVideoInBackground(
   defaultHeight: number,
   defaultFPS: number
 ): Promise<void> {
-  const jobTempInputDir = path.join(process.cwd(), '.tmp-remotion-input', jobId);
-  const jobTempOutputDir = path.join(process.cwd(), '.tmp-remotion-output', jobId);
-  fs.mkdirSync(jobTempInputDir, { recursive: true });
-  fs.mkdirSync(jobTempOutputDir, { recursive: true });
+    // Create simple alphanumeric directories at the project root
+    const jobTempDir = path.join(process.cwd(), `remotion_${jobId}`); // Use underscore instead of dot
+    const jobTempInputDir = path.join(jobTempDir, 'input');
+    const jobTempOutputDir = path.join(jobTempDir, 'output');
+    fs.mkdirSync(jobTempInputDir, { recursive: true });
+    fs.mkdirSync(jobTempOutputDir, { recursive: true });
 
   try {
+    console.log(`[Job ${jobId}] Checking BROWSER_PATH environment variable:`);
+    console.log(`[Job ${jobId}] process.env.BROWSER_PATH: ${process.env.BROWSER_PATH}`);
+    console.log(`[Job ${jobId}] process.env.REMOTION_CHROME_PATH: ${process.env.REMOTION_CHROME_PATH}`);
+    console.log(`[Job ${jobId}] process.env.REMOTION_BINARY_LOCATION: ${process.env.REMOTION_BINARY_LOCATION}`);
+    console.log(`[Job ${jobId}] process.env.CHROME_PATH: ${process.env.CHROME_PATH}`);
+
     console.log(`Starting background Remotion rendering for job ${jobId}`);
     updateJobStatus(jobId, { status: 'processing', progress: 10 });
 
     console.log('Downloading assets for rendering to temp directory:', jobTempInputDir);
     updateJobStatus(jobId, { progress: 20 });
     
-    const { localImages, localAudioChunks, imageDimensions } = await downloadAssetsForRendering(images, audioChunks, jobTempInputDir);
+    const { localImages, localAudioChunks, imageDimensions, placeholderAssetPath } = await downloadAssetsForRendering(images, audioChunks, jobTempInputDir);
 
     let videoWidth = defaultWidth;
     let videoHeight = defaultHeight;
@@ -59,60 +67,140 @@ async function renderVideoInBackground(
       height: videoHeight,
       fps: optimalFPS,
       detectedDimensions: imageDimensions,
+      placeholderAssetPath: placeholderAssetPath, // Add placeholder path to props
     };
     const propsJsonPathOnHost = path.join(jobTempInputDir, 'props.json');
-    fs.writeFileSync(propsJsonPathOnHost, JSON.stringify(propsForRemotion, null, 2));
+    const propsJsonContent = JSON.stringify(propsForRemotion, null, 2);
+    fs.writeFileSync(propsJsonPathOnHost, propsJsonContent);
 
-    const outputVideoFilename = `${storyTitle.replace(/[^a-zA-Z0-9]/g, '_')}_${jobId}.mp4`;
+    // Log the content of props.json for debugging
+    console.log(`[Job ${jobId}] Content of props.json written to ${propsJsonPathOnHost}:`);
+    console.log(propsJsonContent);
+
+    // Use root output directory - Remotion CLI will create numbered frames
+    const outputDir = jobTempOutputDir;
+    fs.mkdirSync(outputDir, { recursive: true });
     
-    const outputVideoPathOnHost = path.join(jobTempOutputDir, outputVideoFilename);
+    const outputVideoPathOnHost = outputDir;
     const remotionEntryPoint = 'src/remotion/index.ts'; // Adjust if your entry point is different
-    const compositionId = 'StoryVideo'; // Adjust if your composition ID is different
+    const compositionId = 'StoryVideo'; // Reverted to original
+    // const compositionId = 'MinimalTestComposition'; // No longer testing minimal composition
 
-    // Ensure propsJsonPathOnHost is correctly escaped for the shell if it contains spaces, etc.
-    // For npx remotion render, props can be a JSON string or a path to a JSON file.
-    // Using a path is cleaner.
-    const renderCommand = `npx remotion render ${remotionEntryPoint} ${compositionId} ${outputVideoPathOnHost} --props=${propsJsonPathOnHost} --log=verbose`;
+    
+    // Set up Remotion CLI with custom asset server
+    // Use the output directory directly - Remotion will handle frame naming
+    // Simplify command, let Remotion use defaults for sequence rendering
+    // Added --image-format=jpeg
+    const renderCommandParts = [
+      'remotion', 
+      'render',
+      remotionEntryPoint,
+      compositionId,
+      outputVideoPathOnHost,
+      `--props=${propsJsonPathOnHost}`,
+      '--sequence',
+      '--concurrency=1',
+      '--image-format=jpeg' // Explicitly set image format
+      // '--log-level=verbose' // Removed, as component logs are not appearing in stderr
+      // '--frames=0-4' // Removed: Render all frames for StoryVideo
+    ];
 
-    console.log(`[renderVideoInBackground] Executing Remotion CLI command for job ${jobId}:\n${renderCommand}`);
+    // Keep essential environment variables
+    const env = {
+      ...process.env,
+      REMOTION_GL_IMPLEMENTATION: 'angle',
+      REMOTION_HEADLESS: '1',
+      // Explicitly set BROWSER_PATH for macOS if Google Chrome is in the default location
+      BROWSER_PATH: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', 
+      REMOTION_BINARY_LOCATION: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', // Also set Remotion's specific vars
+      REMOTION_CHROME_PATH: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',   // Also set Remotion's specific vars
+      CHROME_PATH: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',             // Also set Remotion's specific vars
+      REMOTION_DISABLE_GPU: '1',
+      REMOTION_MAX_RETRIES: '3',
+      PATH: process.env.PATH,
+      DISPLAY: process.env.DISPLAY
+      // PUPPETEER_DUMP_BROWSER_LOGS: 'true', // Removed
+      // DEBUG: 'remotion:browser,puppeteer:*', // Removed
+    };
+    
+    console.log(`[Job ${jobId}] Using explicit BROWSER_PATH: ${env.BROWSER_PATH}`);
+    console.log(`[renderVideoInBackground] Executing Remotion CLI command for job ${jobId}:\n npx ${renderCommandParts.join(' ')}`);
     updateJobStatus(jobId, { progress: 40, status: 'processing' });
 
-    const child = exec(renderCommand, { cwd: process.cwd() }, async (error, stdout, stderr) => {
-      activeRenderProcesses.delete(jobId); // Remove from active processes
+    // Use spawn instead of exec for better stream handling
+    const child = spawn('npx', renderCommandParts, {
+      cwd: process.cwd(),
+      env,
+      stdio: ['ignore', 'pipe', 'pipe'] // stdin, stdout, stderr
+    });
 
-      if (error) {
-        console.error(`Remotion render failed for job ${jobId}:`, error);
-        console.error(`Stderr: ${stderr}`);
-        updateJobStatus(jobId, { 
-          status: 'error', 
-          error: `Remotion render failed: ${error.message}. Stderr: ${stderr}`,
+    activeRenderProcesses.set(jobId, child);
+    console.log(`Remotion render process started for job ${jobId} with PID: ${child.pid}`);
+
+    let stdoutData = '';
+    let stderrData = '';
+
+    if (child.stdout) {
+      child.stdout.on('data', (data) => {
+        const message = data.toString();
+        stdoutData += message;
+        // Optional: Log stdout chunks if needed for real-time progress, but can be very verbose
+        // console.log(`[Job ${jobId} Remotion stdout chunk]: ${message}`);
+      });
+    }
+
+    if (child.stderr) {
+      child.stderr.on('data', (data) => {
+        const message = data.toString();
+        stderrData += message;
+        // Log stderr chunks immediately as they might contain important errors or StoryVideo.tsx logs
+        console.warn(`[Job ${jobId} Remotion stderr chunk]: ${message}`);
+      });
+    }
+
+    child.on('close', async (code) => {
+      activeRenderProcesses.delete(jobId);
+      console.log(`[Job ${jobId}] Remotion process exited with code ${code}.`);
+      
+      console.log(`======== [Job ${jobId}] START Full Remotion stdout ========`);
+      console.log(stdoutData);
+      console.log(`======== [Job ${jobId}] END Full Remotion stdout ========`);
+      
+      console.warn(`======== [Job ${jobId}] START Full Remotion stderr ========`);
+      console.warn(stderrData);
+      console.warn(`======== [Job ${jobId}] END Full Remotion stderr ========`);
+
+      if (code !== 0) {
+        console.error(`Remotion render failed for job ${jobId} with exit code ${code}.`);
+        updateJobStatus(jobId, {
+          status: 'error',
+          error: `Remotion render failed with exit code ${code}. Stderr: ${stderrData.substring(0, 1000)}...`, // Truncate stderr for status
           progress: 100
         });
         cleanupRemotionAssets(jobId);
         return;
       }
 
-      console.log(`Remotion render stdout for job ${jobId}: ${stdout}`);
-      if (stderr) {
-        console.warn(`Remotion render stderr for job ${jobId}: ${stderr}`);
-      }
+      // Check for rendered frames in the output directory
+      const filesInOutputDir = fs.readdirSync(outputVideoPathOnHost);
+      // console.log(`[Job ${jobId}] Files in output directory (${outputVideoPathOnHost}) after Remotion CLI: ${filesInOutputDir.join(', ')}`); // Reduced logging
 
-      if (!fs.existsSync(outputVideoPathOnHost) || fs.statSync(outputVideoPathOnHost).size === 0) {
-        console.error(`Render completed but output file is missing or empty for job ${jobId}: ${outputVideoPathOnHost}`);
+      if (!filesInOutputDir || filesInOutputDir.length === 0) {
+        console.error(`[Job ${jobId}] Render completed but no files were generated in output directory: ${outputVideoPathOnHost}`);
         updateJobStatus(jobId, { 
           status: 'error', 
-          error: 'Render completed but output file is missing or empty.',
+          error: 'Render completed but no files were generated by Remotion CLI.',
           progress: 100
         });
         cleanupRemotionAssets(jobId);
         return;
       }
       
-      updateJobStatus(jobId, { progress: 90 });
-      console.log(`Video rendered successfully for job ${jobId} to ${outputVideoPathOnHost}`);
+      // updateJobStatus(jobId, { progress: 90 }); // Reduced logging
+      // console.log(`Remotion CLI process completed for job ${jobId}. Output directory: ${outputVideoPathOnHost}. Proceeding to save video.`); // Reduced logging
 
       try {
-        const downloadUrl = await saveVideoForDownload(outputVideoPathOnHost, storyId);
+        const downloadUrl = await saveVideoForDownload(outputVideoPathOnHost, storyId, optimalFPS); // saveVideoForDownload now logs frame details
         updateJobStatus(jobId, { 
           status: 'completed', 
           downloadUrl, 
@@ -137,8 +225,16 @@ async function renderVideoInBackground(
     console.log(`Remotion render process started for job ${jobId} with PID: ${child.pid}`);
 
     // Handle cancellation (e.g., if the job is deleted via API while rendering)
-    // This requires a way to signal cancellation to this process.
-    // For now, if the server restarts, activeRenderProcesses is cleared.
+    child.on('error', (err) => {
+      activeRenderProcesses.delete(jobId);
+      console.error(`Failed to start Remotion process for job ${jobId}:`, err);
+      updateJobStatus(jobId, {
+        status: 'error',
+        error: `Failed to start Remotion process: ${err.message}`,
+        progress: 100
+      });
+      cleanupRemotionAssets(jobId);
+    });
 
   } catch (error) {
     console.error(`Error in renderVideoInBackground for job ${jobId}:`, error);
@@ -160,7 +256,8 @@ interface StoryVideoProps extends Record<string, unknown> {
   images: LocalImageWithMetadata[]; 
   audioChunks: NarrationChunk[];
   storyTitle: string;
-  fps?: number; 
+  fps?: number;
+  placeholderAssetPath?: string; // Add placeholder path to props type
 }
 
 interface LocalImageWithMetadata {
@@ -190,6 +287,18 @@ export async function POST(req: Request) {
       storyTitle,
       storyId,
     });
+
+    // Log incoming image chunkIds for debugging
+    if (images && images.length > 0) {
+      console.log('Incoming image chunkIds:');
+      images.slice(0, 10).forEach((img, idx) => { // Log first 10
+        console.log(`  Image[${idx}]: chunkId=${img.chunkId}, chunkIndex=${img.chunkIndex}, imageUrl=${img.imageUrl ? img.imageUrl.substring(0,30)+'...' : 'N/A'}`);
+      });
+      if (images.length > 10) {
+        console.log(`  (... and ${images.length - 10} more images)`);
+      }
+    }
+
 
     const job = createVideoJob(storyId, storyTitle);
     

@@ -1,0 +1,330 @@
+{
+  "images": [
+    {
+      "localPath": "image-0.jpg",
+      "originalUrl": "https://storage.googleapis.com/storytailor-f089f.firebasestorage.app/users/wNroG2k4DGU9E6LpDsHVjYg6PwI2/stories/Xm5w8eCaevAlIyX8yOVP/images/1748964509294_wide_shot_of__finn_discovering.jpg?GoogleAccessId=storytailor-f089f%40appspot.gserviceaccount.com&Expires=1749569311&Signature=POqVM%2BaQxZh%2BtFkcgymJiO2lOZtQUez8u0guBAMTNhX5gitLj1omlFCBxL%2BX5EYiKWzalTSiNUiBea7WGTEE7jOAG6fntvvBpIwvJ6rYIbQQ6YnTfV5uLmcqTowbu%2FPtMYZ4h08Fb2cigVogIywzt3dXCGaqmt9g%2B2A7kVFMefgwsntVL3XYmHTyPoen2HkkG90Gepz5j75AKDSzkMvigowKjsTiBXoIxaO4wrDXAfdfU2Y9OiM2M2QSwo1aM0dVTI2lj2IWGNZiTUIOuzmy7rQfBVLfugFRGlNUGqQWr9DtDl7NA0W1iXgJzgLdJy71mkV7MzKzNhOzibGcK%2FEEDQ%3D%3D",
+      "chunkId": "8194f367-322f-42f3-849d-e6462e122a1d",
+      "chunkIndex": 0,
+      "originalPrompt": "Wide shot of @Finn discovering @Shelly trapped inside @PlasticBag IN @PollutedBeach. He is looking concerned. Sunny morning."
+    },
+    {
+      "localPath": "image-1.jpg",
+      "originalUrl": "https://storage.googleapis.com/storytailor-f089f.firebasestorage.app/users/wNroG2k4DGU9E6LpDsHVjYg6PwI2/stories/Xm5w8eCaevAlIyX8yOVP/images/1748964532059_wide_shot_of__finn_swimming_to.jpg?GoogleAccessId=storytailor-f089f%40appspot.gserviceaccount.com&Expires=1749569334&Signature=XryO1fUZ598Mvg5xyb6CxKswrY0z9HgqlTokyIyYTzadOIdcOujHlrqw%2F3B3DjmJlUTIP0L0laEp8eERns8n4LAEVYQFpGg4Y4h7mwHKA4PNYQXRMntbtrkLn%2BtPNanOqD2fVbMXLVu2lPnndnxrLshX3J6lW6Go9MwWTasay%2Be9nnXRei1EzcHdeAdW9ucqdkGxYV8lKuJFW3NxXIgstzu5kisSfcTWYwyZTKONUtGyyG7oZKnZ3R47EBmGy%2BeCl8wr0c5VTTe%2BlaN6VMdnjVmfIExdjBYtTau76n3bB6KEzyPrCsywYZFk6x%2BMPK2iMXGbLK6PruyL3G50%2FtlJXA%3D%3D",
+      "chunkId": "8194f367-322f-42f3-849d-e6462e122a1d",
+      "chunkIndex": 0,
+      "originalPrompt": "Wide shot of @Finn swimming towards @UnderwaterOcean IN @PollutedBeach. He is determined. Bright daylight."
+    },
+    {
+      "localPath": "image-2.jpg",
+      "originalUrl": "https://storage.googleapis.com/storytailor-f089f.firebasestorage.app/users/wNroG2k4DGU9E6LpDsHVjYg6PwI2/stories/Xm5w8eCaevAlIyX8yOVP/images/1748964568631_close_up_of__shelly_struggling.jpg?GoogleAccessId=storytailor-f089f%40appspot.gserviceaccount.com&Expires=1749569370&Signature=hEyyehF0qQUAKS9%2BgBfmXlt6papVHpnGQPkdKGN2Ie08Sp3T9%2FaFNKpc%2F0tvQq7jE4%2F30I78TmvzUcTMubocNrwTxBt6ub3Y1%2BpWJRoh40o7TFUY8tq8XenDhqJM8Xv%2FSPDhh2l6ZrGqrGl7BqJDmDQnCbbF74SZTOJxg5PUAGELE2Nx7mEAIY5zXTUNOZaDB4vufLnpudwoJNXqD9XjMavN%2B5dvS%2BhjE9t%2By53ZQA%2BqbuprKs%2FtmFkJDguDyU%2FVUf1kDVvFmazHYHts1uwjdY6pP%2BjX0lzmdylSFkkmTeULCtN%2FsS6tZOMRkiTwwBYPuvHBXxs5TdYvK%2BMonyMHZQ%3D%3D",
+      "chunkId": "5405be8d-1fc5-4cfe-950c-7ebb64afb3e2",
+      "chunkIndex": 1,
+      "originalPrompt": "Close-up of @Shelly struggling inside @PlasticBag IN @PollutedBeach. She is squeaking for help. Murky water."
+    },
+    {
+      "localPath": "image-3.jpg",
+      "originalUrl": "https://storage.googleapis.com/storytailor-f089f.firebasestorage.app/users/wNroG2k4DGU9E6LpDsHVjYg6PwI2/stories/Xm5w8eCaevAlIyX8yOVP/images/1748964595349_close_up_of__finn_gently_freei.jpg?GoogleAccessId=storytailor-f089f%40appspot.gserviceaccount.com&Expires=1749569397&Signature=dm5ejFZLnfl5yXkKMAu%2F%2BlJMdx8fr%2FbSpI7L4f9Pv5AC9utjFgm7noKiez8Y99fWZH2QP1O91ES0lp3g7ymHM5S3bteRvbBTCls%2BDNzx6zmFAB1QFTn9MrLY%2BHrR7yHA%2FSkkJ5fd7xMJ18XYyMslTC6VIczNeIhpf6OToWhyJEnWZ7pfCTiefr6sv3qdehpZiVFfMf3aFVV2OLUfZkJdtTn%2FotYs0YFsIAm7aSbHEzBXq78ar4T1BT59BvIbwuG36uFB6r8OhbizMxevYamHWkeW37h0OpTTGl7jDXlQvgHgdJ5DT7JOCMHsjPEqoaItDUsnVYJhVniTY9SlqkGZHA%3D%3D",
+      "chunkId": "5405be8d-1fc5-4cfe-950c-7ebb64afb3e2",
+      "chunkIndex": 1,
+      "originalPrompt": "Close-up of @Finn gently freeing @Shelly IN @PollutedBeach. He is looking relieved. Bright daylight."
+    },
+    {
+      "localPath": "image-4.jpg",
+      "originalUrl": "https://storage.googleapis.com/storytailor-f089f.firebasestorage.app/users/wNroG2k4DGU9E6LpDsHVjYg6PwI2/stories/Xm5w8eCaevAlIyX8yOVP/images/1748964646843_medium_shot_of__finn_looking_a.jpg?GoogleAccessId=storytailor-f089f%40appspot.gserviceaccount.com&Expires=1749569448&Signature=eYaXjtcZrVH12RWo%2FeXSn13ICYu7jgQKuYj4%2BeYZg9TqIq%2FWCPrkmzdRGiGJT5UCcVUhCx1v4w8KeQ07MtmAW7Lw8JZg3yg%2FDkGDEqrFpyVMzM2WyhBy1aYvXIsrInGjqLhmaXdl%2Fqrm0cfPoPzRXaN2o5G%2BHzc4nI8qtnitDV%2FH2djBI2pW%2B5IjAzcfsxxIWCildBHwSYyTdwOa3CKLB0eHvesYnlO4RrDIKn%2BGETotT1YqkoLIKlkWzH9mBNz6AeL8uxsWzNNmza%2BdhA2WFbgHI%2BnN%2BXJwWZcLDofvXEhFfJibHnfqlT3%2FLnPIJXORaJo%2FqOxHOK1ItCnZZ8lxTw%3D%3D",
+      "chunkId": "7e44ed52-c964-46fb-bafe-ccd6e99a43aa",
+      "chunkIndex": 2,
+      "originalPrompt": "Medium shot of @Finn looking at @PollutedBeach IN @PollutedBeach. He is questioning the amount of plastic. Overcast day."
+    },
+    {
+      "localPath": "image-5.jpg",
+      "originalUrl": "https://storage.googleapis.com/storytailor-f089f.firebasestorage.app/users/wNroG2k4DGU9E6LpDsHVjYg6PwI2/stories/Xm5w8eCaevAlIyX8yOVP/images/1748964669584_medium_shot_of__shelly_explain.jpg?GoogleAccessId=storytailor-f089f%40appspot.gserviceaccount.com&Expires=1749569471&Signature=nYK859R%2BFNaq7btL9TbcCozYo2K5oZY4cCYGL0QqWYTytPdiaQfctAMJe2Wu32A33u56Yl9w5urcQzy2eZ%2FYF3mf7vSgROI5P8oCG6NYdJQ%2BlO5zm8KEm7E3sAzroi7f0tniWh7HFO%2Bm877G2Fi6%2FdaA%2FVNnxLUyJ%2Fs9xRA%2B9Lr8ytssj3UtHDiL7Gx8DHC9X4XUkCpLjTFuCGrmHPGOslcHuMrAND5hScmsx4G43ic8r6YoscxyRU%2BKYPQg8zWDiJ9xG514OCLrbnKxvDu4Z%2B8oD4oDJQYZOtrm7P1RZ7yGpIrS8TRljgR2wCFHWKp0MIZZ1brbnawspSoSuw%2FOHg%3D%3D",
+      "chunkId": "3e5a477f-5c6f-49ae-91c8-a9d1d374dd73",
+      "chunkIndex": 3,
+      "originalPrompt": "Medium shot of @Shelly explaining sadly IN @PollutedBeach. She is gesturing towards the plastic. Cloudy day."
+    },
+    {
+      "localPath": "image-6.jpg",
+      "originalUrl": "https://storage.googleapis.com/storytailor-f089f.firebasestorage.app/users/wNroG2k4DGU9E6LpDsHVjYg6PwI2/stories/Xm5w8eCaevAlIyX8yOVP/images/1748964692029_wide_shot_of_plastic_debris_fl.jpg?GoogleAccessId=storytailor-f089f%40appspot.gserviceaccount.com&Expires=1749569493&Signature=K3Jhxxh%2B2nv8POjLim3mjAiE%2F9EvwvAuvy6%2B2GAsHbW7s1zgDTNpEAhseQpSEEXQx4HEMeU3ecfUP5NX%2FJiNEV2Oxct%2FSsYpDJB%2Bt1n%2FOkAPqByUe4EMI19MzCQPaN1Y5mIQ4p5brHTmjGw6kmazgCmIiOBHoS%2Bf%2FjqI8GcFN7XcO36yVJ0OBoUpopa6%2FDKa5GNbEn%2F79dO6h3ZaBUTcJ%2FaIGbHeRrhW6Wjrf9JvaWoZRXcvrnNTMaIBdL4f%2BUV81k2reuSqYeVOt8TEyXiXJyCOf2WuJ%2Bm6sNsjkhIUp%2B3euUYabf76lk1eZsHWeMHbv3ihm6hMcAPHiu4E0HDf1Q%3D%3D",
+      "chunkId": "3e5a477f-5c6f-49ae-91c8-a9d1d374dd73",
+      "chunkIndex": 3,
+      "originalPrompt": "Wide shot of plastic debris floating IN @UnderwaterOcean. @Shelly is explaining the effects on sea animals and coral reefs. Murky water."
+    },
+    {
+      "localPath": "image-7.jpg",
+      "originalUrl": "https://storage.googleapis.com/storytailor-f089f.firebasestorage.app/users/wNroG2k4DGU9E6LpDsHVjYg6PwI2/stories/Xm5w8eCaevAlIyX8yOVP/images/1748964720105_wide_shot_of__echo_appearing_i.jpg?GoogleAccessId=storytailor-f089f%40appspot.gserviceaccount.com&Expires=1749569521&Signature=PqZu7JPUQ8sAjGZJq1P4KNoYvcRBTsqESOS3fuLISJ0Qq3fHxuzZJDw%2B%2FK1%2FLnfks%2FkZ3cgFB6rRap%2BLItbfLhv7LTJR4Ad297B2U5eN6i3sve3emmTHfs7H0gXRqk613aYnVG3TzcILNu1kBZIIuGewE6z04uB8yGBPuUPj84lkKeztBfUGUOGEDj9Rt697Mjs%2B1b5eJHz4r5Ueo1tJlZcSK19DtrSNYzY7L3CVUS%2B32gmZNPg1f4jD2SywVRp%2Bv3teFg8fqICT3t87frGlxLU6gZalH63X6YfHx81a3Q7WoT0Axej3nJBZ7xmndOeVDfUFRUWbKFprQEH6DV%2Bb5g%3D%3D",
+      "chunkId": "83838be4-b258-4a32-856b-295fe1c0955e",
+      "chunkIndex": 4,
+      "originalPrompt": "Wide shot of @Echo appearing IN @UnderwaterOcean. He is smiling friendly. Clear blue water."
+    },
+    {
+      "localPath": "image-8.jpg",
+      "originalUrl": "https://storage.googleapis.com/storytailor-f089f.firebasestorage.app/users/wNroG2k4DGU9E6LpDsHVjYg6PwI2/stories/Xm5w8eCaevAlIyX8yOVP/images/1748967422252_medium_shot_of__echo_leading__.jpg?GoogleAccessId=storytailor-f089f%40appspot.gserviceaccount.com&Expires=1749572224&Signature=AaiFlaTMhI%2Be7ue8q4Tn2EZhPR93JR3qNwLu5WCWDnmVyvkoFc4%2B6IGQQI54jgqB7XrWyt1W7sYVYTfCwFa18eRr0ULM5H%2BRsrW57iZW00tYvIz1ZuBe1%2FtxlYlQ0cH2E5RZ2IMoC36foXI108%2F%2Fu3S8%2Bs8mDv5E430NSzfxMy%2Fmw7dle6U99dhWjoVDac46AfoexxmxRbK5hhKaZiulXNL6R5lmM%2FXtblKyo73o7tc%2BqHYjYPLDpNhIrC7%2BIPc8bC17AwvlXWIcIhbX%2FooG07H5t3%2Bgp2uRmzKpSnhZ3Wq4pNcYJodquVoybbfLlXPsS2v6CzrkT5Nx3c%2BrFr0Ocg%3D%3D",
+      "chunkId": "519aba99-e802-4c67-8776-4cf3616cd20f",
+      "chunkIndex": 5,
+      "originalPrompt": "Medium shot of @Echo leading @Finn and @Shelly IN @UnderwaterOcean. They are following him curiously. Clear blue water."
+    },
+    {
+      "localPath": "image-9.jpg",
+      "originalUrl": "https://storage.googleapis.com/storytailor-f089f.firebasestorage.app/users/wNroG2k4DGU9E6LpDsHVjYg6PwI2/stories/Xm5w8eCaevAlIyX8yOVP/images/1748968137177_medium_shot_of__echo_leading__.jpg?GoogleAccessId=storytailor-f089f%40appspot.gserviceaccount.com&Expires=1749572939&Signature=CzcDzG35wtnLCif5SK9zFTEV%2FVhImjUGffqGhBcgkzM5F7RclrvFw%2FROlTqt9fama%2Fj7p2aB1vRVj4%2Fv28batWnMbuokOo4fpYoI6XFxJvWyVXQyJ1B3fhB8hn2YsgpCIGltMJ79CM7aXwZfuzDt%2BOOxTy1ftrPbwN%2B5OZDyQ76ix2PBLEBzRg%2BBs6JMsVfOgOHOFZN%2BoDnAOdLFTD4I25RMXT2SoOvxTymsfENJLemz2y3K9smD8M88RwbkBIyl2sPvo0YsMZvbq9M%2BXWQXhoDpt6nT7YW85sAhEO3aYOkpnLMwF3WyV1bA1mUyvER9ll4%2F9zWMNom9Y79DNnXyfA%3D%3D",
+      "chunkId": "519aba99-e802-4c67-8776-4cf3616cd20f",
+      "chunkIndex": 5,
+      "originalPrompt": "Medium shot of @Echo leading @Finn and @Shelly to meet @DrMarina IN @UnderwaterOcean. @DrMarina is holding @PAL. Clear blue water."
+    },
+    {
+      "localPath": "image-10.jpg",
+      "originalUrl": "https://storage.googleapis.com/storytailor-f089f.firebasestorage.app/users/wNroG2k4DGU9E6LpDsHVjYg6PwI2/stories/Xm5w8eCaevAlIyX8yOVP/images/1748968180169_close_up_of__pal_eating__plast.jpg?GoogleAccessId=storytailor-f089f%40appspot.gserviceaccount.com&Expires=1749572982&Signature=c9ydsTVzHJJSY2FSWmXgY8ckpcLoBWr81lEXF3wm57%2B%2FbqUuYLGYP4hTk5EEby0Q289RCgZxoFhj6FsD5GIuB5Q5awMcGbm10TGjxbck74DkaBJJTRgGO%2FVfDOJldKeUjiOhhKlj5V0eYvsmg16FbsOYqUQTiW9xglb5bbjPhxwxBkxqQQKIQrEN010%2FsZdJS5j6c3ufmMQxZHrwx1UhGZ7oYdFTpFMtpHTFefiLayTSEyq1n%2Fb%2FVlgPDuvCmv%2BaUQB0Q61KK8V5bu3%2FlK4z2z4E2xGMgl%2BPzGG9v7P7jnM0Gp3ly%2Ft2Wea6Wlgp%2BYB3YMKEQc59isGfvA8yKq3Zmg%3D%3D",
+      "chunkId": "a9c5812e-d067-46ee-819d-acd74c3c1d2d",
+      "chunkIndex": 6,
+      "originalPrompt": "Close-up of @PAL eating @PlasticBag IN @UnderwaterOcean. @PAL is glowing. Dark ocean depths."
+    },
+    {
+      "localPath": "image-11.jpg",
+      "originalUrl": "https://storage.googleapis.com/storytailor-f089f.firebasestorage.app/users/wNroG2k4DGU9E6LpDsHVjYg6PwI2/stories/Xm5w8eCaevAlIyX8yOVP/images/1748968262038_microscopic_view_of__pal_break.jpg?GoogleAccessId=storytailor-f089f%40appspot.gserviceaccount.com&Expires=1749573064&Signature=HkMJUv0zmg6sfkMIXH%2FTwqWj8yJ2q%2BmTLoVUTdHj4Emww7UtUN2s%2B0J3ifY82pLi%2Ffg8vjMqWA%2BfS6gK2OkahoUo4Ne4C9PYi%2FHDu5k3pqe9cLoZLe8YqscwlqGfPP69kAtRrjUNmpQRLSUQveKWIifI%2FFQIPiVVgo%2BeDf5uHKrbx6d6RqdjsO1S5O%2BganvaMa3nPVOEq59zROqUMFRyWqeunclEjEh3tQdWFQjYAN6U%2FD15pGOdqmkO%2Fo%2FsmRm23MUTJNthHEtRN%2Bxf3YXqVJtymo9D2jBoKlxmc4kVbX2snkPK2N7FNrE38vmXQsY4ne7x4%2F0uNs3CUIjcsMjgvQ%3D%3D",
+      "chunkId": "a9c5812e-d067-46ee-819d-acd74c3c1d2d",
+      "chunkIndex": 6,
+      "originalPrompt": "Microscopic view of @PAL breaking down plastic waste . @PAL is glowing faintly. Dark ocean depths."
+    },
+    {
+      "localPath": "image-12.jpg",
+      "originalUrl": "https://storage.googleapis.com/storytailor-f089f.firebasestorage.app/users/wNroG2k4DGU9E6LpDsHVjYg6PwI2/stories/Xm5w8eCaevAlIyX8yOVP/images/1748967520809_medium_shot_of__finn_marveling.jpg?GoogleAccessId=storytailor-f089f%40appspot.gserviceaccount.com&Expires=1749572323&Signature=VbBb1QTSvAkpd%2BnV%2Fjj1JhnvXQyS2joiUDmgl8tRuJlKy5tA4%2BHOiNtsBaTcngnR%2FMCiZRTRnVifuxxy4De0XSG6A%2F7ISp6qQJR28Lq6HNHhvRQN4WNZlN9JQY3tdmZhOWh%2Fw1WtCZmCwAc21KpnDXmGCUj2sEAVeBYzspYQqIXrrGibwMn5S9ZATNQiSUL6ybAvcj501017hMCv1nNx4nDLilgOgXNaJk1HM9EHqJ2PBbzpXDwV0rbA1TVFeq8BqczHn43keX6EgtCqX4mL3JIAdKGJS1qCG6izTkDpIdCzO6JLAbxjAweGvPHdtPvMe%2BIo8CRWOA09frT1Ulp98w%3D%3D",
+      "chunkId": "3d8842a8-28a1-4bbc-a10e-6d16ec0bfe56",
+      "chunkIndex": 7,
+      "originalPrompt": "Medium shot of @Finn marveling IN @UnderwaterOcean. He is looking surprised. Clear blue water."
+    },
+    {
+      "localPath": "image-13.jpg",
+      "originalUrl": "https://storage.googleapis.com/storytailor-f089f.firebasestorage.app/users/wNroG2k4DGU9E6LpDsHVjYg6PwI2/stories/Xm5w8eCaevAlIyX8yOVP/images/1748971563793_medium_shot_of__drmarina_expla.jpg?GoogleAccessId=storytailor-f089f%40appspot.gserviceaccount.com&Expires=1749576367&Signature=DrpaZC2FnVZmvAFfWPiTYm%2BuZCwEhdgikyS8p4I5OaLbEj4AdBkuLm2E4ob8RPW77GnMggTEoWJ2XoAx%2FEUg2hkAiNHEk%2FDf2AMEE37sbQEd8XNG5ucFeq5VSJWomC2V4k%2BVP790jFyPhtnha2S49M2t%2FWRfE3lrTmuPyV%2BxlFNhi7QvPwUVjPbKPuhpmmuE%2FouHzvof6upCdNJ2xgKkvwY1EBjfPP6gw2mbxKFB%2BopnosDBUO3Lt3ClAVJOvOS8L0mhNBaKgQ6MhOd7o3tF5JmE%2FVJhhBb3B1h0sHIxH2SvW4yR3QLk12Yid0xtTzVTf5zV74jEsMPkUgDWSZa0ww%3D%3D",
+      "chunkId": "607c0cf1-2af0-4f6b-85ff-db23ad01d809",
+      "chunkIndex": 8,
+      "originalPrompt": "Medium shot of @DrMarina explaining bio-solutions IN @UnderwaterOcean. She is pointing to a diagram of bacteria. Clear blue water."
+    },
+    {
+      "localPath": "image-14.jpg",
+      "originalUrl": "https://storage.googleapis.com/storytailor-f089f.firebasestorage.app/users/wNroG2k4DGU9E6LpDsHVjYg6PwI2/stories/Xm5w8eCaevAlIyX8yOVP/images/1748971603958_wide_shot_of__drmarina_explain.jpg?GoogleAccessId=storytailor-f089f%40appspot.gserviceaccount.com&Expires=1749576406&Signature=GLSz5OMOGLtDCKxxU60H1Fhlb%2FPnczXjRqBt%2BgOfuxO%2FCN6S6WKb2Tg2Xhz6pZwhAmV449YiMmwV293Lj5VDHAiF%2BLWWYD0oDQOsvOa6WSXVuM8wO%2FKDY%2Bkx3UNh3%2BY1CqwEzTlxUWm%2B%2B5eQxmz%2B7PyRGjOPj2Q%2FFGBhEZeNQ%2BlYHLQbekR4%2BRYr2YkpX659LqN%2BMevFSqflGzWQj1ecmYGV9z%2BOX0mJ6Iq01Cvw5so8KJk6Cv1opuWeSZVjmRW1qbH%2FmFlwWe9co5yMDCtSPtM1jTboHQsJdaqIB1OIugc2Tl%2BAI1jtEJ%2Bfy9WVsQnvCYibpDg7b7Kksad6eIeTiQ%3D%3D",
+      "chunkId": "607c0cf1-2af0-4f6b-85ff-db23ad01d809",
+      "chunkIndex": 8,
+      "originalPrompt": "Wide shot of @DrMarina explaining coral restoration IN @UnderwaterOcean. She is gesturing towards a damaged reef. Clear blue water."
+    },
+    {
+      "localPath": "image-15.jpg",
+      "originalUrl": "https://storage.googleapis.com/storytailor-f089f.firebasestorage.app/users/wNroG2k4DGU9E6LpDsHVjYg6PwI2/stories/Xm5w8eCaevAlIyX8yOVP/images/1748971673498_wide_shot_of__echo_showing__fi.jpg?GoogleAccessId=storytailor-f089f%40appspot.gserviceaccount.com&Expires=1749576475&Signature=Q%2BEpqCM697g0tiVxxv6O3tYJiOPPk5FM8aW%2ByJZgb8PoE6nv9SNybW8NnR4k1gDyokK75SVCFM%2FMC11L%2BpEoOqy%2B4u3UEKxHLe4K94k8%2FpP4WcGl7dhqAyCmcaOSl5HYx9Z%2FqaIYC%2FTufLwj6vIMxbZ4Z3L9NzGG6S3itsb8QiFyR4NcZk%2BfXq5XAzvgoCHRaVzhdYiTnk%2B3Fq3zZNV%2Bn%2FJPnoAbp43FBUk3vlvKAA4eSGrmq5T5KymKO%2FCsRA1sHrl0ROjjsj1E5j67tAq1RFCbzxzdcg3QQqq5CHxoINgIdd9VwYPINvaSFEC0NAiuOYPa9KaEVfw0z2o%2BFJZOnA%3D%3D",
+      "chunkId": "607c0cf1-2af0-4f6b-85ff-db23ad01d809",
+      "chunkIndex": 8,
+      "originalPrompt": "Wide shot of @Echo showing @Finn and @Shelly a thriving @CoralReef IN @UnderwaterOcean. Clear blue water."
+    },
+    {
+      "localPath": "image-16.jpg",
+      "originalUrl": "https://storage.googleapis.com/storytailor-f089f.firebasestorage.app/users/wNroG2k4DGU9E6LpDsHVjYg6PwI2/stories/Xm5w8eCaevAlIyX8yOVP/images/1748971695934_close_up_of_a_thriving__coralr.jpg?GoogleAccessId=storytailor-f089f%40appspot.gserviceaccount.com&Expires=1749576498&Signature=l3Q6Yy6KqdnWA140e6%2BOrQObe1bwt9H0hz1sDEmdTikqshoz22tyK0MriHbMjnn2MXLMtiCdVQphdX3YS0Tpix6cKgBlIOUSvV%2FFaCgvc%2Bz%2BtWyboyRDgeXaHyZ0YpzYlstR81BurqXAMvGSfGKX9ZVKNRNeFAi2UsDMXcUshKuaUrUMLjUzxzRSDDD%2FfRWHfW3aRTzpwy5sr%2Fe7FkidEtSO1rZLgGQiJySG0fnlGyC2w8ou%2BudZMZJ%2BY5CF0jq944Sbg%2F9FTeNlXdNu6jByP0tfgyKfcZ6jyHB5CI9EJRIOD%2Fc8mafC5Hsd9H40HLVL3Hw2PcxZzFW4ec2V5DOWoA%3D%3D",
+      "chunkId": "28a9c958-adee-493e-9516-e24101218e3c",
+      "chunkIndex": 9,
+      "originalPrompt": "Close-up of a thriving @CoralReef IN @UnderwaterOcean. Diverse marine life surrounds it. Clear turquoise water."
+    },
+    {
+      "localPath": "image-17.jpg",
+      "originalUrl": "https://storage.googleapis.com/storytailor-f089f.firebasestorage.app/users/wNroG2k4DGU9E6LpDsHVjYg6PwI2/stories/Xm5w8eCaevAlIyX8yOVP/images/1748971730716_medium_shot_of__finn_asking_a_.jpg?GoogleAccessId=storytailor-f089f%40appspot.gserviceaccount.com&Expires=1749576533&Signature=IFcviWWJXEVIv5GoYICafdgwQdYFVM8p5HnwR6MqMSUFLAALIBWW%2BV5IFnYAoe6VK2LurOOyCawZVg4fTl0cxrBo6tDTEoia1CtKVL5ILaRJRRtvslVJGnkXBi6eXOZlZMJitTFNH4UfxAgCnXRy3r05VEOJqkO45ukbx4e1P5gpvP53Hbs7ycX63KkyALeo3TUD%2FdoTFlYpSSogQY3Z%2B9cGQgv2vI%2FihWdO4oeqXx6jjDO3Goh4iUBXUkqlT3QjaK%2BWoRKYzXbJy9mRYO%2BxOZ4AEd61XVfBUAZ1NU5o7F0bqvZpdYy0%2FXCeboK4WcuHQ1GzjB%2Bnl1iwgt7jnMFmQw%3D%3D",
+      "chunkId": "28a9c958-adee-493e-9516-e24101218e3c",
+      "chunkIndex": 9,
+      "originalPrompt": "Medium shot of @Finn asking a question IN @UnderwaterOcean. He is looking curious. Clear blue water."
+    },
+    {
+      "localPath": "image-18.jpg",
+      "originalUrl": "https://storage.googleapis.com/storytailor-f089f.firebasestorage.app/users/wNroG2k4DGU9E6LpDsHVjYg6PwI2/stories/Xm5w8eCaevAlIyX8yOVP/images/1748971781999_medium_shot_of__shelly_getting.jpg?GoogleAccessId=storytailor-f089f%40appspot.gserviceaccount.com&Expires=1749576584&Signature=A9zPC3VeCacrUuIHjxZ%2FZUlsLcUOOarZqqSqwg0b7MbXA%2Bg3RYISgR4h9lXzzdj3yl9I3B40lTcEca7XeA0zt2eGrRy6YrCnB7I16Hl3LVS4f%2FCTy7Ob9vH8wjinMftH6u%2F9JCHi%2BhutgbgowxOSzkgMhovL%2B8IJW1GyENRMmDUltw3k8HCn4OQTHT4lDsZRK0qhWJZRhMiyoqvaYN8Vi0NM8R0rRnf5Zcc4wIVeGhZ6jjdc1qjmjzoZXOImBFKhS4K6lffBqmnqy0A%2FAyUal8sKXuNNI2KnTOFynu4mYnW%2B2PxXb6oXPJjXr1d%2BQu9thK33q%2F0pIUGLkp131bHHRg%3D%3D",
+      "chunkId": "889da9c7-7209-494d-be1f-fe3e88663535",
+      "chunkIndex": 10,
+      "originalPrompt": "Medium shot of @Shelly getting excited IN @UnderwaterOcean. She is gesturing with her flippers. Clear blue water."
+    },
+    {
+      "localPath": "image-19.jpg",
+      "originalUrl": "https://storage.googleapis.com/storytailor-f089f.firebasestorage.app/users/wNroG2k4DGU9E6LpDsHVjYg6PwI2/stories/Xm5w8eCaevAlIyX8yOVP/images/1748971809329_wide_shot_of__shelly_talking_a.jpg?GoogleAccessId=storytailor-f089f%40appspot.gserviceaccount.com&Expires=1749576611&Signature=bV3iB7KMv6YXP%2Fe5yFQGCKS%2BupPY5Z0Fozc%2F1Y2KqSGjCmFPMvdkjsILCijNHyZjH5cqw7mIe%2Bq%2BKAhe%2F1J0frPtz%2FJPP669EbFUi2iBRn1oQAfLvDPAr2m0SXThGKGSLZ4w3H3KWyfuOSHGVri4Vq20GfSHxOC0rGSl0yaivW7NLPsxNGyC44JjbRO9ZkelzBKE8tenpGrkOR05jO%2Bz7gzqOvlIPgAjkoRwrPzV2FnvUWCL8u5QwbEadgMNV6VQP%2FIRx%2BwxxQIE1SuNhQW%2F20yI4SWomxYr%2B0tv%2Bl%2FLy%2BiR909cp7RVd8Yzc6%2Fh5gfLDJ7y5CoeYQYOnybAB8UJqw%3D%3D",
+      "chunkId": "d9234285-873e-4b5b-851b-8c32782d3ac7",
+      "chunkIndex": 11,
+      "originalPrompt": "Wide shot of @Shelly talking about beach cleanups IN @PollutedBeach. She is using a reusable water bottle. Sunny day."
+    },
+    {
+      "localPath": "image-20.jpg",
+      "originalUrl": "https://storage.googleapis.com/storytailor-f089f.firebasestorage.app/users/wNroG2k4DGU9E6LpDsHVjYg6PwI2/stories/Xm5w8eCaevAlIyX8yOVP/images/1748971835175_medium_shot_of__echo_adding_to.jpg?GoogleAccessId=storytailor-f089f%40appspot.gserviceaccount.com&Expires=1749576637&Signature=WxG1xOl5rxIuPYdDGuGf1i6D4ZY%2BfqGWSnhvBDdjavVXtXla3xVrTqqf2q3X4fgGton5QlYKXt7ZsdRDZoqOzvHim8hngbBKfps%2F0YnewaoHLUtBp%2BEZ%2BslLY8w99SvcWYsMC6b3bPOeujXG2zDAi%2FPXBF97HcRUPnHLGWpoUTS08MyZ0U6XA3H5OLgeaDzy0TGu36iUSYHa0xnEf9%2BlQ8Od3Qo9uUE0Ozny6o%2BRlghEuv7kmfxTQGEwOTSUnhnFbj1NMdvOFKPrzjtkKcBl1v10k2hQCD%2FQW%2FOPaY8xJIooHwpn9o%2FrvULgv4dJWzr5ktJhTCala17WOOgXiTSa8Q%3D%3D",
+      "chunkId": "d9234285-873e-4b5b-851b-8c32782d3ac7",
+      "chunkIndex": 11,
+      "originalPrompt": "Medium shot of @Echo adding to the conversation IN @UnderwaterOcean. He is smiling. Clear blue water."
+    },
+    {
+      "localPath": "image-21.jpg",
+      "originalUrl": "https://storage.googleapis.com/storytailor-f089f.firebasestorage.app/users/wNroG2k4DGU9E6LpDsHVjYg6PwI2/stories/Xm5w8eCaevAlIyX8yOVP/images/1748971856710_wide_shot_of__echo_gesturing_t.jpg?GoogleAccessId=storytailor-f089f%40appspot.gserviceaccount.com&Expires=1749576658&Signature=muibms9I3wuimgcfuy2hoSNAa9gDBOjrFWfSaKAUVvtakbkSjrVqg48ozjvN8m7DSjXUM%2Fy%2FepXvcFULz39y1b0lkt%2BHC77TwI1OxiQiIrHUrQfA3izdFyxjyR%2FZ6iafcMQsTqGeSbqAh0Z42vw7u1K5cDLJYRNdUY9KViOm4Fdn%2FQSJpmIYAJqO22UysMr1WJTjp0%2B1lI7MF%2BtWt9GZ%2FPkdP8IPiuTy0LYH%2FfSADSFnLS8UJnu7Uct5JcCXLQhkdkGvpuxlrSR%2BvsH2zfAuGyuRTWm0cw%2FPhRbGE7mCxza3kxhnC5%2BgaW%2Fr7trT5TxUG7mLe4zV282xGywpGNjljg%3D%3D",
+      "chunkId": "aecddcb1-3542-4c51-b18a-4bf1c23bda27",
+      "chunkIndex": 12,
+      "originalPrompt": "Wide shot of @Echo gesturing towards the ocean IN @UnderwaterOcean. He is emphasizing the importance of protecting sea life. Clear blue water."
+    },
+    {
+      "localPath": "image-22.jpg",
+      "originalUrl": "https://storage.googleapis.com/storytailor-f089f.firebasestorage.app/users/wNroG2k4DGU9E6LpDsHVjYg6PwI2/stories/Xm5w8eCaevAlIyX8yOVP/images/1748971876040_medium_shot_of__drmarina_teach.jpg?GoogleAccessId=storytailor-f089f%40appspot.gserviceaccount.com&Expires=1749576678&Signature=a6I3kFRkPljhZujFnNW3t0K9iTpLmTu9VVBFIksJJel4x6gBN9WviNUV8fIxooZABeHKHotuOCAZEaWejnGu046s%2FMkU9M18uzdww1XcTaMKwybWIkbgTuvMuRTgNNcGPDMWKjUaZn7CKVX8cQYkptM%2BNH5vpWMWYmF39lZCX3QXBS%2BlVu96emF57EdBFvVZLnfyJeahw7kxSUrJ7bt%2FcCfyabGdKNtB9CRdqLEMIzlsbIxVLdlVGJRFbMMnpFtLtG4u6iHcLY%2F5zmy2HUMG4kI81T%2FTNiZo44GO7d4zfkA%2BODXb0uCryn15hnYCYm5GhihLzX4%2BU7o0q2GUh%2ByxRQ%3D%3D",
+      "chunkId": "aecddcb1-3542-4c51-b18a-4bf1c23bda27",
+      "chunkIndex": 12,
+      "originalPrompt": "Medium shot of @DrMarina teaching @Finn IN @UnderwaterOcean. She is explaining ocean food chains. Clear blue water."
+    },
+    {
+      "localPath": "image-23.jpg",
+      "originalUrl": "https://storage.googleapis.com/storytailor-f089f.firebasestorage.app/users/wNroG2k4DGU9E6LpDsHVjYg6PwI2/stories/Xm5w8eCaevAlIyX8yOVP/images/1748971924882_close_up_of__drmarina_pointing.jpg?GoogleAccessId=storytailor-f089f%40appspot.gserviceaccount.com&Expires=1749576727&Signature=B8A%2Fc%2Fw3X%2FtBx5TNcA5ygUenZ523O3fiEb1o9jdyxZ0UaLGRRsmMxWqKxeUtpw8cRJV2KjbjdJ8ewtsIs97KgkbGhjrgm4YVLccT8jnR%2FllZDCGBMUGTrGjNAR4%2F6XmiWhgO4RVtsjxw1FhDMgdHN36QM%2BD10cT%2FKH%2FdqxL1P%2FA6oA6%2BMWhTLPijnfnTvOytzcugZANEC9NyDt7ThgAS1%2FqRUuxGxTsfBnzMonkKUVPOvM5NzLXIK9m%2BKq9ndzGsuFV%2FVu4phbsfwHMMnziCh2cUSqUYEgCL%2ByDjT0z1shxucyUmLDbISQvoFqyewwDCOC1bx7J95wzAMvL6lOa%2Fpw%3D%3D",
+      "chunkId": "88802967-7c7c-4a06-81a1-3184e32be189",
+      "chunkIndex": 13,
+      "originalPrompt": "Close-up of @DrMarina pointing to a diagram IN @UnderwaterOcean. The diagram shows microplastics in the food chain. Clear blue water."
+    },
+    {
+      "localPath": "image-24.jpg",
+      "originalUrl": "https://storage.googleapis.com/storytailor-f089f.firebasestorage.app/users/wNroG2k4DGU9E6LpDsHVjYg6PwI2/stories/Xm5w8eCaevAlIyX8yOVP/images/1748971945750_medium_shot_of__finn_realizing.jpg?GoogleAccessId=storytailor-f089f%40appspot.gserviceaccount.com&Expires=1749576748&Signature=XKc9bOuAo5lLkV9fl3%2Fg08EIZzshYff0e6rFgdkmrXCmha8C8cIyVvWS2ZrQ6gVXLmIMBDx67mdC3P4cFbTvs8ZbsBMZZ36RxaF%2FU5k0wOZHLxqWZoaB%2BBaHAWQkDeKZoiYZ4WMuCfvnErk2y90l8FibPaECXV2zDU3abYwKzrZPm%2FtVCIj9LG7RgTZ27pXW%2FS6oLkYio3w%2FurqUxR5uIpuouh%2BqOCPRaX865%2Bc0ZT9UTcrpXKDczee2nqKu1Zb%2BU4kNug0lyi5wBMw42cEg6MTa%2BB1Zx%2Fxmsd7AYNxMa1uOeVmPHj5fYjRp%2BxHaRhHLFWq%2FhbvvcD%2FpNI9yHLyvbw%3D%3D",
+      "chunkId": "88802967-7c7c-4a06-81a1-3184e32be189",
+      "chunkIndex": 13,
+      "originalPrompt": "Medium shot of @Finn realizing the importance of protecting the ocean IN @UnderwaterOcean. He is looking determined. Clear blue water."
+    },
+    {
+      "localPath": "image-25.jpg",
+      "originalUrl": "https://storage.googleapis.com/storytailor-f089f.firebasestorage.app/users/wNroG2k4DGU9E6LpDsHVjYg6PwI2/stories/Xm5w8eCaevAlIyX8yOVP/images/1748972053720_medium_shot_of__drmarina_smili.jpg?GoogleAccessId=storytailor-f089f%40appspot.gserviceaccount.com&Expires=1749576856&Signature=UO5li37KK8%2BiTD4RWLyDn1V5jwWDSMcWOg2vjVf%2B3lOm95tuks43QHTDX4s93Y2xhUUogg33TXVBIgcBKp7YiWLK0On4QZaiyavUXazjD0jkqczqrP1727si1uG%2FjprrFkvupSLa9S27135ZtRDbnTKaDw2vI1tjSDfEB4rZ0cKtfkbgEe%2BZFqhHQPjsDypdbKmgaWoCO7DoPt2utceOXriZRy0nOVk3N80qxekPlKqusvLnX3lSxFcGsBf1K41OAmPUGAfjkWOwvPylU3oawj%2BUmVZfov21bkBTVNDSLvHkBNHfqS3PSN%2F%2FGWmegvgXXEhjRs%2BdezHWWoJl%2FpPFqA%3D%3D",
+      "chunkId": "d8d764a1-6f8c-4cb2-aed5-43af48a5cc42",
+      "chunkIndex": 14,
+      "originalPrompt": "Medium shot of @DrMarina smiling at @Finn IN @UnderwaterOcean. She is looking hopeful. Clear blue water."
+    },
+    {
+      "localPath": "image-26.jpg",
+      "originalUrl": "https://storage.googleapis.com/storytailor-f089f.firebasestorage.app/users/wNroG2k4DGU9E6LpDsHVjYg6PwI2/stories/Xm5w8eCaevAlIyX8yOVP/images/1748972015988_wide_shot_of__finn_organizing_.jpg?GoogleAccessId=storytailor-f089f%40appspot.gserviceaccount.com&Expires=1749576818&Signature=mjOcUC%2B2mIR4c7qiuLmyhzRWDwh7hFdWVVHVd%2FtKoNZrovTgncokHFbiNAw%2BuUj6Eg41ReJs%2F98ctYguZiQlPyr9FgviQFOGvQe5kx3iG2NqOUksfPN1DgNsHE9su5kbzNN7lAZ8D4HhzGBcn1349hiU2JJ04VfeDX7hLcXZtoGzALxbRajSX8JYHoWUA72b5IzhtNY%2BbmL7RAX4HeaPSQyiCG6MRttGUN1l5D7DS9Qve6khs2Uf91FAyswykP12ZNz%2FVJ9ywWoDn4XQJPcPoqdz034ORbzdbb%2BdqQ5Ww0PfCf%2BsqmjaFQeuHBcUmdcqEjt4yrf33zCjnLwvYjKO8w%3D%3D",
+      "chunkId": "5690bbb6-d274-4873-aa67-2d5ec135247a",
+      "chunkIndex": 15,
+      "originalPrompt": "Wide shot of @Finn organizing a school beach cleanup IN @PollutedBeach. He is talking to his friends. Sunny day."
+    },
+    {
+      "localPath": "image-27.jpg",
+      "originalUrl": "https://storage.googleapis.com/storytailor-f089f.firebasestorage.app/users/wNroG2k4DGU9E6LpDsHVjYg6PwI2/stories/Xm5w8eCaevAlIyX8yOVP/images/1748972033272_medium_shot_of__finn_teaching_.jpg?GoogleAccessId=storytailor-f089f%40appspot.gserviceaccount.com&Expires=1749576835&Signature=lIF9EgP0JCFY4iEnuwPuA4QmeLV0jYjiq6SEQOpoL29DBFB9NCkUDwkomtOK9EmXqhRSOVdcR7tUMTQ59U%2B76EB6w6e2ZXSwwJWgp%2FC5vuKEX%2FlaVUGLg4pXWA1c3uNlYbTHvRRwclAYV2zIjTVsdAAq6BNQtHZTdnP%2BbRZVsD98oMLjDbnEePP4Bx4dK1wCT5vfK4yzzOiNH%2F1iPo9tObQA6NbPsqf14cpyUC3nI%2B6Cc0xSa7CDueUCfkpRV7jluFK%2FlT46VDK8AQNmXKn%2Fp7H3WYRb0AwM5olRHAPSWCt0mzzwqGl%2FExrmmsp3opGE30tHOj5zyRKQSoO9jP2YXg%3D%3D",
+      "chunkId": "2142b868-169b-466d-ab6f-ec98d2cec8ce",
+      "chunkIndex": 16,
+      "originalPrompt": "Medium shot of @Finn teaching his friends about ocean conservation IN @PollutedBeach. He is holding a piece of plastic trash. Sunny day."
+    }
+  ],
+  "audioChunks": [
+    {
+      "id": "5d2ef0d6-b20e-4bc2-b5af-24dc3b1debec",
+      "text": "When Finn discovers a baby sea turtle trapped in a plastic bag during his beach cleanup, he embarks on an underwater adventure to save the ocean!",
+      "index": 0,
+      "audioUrl": "audio-0.wav",
+      "duration": 10.21
+    },
+    {
+      "id": "5e4fc7ea-57e7-4e9a-837c-7284274cad5a",
+      "text": "\"Help! Help!\" squeaks the tiny turtle, struggling against the plastic. Finn gently frees her and she introduces herself: \"I'm Shelly! Thank you for saving me!\"",
+      "index": 1,
+      "audioUrl": "audio-1.wav",
+      "duration": 13.17
+    },
+    {
+      "id": "fb104394-1e2b-4111-aa99-16b3dd0dc4fd",
+      "text": "\"Why is there so much plastic in your home?\" Finn asks, looking at the polluted beach.",
+      "index": 2,
+      "audioUrl": "audio-2.wav",
+      "duration": 6.25
+    },
+    {
+      "id": "6513bfa8-03ee-4878-bfe1-620b03e38704",
+      "text": "\"Eight million tons of plastic enter our oceans every year!\" Shelly explains sadly. \"It hurts sea animals and destroys coral reefs where we live.\"",
+      "index": 3,
+      "audioUrl": "audio-3.wav",
+      "duration": 12.41
+    },
+    {
+      "id": "deb32193-7ef2-4b92-8b69-488e28380525",
+      "text": "Suddenly, a friendly dolphin named Echo appears. \"Want to see something amazing? Follow me!\"",
+      "index": 4,
+      "audioUrl": "audio-4.wav",
+      "duration": 6.97
+    },
+    {
+      "id": "436dda72-7b69-4ad3-b545-b7e98e498f0f",
+      "text": "Echo leads them to meet Dr. Marina, a marine biologist with an incredible invention: \"Meet PAL - my Plastic-Absorbing Life-form!\"",
+      "index": 5,
+      "audioUrl": "audio-5.wav",
+      "duration": 12.61
+    },
+    {
+      "id": "861505b2-3fda-4936-a60a-b36ad6ce8524",
+      "text": "PAL is a specially designed bacteria that eats plastic! \"Just like how you eat food for energy, PAL eats plastic waste and breaks it down into harmless substances!\"",
+      "index": 6,
+      "audioUrl": "audio-6.wav",
+      "duration": 12.13
+    },
+    {
+      "id": "c7238584-ee1c-409a-bcf7-c54b67f111a0",
+      "text": "\"Bacteria can DO that?\" Finn marvels.",
+      "index": 7,
+      "audioUrl": "audio-7.wav",
+      "duration": 3.69
+    },
+    {
+      "id": "01b9e0e0-293d-42d2-b6d8-30690b37ff53",
+      "text": "\"Scientists are developing bio-solutions for ocean cleanup!\" Dr. Marina explains. \"Some bacteria can digest plastic, certain algae can absorb oil spills, and coral restoration helps rebuild damaged reefs!\"",
+      "index": 8,
+      "audioUrl": "audio-8.wav",
+      "duration": 16.45
+    },
+    {
+      "id": "513edc15-1d76-4bf1-a18e-803fa438aa7f",
+      "text": "Echo shows them a thriving coral reef. \"Healthy oceans produce 70% of Earth's oxygen! We're not just pretty - we're essential for all life!\"",
+      "index": 9,
+      "audioUrl": "audio-9.wav",
+      "duration": 13.25
+    },
+    {
+      "id": "db8bb049-bcff-4aff-9b97-6d0ea49b5126",
+      "text": "\"What can kids do to help?\" Finn asks.",
+      "index": 10,
+      "audioUrl": "audio-10.wav",
+      "duration": 3.49
+    },
+    {
+      "id": "172c9cf6-f7d2-4041-9f80-aeba067bfd29",
+      "text": "Shelly gets excited: \"Reduce single-use plastics! Use reusable water bottles, say no to plastic straws, and participate in beach cleanups!\"",
+      "index": 11,
+      "audioUrl": "audio-11.wav",
+      "duration": 11.13
+    },
+    {
+      "id": "d1179455-ab63-4995-9081-324585ba664d",
+      "text": "\"Every piece of trash you remove saves sea life,\" Echo adds. \"And every plastic bag you refuse means one less threat to ocean animals!\"",
+      "index": 12,
+      "audioUrl": "audio-12.wav",
+      "duration": 10.97
+    },
+    {
+      "id": "5e3adb0e-886e-47e0-b205-deb54598744b",
+      "text": "Dr. Marina teaches Finn about ocean food chains: \"When tiny fish eat microplastics, bigger fish eat them, and humans eat those bigger fish. We're all connected!\"",
+      "index": 13,
+      "audioUrl": "audio-13.wav",
+      "duration": 13.93
+    },
+    {
+      "id": "241275c6-9a48-476a-864b-5a8a71b8606c",
+      "text": "\"So protecting the ocean protects everyone!\" Finn realizes.",
+      "index": 14,
+      "audioUrl": "audio-14.wav",
+      "duration": 4.93
+    },
+    {
+      "id": "b43e9672-64e5-483a-8fa6-b1c98f2657fc",
+      "text": "\"Exactly! Young ocean guardians like you are our hope,\" Dr. Marina smiles.",
+      "index": 15,
+      "audioUrl": "audio-15.wav",
+      "duration": 6.45
+    },
+    {
+      "id": "7007ea85-0002-43b9-8dc2-018986f6cbb2",
+      "text": "Finn organizes a school beach cleanup and teaches friends about ocean conservation. \"Remember,\" he tells them, \"every small action creates BIG waves of change!\"",
+      "index": 16,
+      "audioUrl": "audio-16.wav",
+      "duration": 13.53
+    }
+  ],
+  "storyTitle": "Finn and the Plastic-Eating Hero",
+  "width": 1024,
+  "height": 576,
+  "fps": 15,
+  "detectedDimensions": {
+    "width": 1024,
+    "height": 576
+  },
+  "placeholderAssetPath": "placeholder.jpg"
+}

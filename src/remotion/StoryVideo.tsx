@@ -30,9 +30,10 @@ const VIDEO_FPS = 15; // Can be adjusted: 15 for fast rendering, 24 for smoother
 
 // Make this a Record<string, unknown> to satisfy Remotion type constraints
 interface StoryVideoProps extends Record<string, unknown> {
-  images: LocalImageWithMetadata[]; // Changed from (string | GeneratedImage)[]
+  images: LocalImageWithMetadata[];
   audioChunks: NarrationChunk[];
-  fps?: number; // Optional FPS override
+  fps?: number;
+  placeholderAssetPath?: string; // Added placeholder path
 }
 
 // Define a structure for scene organization
@@ -57,9 +58,15 @@ const getChunkMetadata = (image: LocalImageWithMetadata): { chunkId?: string; ch
 };
 
 // Associate images with audio chunks using chunk metadata from LocalImageWithMetadata
-const organizeScenes = (images: LocalImageWithMetadata[], audioChunks: NarrationChunk[], fps: number = VIDEO_FPS): SceneData[] => {
+const organizeScenes = (
+  images: LocalImageWithMetadata[],
+  audioChunks: NarrationChunk[],
+  fps: number = VIDEO_FPS,
+  placeholderAssetPath: string // Added placeholder path argument
+): SceneData[] => {
   console.log('--- organizeScenes ---');
   console.log(`Received ${images.length} images and ${audioChunks.length} audio chunks.`);
+  console.log(`Using placeholderAssetPath: ${placeholderAssetPath}`);
   
   // Log details of the first few images received
   images.slice(0, 5).forEach((img, idx) => {
@@ -89,7 +96,8 @@ const organizeScenes = (images: LocalImageWithMetadata[], audioChunks: Narration
   
   if (validChunks.length === 0) {
     console.warn('No valid audio chunks found, creating default scene with images');
-    const defaultImages = images.length > 0 ? images.map(getImageUrl) : ['placeholder'];
+    // Use the provided placeholderAssetPath if no images, otherwise use actual images
+    const defaultImages = images.length > 0 ? images.map(getImageUrl) : [placeholderAssetPath];
     const framesPerImage = Math.max(fps * 3, 1); // Minimum 3 seconds or 1 frame per image
     const totalFrames = defaultImages.length * framesPerImage;
     
@@ -115,7 +123,7 @@ const organizeScenes = (images: LocalImageWithMetadata[], audioChunks: Narration
       
       scenes.push({
         audioChunk: chunk,
-        images: ['placeholder'],
+        images: [placeholderAssetPath], // Use the provided placeholder path
         durationInFrames: totalFrames,
         imageFrameDurations: [totalFrames]
       });
@@ -186,13 +194,12 @@ const organizeScenes = (images: LocalImageWithMetadata[], audioChunks: Narration
       }
       
       // Get image URLs (localPaths) for rendering this chunk
-      const physicalPlaceholderPath = 'remotion-assets/placeholder.jpg'; // Path to the physical placeholder
       const chunkImageUrls = chunkImages.length > 0
         ? chunkImages.map(getImageUrl) // This will get localPath from LocalImageWithMetadata
-        : [physicalPlaceholderPath]; // Fallback to physical placeholder if no images for chunk
+        : [placeholderAssetPath]; // Fallback to provided placeholderAssetPath if no images for chunk
       
       if (chunkImages.length === 0) {
-        console.log(`Chunk ${i + 1} (${chunk.id}): No specific images assigned. Using physical placeholder: ${physicalPlaceholderPath}`);
+        console.log(`Chunk ${i + 1} (${chunk.id}): No specific images assigned. Using placeholder: ${placeholderAssetPath}`);
       }
       
       console.log(`Chunk ${i + 1} (${chunk.id}): ${chunkImageUrls.length} images assigned`);
@@ -243,73 +250,82 @@ const calculateTotalDuration = (scenes: SceneData[]): number => {
 const imageSrcCache = new Map<string, string>();
 
 // Individual Scene component - memoized for performance
-const SceneComponent = ({ image, index }: { image: string; index: number }) => {
+const SceneComponent = ({ image: imagePathProp, index }: { image: string; index: number }) => { // Renamed image to imagePathProp for clarity
   const frame = useCurrentFrame();
+  let staticPathDisplay = 'N/A';
+  let staticFileErrorDisplay = 'None';
+  let imageToRenderSource = 'data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw=='; // Transparent pixel
 
-  // Memoize fade-in calculation
+  try {
+    if (imagePathProp) {
+      if (imagePathProp.startsWith('data:') || imagePathProp.startsWith('http')) {
+        staticPathDisplay = imagePathProp; // It's already a data URI or absolute URL
+        imageToRenderSource = imagePathProp;
+      } else {
+        // Attempt to resolve with staticFile
+        const resolved = staticFile(imagePathProp);
+        staticPathDisplay = resolved;
+        imageToRenderSource = resolved;
+      }
+    } else {
+      staticPathDisplay = 'Error: imagePathProp is null/undefined';
+      staticFileErrorDisplay = 'imagePathProp is null/undefined';
+      // Keep imageToRenderSource as transparent pixel or error SVG
+      imageToRenderSource = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTkyMCIgaGVpZ2h0PSIxMDgwIiB2aWV3Qm94PSIwIDAgMTkyMCAxMDgwIiBmaWxsPSJub25lIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPgo8cmVjdCB3aWR0aD0iMTkyMCIgaGVpZ2h0PSIxMDgwIiBmaWxsPSIjRkY0NDQ0Ii8+Cjx0ZXh0IHg9Ijk2MCIgeT0iNTQwIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iNjQiIGZpbGw9IndoaXRlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0iY2VudGVyIj5JbWFnZSBFcnJvcjwvZm9udD48L3N2Zz4K';
+    }
+  } catch (e: any) {
+    staticFileErrorDisplay = e.message || 'Unknown error during staticFile()';
+    staticPathDisplay = `Error resolving: ${staticFileErrorDisplay}`;
+    imageToRenderSource = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTkyMCIgaGVpZ2h0PSIxMDgwIiB2aWV3Qm94PSIwIDAgMTkyMCAxMDgwIiBmaWxsPSJub25lIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPgo8cmVjdCB3aWR0aD0iMTkyMCIgaGVpZ2h0PSIxMDgwIiBmaWxsPSIjRkY0NDQ0Ii8+Cjx0ZXh0IHg9Ijk2MCIgeT0iNTQwIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iNjQiIGZpbGw9IndoaXRlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0iY2VudGVyIj5TdGF0aWNGaWxlIEVycm9yPC90ZXh0Pjwvc3ZnPgo='; // SVG for StaticFile Error
+  }
+
   const opacity = useMemo(() => {
-    const fadeInDuration = 10;
-    return frame < fadeInDuration ? frame / fadeInDuration : 1;
+    const fadeInDuration = 10; // Opacity calculation based on component frame, not video frame
+    return Math.min(1, frame / fadeInDuration);
   }, [frame]);
 
-  // Memoized image source handling with caching
-  const getImageSrc = useCallback(() => {
-    // Check cache first
-    if (imageSrcCache.has(image)) {
-      return imageSrcCache.get(image)!;
-    }
-    
-    let result: string;
-    // The 'image' prop is now always a path string (e.g., "remotion-assets/image-0.jpg" or "remotion-assets/placeholder.jpg")
-    // or an http/data URL if passed directly (though current flow uses local paths).
-
-    if (!image) { // Should not happen if organizeScenes guarantees a path
-        console.error('Scene component received undefined or null image path. Using error placeholder.');
-        result = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTkyMCIgaGVpZ2h0PSIxMDgwIiB2aWV3Qm94PSIwIDAgMTkyMCAxMDgwIiBmaWxsPSJub25lIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPgo8cmVjdCB3aWR0aD0iMTkyMCIgaGVpZ2h0PSIxMDgwIiBmaWxsPSIjRkY0NDQ0Ii8+Cjx0ZXh0IHg9Ijk2MCIgeT0iNTQwIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iNjQiIGZpbGw9IndoaXRlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0iY2VudGVyIj5JbWFnZSBFcnJvcjwvdGV4dD4KPHN2Zz4K';
-    } else if (image.startsWith('data:') || image.startsWith('http')) {
-      console.log('Using direct image URL:', image.substring(0, 50) + '...');
-      result = image;
-    } else {
-      // For local paths (like "remotion-assets/file.jpg"), use staticFile
-      try {
-        const staticPath = staticFile(image); // 'image' could be "remotion-assets/placeholder.jpg" here
-        console.log('Using staticFile for:', image, '-> resolved to:', staticPath);
-        result = staticPath;
-      } catch (error) {
-        console.error(`Error loading image via staticFile (${image}):`, error);
-        // Fallback to an error SVG if staticFile fails
-        result = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTkyMCIgaGVpZ2h0PSIxMDgwIiB2aWV3Qm94PSIwIDAgMTkyMCAxMDgwIiBmaWxsPSJub25lIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPgo8cmVjdCB3aWR0aD0iMTkyMCIgaGVpZ2h0PSIxMDgwIiBmaWxsPSIjRkY0NDQ0Ii8+Cjx0ZXh0IHg9Ijk2MCIgeT0iNTQwIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iNjQiIGZpbGw9IndoaXRlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0iY2VudGVyIj5JbWFnZSBFcnJvcjwvdGV4dD4KPHN2Zz4K';
-      }
-    }
-    
-    // Cache the result
-    imageSrcCache.set(image, result);
-    return result;
-  }, [image]);
+  const sceneDebugTextStyle: React.CSSProperties = {
+    color: 'lime',
+    fontSize: '16px',
+    fontFamily: 'monospace',
+    padding: '5px',
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    position: 'absolute',
+    bottom: '10px',
+    left: '10px',
+    zIndex: 1001,
+    maxWidth: '95%',
+    maxHeight: '30%',
+    overflowY: 'auto',
+    wordBreak: 'break-all',
+  };
 
   return (
     <AbsoluteFill
       style={{
-        backgroundColor: 'black',
+        backgroundColor: 'rgba(50,0,0,0.5)', // Dark red semi-transparent background for scene debugging
         display: 'flex',
         justifyContent: 'center',
         alignItems: 'center',
         opacity,
       }}
     >
-      {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
-        src={getImageSrc()}
+        src={imageToRenderSource}
         style={{
           maxWidth: '100%',
           maxHeight: '100%',
           objectFit: 'contain',
         }}
-        alt={`Scene ${index + 1}`}
-        onError={() => {
-          console.error(`Failed to load image ${image} for scene ${index}`);
-        }}
+        alt={`Scene ${index + 1} - ${imagePathProp || 'No Path'}`}
       />
+      <div style={sceneDebugTextStyle}>
+        <div>Scene Index: {index}</div>
+        <div>Img Prop (localPath): {imagePathProp || 'N/A'}</div>
+        <div>Resolved Src (staticFile): {staticPathDisplay}</div>
+        <div>staticFile() Error: {staticFileErrorDisplay}</div>
+        <div>Current Frame (in scene): {frame}</div>
+      </div>
     </AbsoluteFill>
   );
 };
@@ -359,22 +375,30 @@ const Scene = memo(SceneComponent);
 // };
 
 // Story Video component - exported for use in Root.tsx
-const StoryVideoComponentInner: React.FC<StoryVideoProps> = ({ images, audioChunks, fps }) => {
-  console.log('=== StoryVideoComponent rendering ===');
-  console.log('- Images count:', images?.length || 0);
-  console.log('- Audio chunks count:', audioChunks?.length || 0);
+const StoryVideoComponentInner: React.FC<StoryVideoProps> = ({ images, audioChunks, fps, placeholderAssetPath }) => {
+  // console.log statements are not appearing in stderr, so we'll use visual debugging.
+  // console.log('=== StoryVideoComponent rendering ===');
+  // console.log('- Images count:', images?.length || 0);
+  // console.log('- Placeholder asset path:', placeholderAssetPath);
+  // console.log('- Audio chunks count:', audioChunks?.length || 0);
   
-  if (images?.length) {
-    console.log('- First 5 images:', images.slice(0, 5));
-  }
+  // if (images?.length) {
+  //   console.log('- First 5 images:', images.slice(0, 5));
+  // }
   
+  const frame = useCurrentFrame();
   const actualFPS = fps || VIDEO_FPS;
-  console.log('- Using FPS:', actualFPS);
+  // console.log('- Using FPS:', actualFPS);
 
   // Memoize scene organization - expensive computation
   const scenes = useMemo(() => {
-    return organizeScenes(images || [], audioChunks || [], actualFPS);
-  }, [images, audioChunks, actualFPS]);
+    if (!placeholderAssetPath) {
+      console.error("Placeholder asset path is undefined in StoryVideoComponentInner. Scenes may not render correctly.");
+      // Potentially return empty scenes or throw an error
+      // For now, proceed but expect issues if placeholder is needed.
+    }
+    return organizeScenes(images || [], audioChunks || [], actualFPS, placeholderAssetPath || 'error-placeholder-path-missing.jpg');
+  }, [images, audioChunks, actualFPS, placeholderAssetPath]);
   
   console.log('=== Organized into', scenes.length, 'scenes ===');
   
@@ -383,10 +407,31 @@ const StoryVideoComponentInner: React.FC<StoryVideoProps> = ({ images, audioChun
     return calculateTotalDuration(scenes);
   }, [scenes]);
   
-  console.log('=== Total video duration:', totalDurationInFrames, 'frames =', totalDurationInFrames / actualFPS, 'seconds ===');
+  // console.log('=== Total video duration:', totalDurationInFrames, 'frames =', totalDurationInFrames / actualFPS, 'seconds ===');
   
+  const debugTextStyle: React.CSSProperties = {
+    color: 'white',
+    fontSize: '20px',
+    fontFamily: 'Arial, sans-serif',
+    padding: '10px',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    position: 'absolute',
+    top: '10px',
+    left: '10px',
+    zIndex: 1000, // Ensure it's on top
+  };
+
   return (
     <AbsoluteFill style={{ backgroundColor: 'black' }}>
+      <div style={debugTextStyle}>
+        <div>Frame: {frame} / {totalDurationInFrames} (FPS: {actualFPS})</div>
+        <div>StoryVideoComponentInner Active</div>
+        <div>Images Rcvd: {images?.length || 0}</div>
+        <div>AudioChunks Rcvd: {audioChunks?.length || 0}</div>
+        <div>Placeholder Path: {placeholderAssetPath}</div>
+        <div>Scenes Calculated: {scenes.length}</div>
+      </div>
+
       {/* Render scenes sequentially */}
       <Series>
         {scenes.map((scene, sceneIndex) => (
@@ -407,10 +452,7 @@ const StoryVideoComponentInner: React.FC<StoryVideoProps> = ({ images, audioChun
             {scene.audioChunk.audioUrl && (
               <Sequence from={0} durationInFrames={scene.durationInFrames}>
                 <Audio
-                  src={scene.audioChunk.audioUrl.startsWith('http') 
-                    ? scene.audioChunk.audioUrl 
-                    : staticFile(scene.audioChunk.audioUrl)
-                  }
+                  src={staticFile(scene.audioChunk.audioUrl)}
                   volume={1.0}
                   onError={(error) => {
                     console.error(`Audio error for scene ${sceneIndex}:`, error);
@@ -432,13 +474,15 @@ export const StoryVideoComponent = memo(StoryVideoComponentInner);
 export const StoryVideo = () => {
   // getInputProps will now provide images as LocalImageWithMetadata[]
   // Ensure the type passed to getInputProps matches StoryVideoProps
-  const { images, audioChunks, width, height, fps, detectedDimensions } = getInputProps<StoryVideoProps & {
+  const { images, audioChunks, width, height, fps, detectedDimensions, placeholderAssetPath } = getInputProps<StoryVideoProps & {
     width?: number;
     height?: number;
     detectedDimensions?: { width: number; height: number };
+    placeholderAssetPath?: string; // Ensure this is part of the props type for getInputProps
   }>();
   
   console.log('StoryVideo loading:', images?.length || 0, 'images,', audioChunks?.length || 0, 'chunks');
+  console.log('Placeholder asset path from props:', placeholderAssetPath);
   console.log('Resolution provided:', width, 'x', height);
   console.log('Detected dimensions:', detectedDimensions);
   console.log('FPS provided:', fps, 'fallback to default:', VIDEO_FPS);
@@ -501,6 +545,7 @@ export const StoryVideo = () => {
         images,
         audioChunks,
         fps: actualFPS,
+        placeholderAssetPath, // Pass placeholder path to the component
       }}
     />
   );
