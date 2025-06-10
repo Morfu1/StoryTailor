@@ -33,7 +33,11 @@ export const AITitleInputSchema = AITitleInputSchemaOriginal || z.object({
 export const AITitleOutputSchema = AITitleOutputSchemaOriginal || z.object({
   title: z.string().describe('A short, catchy, and relevant title for the story, under 10 words.')
 });
-export const GenerateTitleInputServerSchema = AITitleInputSchema.extend({ userId: z.string() });
+export const GenerateTitleInputServerSchema = AITitleInputSchema.extend({
+  userId: z.string(),
+  aiProvider: z.enum(['google', 'perplexity']).optional(),
+  perplexityModel: z.string().optional(),
+});
 export type GenerateTitleInput = z.infer<typeof GenerateTitleInputServerSchema>;
 
 // Script Schemas
@@ -43,7 +47,11 @@ export const AIScriptInputSchema = AIScriptInputSchemaOriginal || z.object({
 export const AIScriptOutputSchema = AIScriptOutputSchemaOriginal || z.object({
   script: z.string().describe('The generated script for the animated video, tailored for children and adults, and narrated by a single voice.')
 });
-export const GenerateScriptInputServerSchema = AIScriptInputSchema.extend({ userId: z.string() });
+export const GenerateScriptInputServerSchema = AIScriptInputSchema.extend({
+  userId: z.string(),
+  aiProvider: z.enum(['google', 'perplexity']).optional(),
+  perplexityModel: z.string().optional(),
+});
 export type GenerateScriptInput = z.infer<typeof GenerateScriptInputServerSchema>;
 
 // Character Prompts Schemas

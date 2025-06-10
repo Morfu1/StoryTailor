@@ -13,4 +13,6 @@ export const initialStoryState: Story = {
   generatedImages: [],
   scriptChunks: [], // Initialize
   narrationChunks: [], // Initialize
+  aiProvider: 'google',
+  perplexityModel: 'sonar-medium-online',
 };

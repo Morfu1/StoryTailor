@@ -84,12 +84,20 @@ export interface UseStoryStateReturn {
   setUserApiKeys: (keys: UserApiKeys | null) => void;
   apiKeysLoading: boolean;
   setApiKeysLoading: (loading: boolean) => void;
+
+  // AI Provider and Model Selection
+  aiProvider: 'google' | 'perplexity';
+  setAiProvider: (provider: 'google' | 'perplexity') => void;
+  perplexityModel: string | undefined;
+  setPerplexityModel: (model: string | undefined) => void;
 }
 
 export const useStoryState = (passedUserId?: string): UseStoryStateReturn => {
   const [storyData, setStoryDataState] = useState<Story>(() => ({
     ...initialStoryState,
     userId: passedUserId || '', 
+    aiProvider: 'google', // Default AI provider
+    perplexityModel: 'sonar-medium-online', // Default Perplexity model
   }));
   const [isLoading, setIsLoading] = useState<Record<string, boolean>>({});
   const [currentStep, setCurrentStep] = useState(1);
@@ -123,6 +131,10 @@ export const useStoryState = (passedUserId?: string): UseStoryStateReturn => {
   const [userApiKeys, setUserApiKeysState] = useState<UserApiKeys | null>(null);
   const [apiKeysLoading, setApiKeysLoadingState] = useState<boolean>(false);
 
+  // AI Provider and Model Selection states
+  const [aiProvider, setAiProviderState] = useState<'google' | 'perplexity'>('google');
+  const [perplexityModel, setPerplexityModelState] = useState<string | undefined>('sonar-medium-online'); // Default model
+
 
   useEffect(() => {
     if (passedUserId && storyData.userId !== passedUserId) {
@@ -154,6 +166,18 @@ export const useStoryState = (passedUserId?: string): UseStoryStateReturn => {
 
   const setApiKeysLoading = useCallback((loading: boolean) => {
     setApiKeysLoadingState(loading);
+  }, []);
+
+  const setAiProvider = useCallback((provider: 'google' | 'perplexity') => {
+    setAiProviderState(provider);
+    // Optionally, update storyData as well if you want this persisted with the story doc
+    // updateStoryData({ aiProvider: provider });
+  }, []);
+
+  const setPerplexityModel = useCallback((model: string | undefined) => {
+    setPerplexityModelState(model);
+    // Optionally, update storyData as well
+    // updateStoryData({ perplexityModel: model });
   }, []);
 
   return {
@@ -220,6 +244,11 @@ export const useStoryState = (passedUserId?: string): UseStoryStateReturn => {
     setUserApiKeys,
     apiKeysLoading,
     setApiKeysLoading,
+
+    aiProvider,
+    setAiProvider,
+    perplexityModel,
+    setPerplexityModel,
   };
 };
 

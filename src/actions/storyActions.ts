@@ -182,42 +182,102 @@ const scriptChunksPromptTemplate = 'You are a movie director and script editor w
 
 export async function generateTitle(input: GenerateTitleInput): Promise<{ success: boolean, data?: z.infer<typeof AITitleOutputSchema>, error?: string }> {
   const userKeysResult = await getUserApiKeys(input.userId);
-  if (!userKeysResult.success || !userKeysResult.data?.googleApiKey) {
-    return { success: false, error: "Google API key not configured by user. Please set it in Account Settings." };
-  }
-  const userGoogleKey = userKeysResult.data.googleApiKey;
 
-  try {
-    const localAi = genkit({ plugins: [googleAI({ apiKey: userGoogleKey })], model: 'googleai/gemini-2.0-flash' });
-    const prompt = titlePromptTemplate.replace('{{userPrompt}}', input.userPrompt);
-    const { output } = await localAi.generate({ prompt, output: { schema: AITitleOutputSchema, format: 'json' } });
-
-    if (!output?.title) {
-      const promptWords = input.userPrompt.split(' ').slice(0, 5).join(' ');
-      return { success: true, data: { title: `${promptWords}... (Draft)` } };
+  if (input.aiProvider === 'perplexity') {
+    if (!userKeysResult.success || !userKeysResult.data?.perplexityApiKey) {
+      return { success: false, error: "Perplexity API key not configured by user. Please set it in Account Settings." };
     }
-    return { success: true, data: output };
-  } catch (error) {
-    console.error("Error in generateTitle AI call:", error);
-    return { success: false, error: "Failed to generate title with user's key." };
+    try {
+      const { generateWithPerplexity } = await import('../ai/genkit'); // Corrected path
+
+      const promptText = titlePromptTemplate.replace('{{userPrompt}}', input.userPrompt);
+
+      const messages = [
+        { role: 'system', content: 'You are an expert at creating catchy and concise titles for stories. Generate a short title (ideally 3-7 words, maximum 10 words).' },
+        { role: 'user', content: promptText }
+      ];
+
+      const titleText = await generateWithPerplexity({
+        modelName: input.perplexityModel || 'sonar-medium-online', // Default model from useStoryState
+        messages: messages,
+        userId: input.userId,
+      });
+
+      return { success: true, data: { title: titleText } }; // Wrapped to match AITitleOutputSchema
+
+    } catch (error) {
+      console.error("Error in generateTitle with Perplexity AI call:", error);
+      const errorMessage = error instanceof Error ? error.message : "Failed to generate title with Perplexity.";
+      return { success: false, error: errorMessage };
+    }
+  } else { // Default to Google AI
+    if (!userKeysResult.success || !userKeysResult.data?.googleApiKey) {
+      return { success: false, error: "Google API key not configured by user. Please set it in Account Settings." };
+    }
+    const userGoogleKey = userKeysResult.data.googleApiKey;
+
+    try {
+      const localAi = genkit({ plugins: [googleAI({ apiKey: userGoogleKey })], model: 'googleai/gemini-2.0-flash' });
+      const prompt = titlePromptTemplate.replace('{{userPrompt}}', input.userPrompt);
+      const { output } = await localAi.generate({ prompt, output: { schema: AITitleOutputSchema, format: 'json' } });
+
+      if (!output?.title) {
+        const promptWords = input.userPrompt.split(' ').slice(0, 5).join(' ');
+        return { success: true, data: { title: `${promptWords}... (Draft)` } };
+      }
+      return { success: true, data: output };
+    } catch (error) {
+      console.error("Error in generateTitle AI call (Google):", error);
+      return { success: false, error: "Failed to generate title with user's Google key." };
+    }
   }
 }
 
 export async function generateScript(input: GenerateScriptInput): Promise<{ success: boolean, data?: z.infer<typeof AIScriptOutputSchema>, error?: string }> {
   const userKeysResult = await getUserApiKeys(input.userId);
-  if (!userKeysResult.success || !userKeysResult.data?.googleApiKey) {
-    return { success: false, error: "Google API key not configured by user. Please set it in Account Settings." };
-  }
-  const userGoogleKey = userKeysResult.data.googleApiKey;
 
-  try {
-    const localAi = genkit({ plugins: [googleAI({ apiKey: userGoogleKey })], model: 'googleai/gemini-2.0-flash' });
-    const prompt = scriptPromptTemplate.replace('{{{prompt}}}', input.prompt);
-    const { output } = await localAi.generate({ prompt, output: { schema: AIScriptOutputSchema, format: 'json' } });
-    return { success: true, data: output! };
-  } catch (error) {
-    console.error("Error in generateScript AI call:", error);
-    return { success: false, error: "Failed to generate script with user's key." };
+  if (input.aiProvider === 'perplexity') {
+    if (!userKeysResult.success || !userKeysResult.data?.perplexityApiKey) {
+      return { success: false, error: "Perplexity API key not configured by user. Please set it in Account Settings." };
+    }
+    try {
+      const { generateWithPerplexity } = await import('../ai/genkit'); // Corrected path
+
+      const promptText = scriptPromptTemplate.replace('{{{prompt}}}', input.prompt);
+
+      const messages = [
+        { role: 'system', content: 'You are a script writer for animated videos. Your task is to generate a script based on the user prompt. The script should be engaging for both children and adults. The entire script must be written from the perspective of a single narrator.' },
+        { role: 'user', content: promptText }
+      ];
+
+      const scriptText = await generateWithPerplexity({
+        modelName: input.perplexityModel || 'sonar-medium-online', // Default model from useStoryState
+        messages: messages,
+        userId: input.userId,
+      });
+
+      return { success: true, data: { script: scriptText } }; // Wrapped to match AIScriptOutputSchema
+
+    } catch (error) {
+      console.error("Error in generateScript with Perplexity AI call:", error);
+      const errorMessage = error instanceof Error ? error.message : "Failed to generate script with Perplexity.";
+      return { success: false, error: errorMessage };
+    }
+  } else { // Default to Google AI
+    if (!userKeysResult.success || !userKeysResult.data?.googleApiKey) {
+      return { success: false, error: "Google API key not configured by user. Please set it in Account Settings." };
+    }
+    const userGoogleKey = userKeysResult.data.googleApiKey;
+
+    try {
+      const localAi = genkit({ plugins: [googleAI({ apiKey: userGoogleKey })], model: 'googleai/gemini-2.0-flash' });
+      const prompt = scriptPromptTemplate.replace('{{{prompt}}}', input.prompt);
+      const { output } = await localAi.generate({ prompt, output: { schema: AIScriptOutputSchema, format: 'json' } });
+      return { success: true, data: output! };
+    } catch (error) {
+      console.error("Error in generateScript AI call (Google):", error);
+      return { success: false, error: "Failed to generate script with user's Google key." };
+    }
   }
 }
 
