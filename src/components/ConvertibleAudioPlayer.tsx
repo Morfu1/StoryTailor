@@ -29,7 +29,10 @@ export function ConvertibleAudioPlayer({
     let isMounted = true;
     
     const handleAudioConversion = async () => {
+      console.log(`Processing audio for chunk ${chunkId}:`, src);
+      
       if (needsAudioConversion(src)) {
+        console.log(`Audio needs conversion for chunk ${chunkId}`);
         setIsConverting(true);
         setConversionError(null);
         
@@ -40,6 +43,7 @@ export function ConvertibleAudioPlayer({
               setAudioSrc(convertedUrl);
               console.log(`Audio converted successfully for chunk: ${chunkId}`);
             } else {
+              console.error(`Failed to convert audio for chunk ${chunkId}, URL: ${src}`);
               setConversionError('Failed to convert audio file');
               onError?.('Audio conversion failed');
             }
@@ -47,6 +51,7 @@ export function ConvertibleAudioPlayer({
           }
         } catch (error) {
           if (isMounted) {
+            console.error(`Conversion error for chunk ${chunkId}:`, error, 'URL:', src);
             setConversionError(`Conversion error: ${error}`);
             onError?.(`Audio conversion error: ${error}`);
             setIsConverting(false);
@@ -54,6 +59,7 @@ export function ConvertibleAudioPlayer({
         }
       } else {
         // If no conversion needed, use src directly
+        console.log(`No conversion needed for chunk ${chunkId}, using src directly:`, src);
         if (isMounted) {
           setAudioSrc(src);
         }

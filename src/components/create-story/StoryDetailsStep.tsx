@@ -36,27 +36,39 @@ export function StoryDetailsStep({ storyState }: StoryDetailsStepProps) {
     imageProvider,
     setImageProvider,
     userApiKeys, // Get userApiKeys
-    apiKeysLoading // Get apiKeysLoading
+    apiKeysLoading, // Get apiKeysLoading
+    aiProvider, // Added
+    perplexityModel, // Added
+    googleScriptModel // Added
   } = storyState;
 
   const googleKeyMissing = !apiKeysLoading && !userApiKeys?.googleApiKey;
 
   const handleGenerateDetails = async () => {
-    if (googleKeyMissing) {
+    // Updated API key check to be provider-specific
+    if (aiProvider === 'google' && googleKeyMissing) {
       toast({ title: 'API Key Required', description: 'Please configure your Google API Key in Account Settings to generate details.', variant: 'destructive' });
       return;
     }
+    if (aiProvider === 'perplexity' && !userApiKeys?.perplexityApiKey && !apiKeysLoading) {
+      toast({ title: 'API Key Required', description: 'Please configure your Perplexity API Key in Account Settings to generate details.', variant: 'destructive' });
+      return;
+    }
+
     if (!storyData.generatedScript) return;
     handleSetLoading('details', true);
     setIsCharacterPromptsEditing(false);
     setIsItemPromptsEditing(false);
     setIsLocationPromptsEditing(false);
     
-    const result = await generateCharacterPrompts({ 
+    const result = await generateCharacterPrompts({
       script: storyData.generatedScript,
       imageStyleId: storyData.imageStyleId,
       imageProvider: imageProvider,
-      userId: storyData.userId, // Pass userId
+      userId: storyData.userId,
+      aiProvider: aiProvider,
+      perplexityModel: perplexityModel,
+      googleScriptModel: googleScriptModel,
     });
     if (result.success && result.data) {
       const updatedStoryData = {
@@ -84,18 +96,27 @@ export function StoryDetailsStep({ storyState }: StoryDetailsStepProps) {
   };
 
   const handleRegeneratePrompts = async () => {
-    if (googleKeyMissing) {
+    // Updated API key check to be provider-specific
+    if (aiProvider === 'google' && googleKeyMissing) {
       toast({ title: 'API Key Required', description: 'Please configure your Google API Key in Account Settings to regenerate prompts.', variant: 'destructive' });
       return;
     }
+    if (aiProvider === 'perplexity' && !userApiKeys?.perplexityApiKey && !apiKeysLoading) {
+      toast({ title: 'API Key Required', description: 'Please configure your Perplexity API Key in Account Settings to regenerate prompts.', variant: 'destructive' });
+      return;
+    }
+
     if (!storyData.generatedScript) return;
     handleSetLoading('details', true);
     
-    const result = await generateCharacterPrompts({ 
+    const result = await generateCharacterPrompts({
       script: storyData.generatedScript,
       imageStyleId: storyData.imageStyleId,
       imageProvider: imageProvider,
-      userId: storyData.userId, // Pass userId
+      userId: storyData.userId,
+      aiProvider: aiProvider,
+      perplexityModel: perplexityModel,
+      googleScriptModel: googleScriptModel,
     });
     if (result.success && result.data) {
       const updatedStoryData = {
@@ -197,9 +218,9 @@ export function StoryDetailsStep({ storyState }: StoryDetailsStepProps) {
         </div>
 
         <div className="flex gap-2">
-          <Button 
+          <Button
             onClick={handleGenerateDetails}
-            disabled={isLoading.details || apiKeysLoading || googleKeyMissing}
+            disabled={isLoading.details || apiKeysLoading || (aiProvider === 'google' && googleKeyMissing) || (aiProvider === 'perplexity' && !userApiKeys?.perplexityApiKey)}
             className="flex-1"
           >
             {isLoading.details || apiKeysLoading ? (
@@ -216,9 +237,9 @@ export function StoryDetailsStep({ storyState }: StoryDetailsStepProps) {
           </Button>
           
           {storyData.detailsPrompts && (
-            <Button 
+            <Button
               onClick={handleRegeneratePrompts}
-              disabled={isLoading.details || apiKeysLoading || googleKeyMissing}
+              disabled={isLoading.details || apiKeysLoading || (aiProvider === 'google' && googleKeyMissing) || (aiProvider === 'perplexity' && !userApiKeys?.perplexityApiKey)}
               variant="outline"
               className="px-3"
               title="Regenerate prompts with updated consistency requirements"
@@ -231,9 +252,14 @@ export function StoryDetailsStep({ storyState }: StoryDetailsStepProps) {
             </Button>
           )}
         </div>
-        {googleKeyMissing && (
+        {(aiProvider === 'google' && googleKeyMissing) && (
           <p className="text-xs text-destructive text-center">
             Google API Key required for detail generation. Please set it in <Link href="/settings" className="underline">Account Settings</Link>.
+          </p>
+        )}
+        {(aiProvider === 'perplexity' && !userApiKeys?.perplexityApiKey && !apiKeysLoading) && (
+          <p className="text-xs text-destructive text-center">
+            Perplexity API Key required for detail generation. Please set it in <Link href="/settings" className="underline">Account Settings</Link>.
           </p>
         )}
 

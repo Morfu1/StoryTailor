@@ -84,12 +84,26 @@ export interface UseStoryStateReturn {
   setUserApiKeys: (keys: UserApiKeys | null) => void;
   apiKeysLoading: boolean;
   setApiKeysLoading: (loading: boolean) => void;
+
+  // AI Provider and Model Selection
+  aiProvider: 'google' | 'perplexity';
+  setAiProvider: (provider: 'google' | 'perplexity') => void;
+  perplexityModel: string | undefined;
+  setPerplexityModel: (model: string | undefined) => void;
+  googleScriptModel: string | undefined;
+  setGoogleScriptModel: (model: string | undefined) => void;
+  availableGoogleScriptModels: Array<{ id: string; name: string }> | null;
+  setAvailableGoogleScriptModels: (models: Array<{ id: string; name: string }> | null) => void;
+  isLoadingGoogleScriptModels: boolean;
+  setIsLoadingGoogleScriptModels: (loading: boolean) => void;
+  // Removed Perplexity dynamic model states
 }
 
 export const useStoryState = (passedUserId?: string): UseStoryStateReturn => {
   const [storyData, setStoryDataState] = useState<Story>(() => ({
-    ...initialStoryState,
-    userId: passedUserId || '', 
+    ...initialStoryState, // This will now bring in the updated 'sonar' default
+    userId: passedUserId || '',
+    // aiProvider and googleScriptModel are already correctly initialized from initialStoryState
   }));
   const [isLoading, setIsLoading] = useState<Record<string, boolean>>({});
   const [currentStep, setCurrentStep] = useState(1);
@@ -123,6 +137,15 @@ export const useStoryState = (passedUserId?: string): UseStoryStateReturn => {
   const [userApiKeys, setUserApiKeysState] = useState<UserApiKeys | null>(null);
   const [apiKeysLoading, setApiKeysLoadingState] = useState<boolean>(false);
 
+  // AI Provider and Model Selection states
+  const [aiProvider, setAiProviderState] = useState<'google' | 'perplexity'>(initialStoryState.aiProvider || 'google');
+  // Ensure perplexityModel also uses the updated initialStoryState default
+  const [perplexityModel, setPerplexityModelState] = useState<string | undefined>(initialStoryState.perplexityModel || 'sonar');
+  const [googleScriptModel, setGoogleScriptModelState] = useState<string | undefined>(initialStoryState.googleScriptModel);
+  const [availableGoogleScriptModels, setAvailableGoogleScriptModelsState] = useState<Array<{ id: string; name: string }> | null>(null);
+  const [isLoadingGoogleScriptModels, setIsLoadingGoogleScriptModelsState] = useState<boolean>(false);
+  // Removed Perplexity dynamic model state variables
+
 
   useEffect(() => {
     if (passedUserId && storyData.userId !== passedUserId) {
@@ -155,6 +178,34 @@ export const useStoryState = (passedUserId?: string): UseStoryStateReturn => {
   const setApiKeysLoading = useCallback((loading: boolean) => {
     setApiKeysLoadingState(loading);
   }, []);
+
+  const setAiProvider = useCallback((provider: 'google' | 'perplexity') => {
+    setAiProviderState(provider);
+    // Optionally, update storyData as well if you want this persisted with the story doc
+    // updateStoryData({ aiProvider: provider });
+  }, []);
+
+  const setPerplexityModel = useCallback((model: string | undefined) => {
+    setPerplexityModelState(model);
+    // Optionally, update storyData as well
+    // updateStoryData({ perplexityModel: model });
+  }, []);
+
+  const setGoogleScriptModel = useCallback((model: string | undefined) => {
+    setGoogleScriptModelState(model);
+    // Optionally, update storyData as well
+    // updateStoryData({ googleScriptModel: model });
+  }, []);
+
+  const setAvailableGoogleScriptModels = useCallback((models: Array<{ id: string; name: string }> | null) => {
+    setAvailableGoogleScriptModelsState(models);
+  }, []);
+
+  const setIsLoadingGoogleScriptModels = useCallback((loading: boolean) => {
+    setIsLoadingGoogleScriptModelsState(loading);
+  }, []);
+
+  // Removed Perplexity dynamic model setters
 
   return {
     storyData,
@@ -220,6 +271,18 @@ export const useStoryState = (passedUserId?: string): UseStoryStateReturn => {
     setUserApiKeys,
     apiKeysLoading,
     setApiKeysLoading,
+
+    aiProvider,
+    setAiProvider,
+    perplexityModel,
+    setPerplexityModel,
+    googleScriptModel,
+    setGoogleScriptModel,
+    availableGoogleScriptModels,
+    setAvailableGoogleScriptModels,
+    isLoadingGoogleScriptModels,
+    setIsLoadingGoogleScriptModels,
+    // Removed Perplexity dynamic model states from return
   };
 };
 

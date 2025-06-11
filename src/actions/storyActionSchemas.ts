@@ -33,7 +33,12 @@ export const AITitleInputSchema = AITitleInputSchemaOriginal || z.object({
 export const AITitleOutputSchema = AITitleOutputSchemaOriginal || z.object({
   title: z.string().describe('A short, catchy, and relevant title for the story, under 10 words.')
 });
-export const GenerateTitleInputServerSchema = AITitleInputSchema.extend({ userId: z.string() });
+export const GenerateTitleInputServerSchema = AITitleInputSchema.extend({
+  userId: z.string(),
+  aiProvider: z.enum(['google', 'perplexity']).optional(),
+  perplexityModel: z.string().optional(),
+  googleScriptModel: z.string().optional(),
+});
 export type GenerateTitleInput = z.infer<typeof GenerateTitleInputServerSchema>;
 
 // Script Schemas
@@ -43,7 +48,12 @@ export const AIScriptInputSchema = AIScriptInputSchemaOriginal || z.object({
 export const AIScriptOutputSchema = AIScriptOutputSchemaOriginal || z.object({
   script: z.string().describe('The generated script for the animated video, tailored for children and adults, and narrated by a single voice.')
 });
-export const GenerateScriptInputServerSchema = AIScriptInputSchema.extend({ userId: z.string() });
+export const GenerateScriptInputServerSchema = AIScriptInputSchema.extend({
+  userId: z.string(),
+  aiProvider: z.enum(['google', 'perplexity']).optional(),
+  perplexityModel: z.string().optional(),
+  googleScriptModel: z.string().optional(),
+});
 export type GenerateScriptInput = z.infer<typeof GenerateScriptInputServerSchema>;
 
 // Character Prompts Schemas
@@ -57,7 +67,12 @@ export const AICharacterPromptsOutputSchema = AICharacterPromptsOutputSchemaOrig
   itemPrompts: z.string().describe('Visual descriptions for items.'),
   locationPrompts: z.string().describe('Visual descriptions for locations.'),
 });
-export const GenerateCharacterPromptsInputServerSchema = AICharacterPromptsInputSchema.extend({ userId: z.string() });
+export const GenerateCharacterPromptsInputServerSchema = AICharacterPromptsInputSchema.extend({
+  userId: z.string(),
+  aiProvider: z.enum(['google', 'perplexity']).optional(),
+  perplexityModel: z.string().optional(),
+  googleScriptModel: z.string().optional(),
+});
 export type GenerateCharacterPromptsInput = z.infer<typeof GenerateCharacterPromptsInputServerSchema>;
 
 // Image Prompts Schemas
@@ -79,7 +94,12 @@ export const AIImagePromptsOutputSchema = AIImagePromptsOutputSchemaOriginal || 
   imagePrompts: z.array(z.string()).describe('The generated image prompts as an array of strings.'),
   actionPrompts: z.array(z.string()).describe('Simple action descriptions for character movements in each scene.'),
 });
-export const GenerateImagePromptsInputServerSchema = AIImagePromptsInputSchema.extend({ userId: z.string() });
+export const GenerateImagePromptsInputServerSchema = AIImagePromptsInputSchema.extend({
+  userId: z.string(),
+  aiProvider: z.enum(['google', 'perplexity']).optional(),
+  perplexityModel: z.string().optional(),
+  googleScriptModel: z.string().optional(),
+});
 export type GenerateImagePromptsInput = z.infer<typeof GenerateImagePromptsInputServerSchema>;
 
 // Script Chunks Schemas
@@ -90,5 +110,10 @@ export const AIScriptChunksOutputSchema = AIScriptChunksOutputSchemaOriginal || 
   scriptChunks: z.array(z.string()).describe('An array of script chunks, where each string is one of the generated script chunks.'),
   error: z.string().optional().describe('An error message if splitting failed.')
 });
-export const GenerateScriptChunksInputServerSchema = AIScriptChunksInputSchema.extend({ userId: z.string() });
+export const GenerateScriptChunksInputServerSchema = AIScriptChunksInputSchema.extend({
+  userId: z.string(),
+  aiProvider: z.enum(['google', 'perplexity']).optional(),
+  perplexityModel: z.string().optional(),
+  googleScriptModel: z.string().optional(),
+});
 export type GenerateScriptChunksInput = z.infer<typeof GenerateScriptChunksInputServerSchema>;

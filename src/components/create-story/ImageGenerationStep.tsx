@@ -75,8 +75,11 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
     setImageProvider,
     imageGenerationProgress,
     setImageGenerationProgress,
-    userApiKeys, 
-    apiKeysLoading 
+    userApiKeys,
+    apiKeysLoading,
+    aiProvider, // Added
+    perplexityModel, // Added
+    googleScriptModel // Added
   } = storyState;
 
   const googleKeyMissing = !apiKeysLoading && !userApiKeys?.googleApiKey;
@@ -114,7 +117,10 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
         audioUrl: chunk.audioUrl
       })),
       imageProvider: imageProvider,
-      isPicsart: imageProvider === 'picsart'
+      isPicsart: imageProvider === 'picsart',
+      aiProvider: aiProvider,
+      perplexityModel: perplexityModel,
+      googleScriptModel: googleScriptModel,
     };
     
     console.log('=== GENERATING IMAGE PROMPTS ===');

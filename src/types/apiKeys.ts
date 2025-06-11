@@ -4,4 +4,5 @@ export interface UserApiKeys {
   geminiApiKey?: string;
   elevenLabsApiKey?: string;
   picsartApiKey?: string;
+  perplexityApiKey?: string;
 }

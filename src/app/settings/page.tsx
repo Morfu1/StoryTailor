@@ -248,6 +248,19 @@ export default function SettingsPage() {
                     />
                      <p className="text-xs text-muted-foreground mt-1">Used for Picsart image generation and credit balance check.</p>
                   </div>
+                  <div>
+                    <Label htmlFor="perplexityApiKey">Perplexity API Key</Label>
+                    <Input
+                      id="perplexityApiKey"
+                      name="perplexityApiKey"
+                      type="password"
+                      placeholder="Enter your Perplexity API Key"
+                      value={apiKeys.perplexityApiKey || ''}
+                      onChange={handleApiKeyChange}
+                      className="mt-1"
+                    />
+                    <p className="text-xs text-muted-foreground mt-1">Used for Perplexity AI models like Sonar.</p>
+                  </div>
                   <Button onClick={handleSaveApiKeys} disabled={savingApiKeys} className="w-full sm:w-auto">
                     {savingApiKeys ? (
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />

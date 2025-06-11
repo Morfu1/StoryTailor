@@ -4,15 +4,47 @@
  */
 
 /**
+ * Refresh an expired Firebase Storage URL by calling the server action
+ */
+async function refreshExpiredUrl(expiredUrl: string): Promise<string | null> {
+  try {
+    // Call server action to refresh the URL
+    const { refreshFirebaseStorageUrlClient } = await import('@/actions/firebaseStorageClientActions');
+    return await refreshFirebaseStorageUrlClient(expiredUrl);
+  } catch (error) {
+    console.error('Error refreshing URL:', error);
+    return null;
+  }
+}
+
+/**
  * Convert Google TTS PCM data to a playable WAV file
  * Google TTS returns raw PCM data at 24kHz 16-bit mono, not a complete WAV file
  */
-export async function convertWavToPlayableUrl(audioUrl: string): Promise<string | null> {
+export async function convertWavToPlayableUrl(audioUrl: string, retryWithRefresh = true): Promise<string | null> {
   try {
+    console.log('Attempting to fetch audio from URL:', audioUrl);
     // Fetch the audio data
     const response = await fetch(audioUrl);
     if (!response.ok) {
-      console.error('Failed to fetch audio file:', response.status);
+      console.error('Failed to fetch audio file:', response.status, response.statusText);
+      console.error('URL that failed:', audioUrl);
+      console.error('Response headers:', Object.fromEntries(response.headers.entries()));
+      
+      // If we get a 400 or 403 error, the signed URL might be expired
+      if ((response.status === 400 || response.status === 403) && retryWithRefresh) {
+        console.log('Attempting to refresh expired URL and retry...');
+        try {
+          const refreshedUrl = await refreshExpiredUrl(audioUrl);
+          if (refreshedUrl && refreshedUrl !== audioUrl) {
+            console.log('Got refreshed URL, retrying fetch...');
+            return convertWavToPlayableUrl(refreshedUrl, false); // Avoid infinite recursion
+          }
+        } catch (refreshError) {
+          console.error('Failed to refresh URL:', refreshError);
+        }
+      }
+      
       return null;
     }
 

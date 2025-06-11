@@ -105,4 +105,9 @@ export interface Story {
     duration?: number;
     index: number;
   }[]; // Audio narration for each script chunk
+
+  // AI Provider and Model Selection
+  aiProvider?: 'google' | 'perplexity';
+  perplexityModel?: string;
+  googleScriptModel?: string; // Model for Google script generation
 }

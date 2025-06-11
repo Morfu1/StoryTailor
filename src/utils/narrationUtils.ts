@@ -8,15 +8,29 @@ import { generateScriptChunks as aiGenerateScriptChunks } from '@/actions/storyA
  * @param script The full story script.
  * @param userId The ID of the user making the request (for API key retrieval).
  * @param targetChunks Optional: This parameter might be used by the AI as a hint, but the AI will ultimately decide the chunks.
+ * @param aiProvider The AI provider to use ('google' or 'perplexity').
+ * @param perplexityModel The specific Perplexity model to use, if applicable.
+ * @param googleScriptModel The specific Google model to use, if applicable.
  * @returns Promise resolving to an array of NarrationChunk objects.
  */
-export async function prepareScriptChunksAI(script: string, userId: string): Promise<NarrationChunk[]> {
+export async function prepareScriptChunksAI(
+  script: string,
+  userId: string,
+  aiProvider?: 'google' | 'perplexity',
+  perplexityModel?: string,
+  googleScriptModel?: string
+): Promise<NarrationChunk[]> {
   if (!script) return [];
 
   try {
     // Call the AI flow (server action) to get intelligently split chunks
-    // The server action now requires userId
-    const result = await aiGenerateScriptChunks({ script, userId });
+    const result = await aiGenerateScriptChunks({
+      script,
+      userId,
+      aiProvider: aiProvider || 'google', // Default to google if not provided
+      perplexityModel,
+      googleScriptModel
+    });
 
     if (result.success && result.data && result.data.scriptChunks) {
       const textChunks = result.data.scriptChunks;

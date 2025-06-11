@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Bot, Loader2, FileText, Edit3, Save } from 'lucide-react'; // Removed Settings
@@ -30,7 +31,16 @@ export function StoryPromptStep({ storyState }: StoryPromptStepProps) {
     isScriptManuallyEditing,
     setIsScriptManuallyEditing,
     userApiKeys, 
-    apiKeysLoading 
+    apiKeysLoading,
+    aiProvider,
+    setAiProvider,
+    perplexityModel,
+    setPerplexityModel,
+    googleScriptModel,
+    setGoogleScriptModel,
+    availableGoogleScriptModels,
+    isLoadingGoogleScriptModels
+    // Removed Perplexity dynamic model states
   } = storyState;
 
   const [activeTab, setActiveTab] = useState('ai-generate');
@@ -38,6 +48,7 @@ export function StoryPromptStep({ storyState }: StoryPromptStepProps) {
   const [isAutoSaving, setIsAutoSaving] = useState(false);
 
   const googleKeyMissing = !apiKeysLoading && !userApiKeys?.googleApiKey;
+  const perplexityKeyMissing = aiProvider === 'perplexity' && !userApiKeys?.perplexityApiKey;
 
   const debouncedSaveFnRef = useRef<DebouncedFunction<[string, string]> | null>(null);
 
@@ -48,9 +59,15 @@ export function StoryPromptStep({ storyState }: StoryPromptStepProps) {
 
       setIsAutoSaving(true);
       try {
-        const narrationChunks = await prepareScriptChunksAI(script, storyData.userId);
+        const narrationChunks = await prepareScriptChunksAI(
+          script,
+          storyData.userId,
+          aiProvider,
+          perplexityModel,
+          googleScriptModel
+        );
         
-        const updatedStoryDataInternal = { 
+        const updatedStoryDataInternal = {
           ...storyData,
           title: title.trim(),
           generatedScript: script,
@@ -144,7 +161,13 @@ export function StoryPromptStep({ storyState }: StoryPromptStepProps) {
     let currentTitle = storyData.title;
     if (!currentTitle.trim() && storyData.userPrompt.trim()) {
       handleSetLoading('titleGen', true);
-      const titleResult = await generateTitle({ userPrompt: storyData.userPrompt, userId: storyData.userId });
+      const titleResult = await generateTitle({
+        userPrompt: storyData.userPrompt,
+        userId: storyData.userId,
+        aiProvider: aiProvider,
+        perplexityModel: perplexityModel,
+        googleScriptModel: googleScriptModel
+      });
       handleSetLoading('titleGen', false);
       if (titleResult.success && titleResult.data?.title) {
         currentTitle = titleResult.data.title;
@@ -160,11 +183,23 @@ export function StoryPromptStep({ storyState }: StoryPromptStepProps) {
       }
     }
     
-    const scriptResult = await generateScript({ prompt: storyData.userPrompt, userId: storyData.userId });
+    const scriptResult = await generateScript({
+      prompt: storyData.userPrompt,
+      userId: storyData.userId,
+      aiProvider: aiProvider,
+      perplexityModel: perplexityModel,
+      googleScriptModel: googleScriptModel
+    });
     if (scriptResult.success && scriptResult.data) {
       const scriptText = scriptResult.data.script;
       handleSetLoading('scriptChunks', true);
-      const narrationChunks = await prepareScriptChunksAI(scriptText, storyData.userId);
+      const narrationChunks = await prepareScriptChunksAI(
+        scriptText,
+        storyData.userId,
+        aiProvider,
+        perplexityModel,
+        googleScriptModel
+      );
       handleSetLoading('scriptChunks', false);
       
       const updatedStoryData = {
@@ -230,7 +265,13 @@ export function StoryPromptStep({ storyState }: StoryPromptStepProps) {
 
     handleSetLoading('scriptChunks', true);
     try {
-      const narrationChunks = await prepareScriptChunksAI(manualScript, storyData.userId);
+      const narrationChunks = await prepareScriptChunksAI(
+        manualScript,
+        storyData.userId,
+        aiProvider, // Assuming the current aiProvider selection should apply here too
+        perplexityModel,
+        googleScriptModel
+      );
       
       updateStoryData({
         generatedScript: manualScript,
@@ -320,9 +361,84 @@ export function StoryPromptStep({ storyState }: StoryPromptStepProps) {
               />
             </div>
 
-            <Button 
+            <div className="space-y-4 mt-4 pt-4 border-t">
+              <h4 className="text-sm font-medium text-muted-foreground">AI Configuration</h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="ai-provider">AI Provider</Label>
+                  <Select
+                    value={aiProvider}
+                    onValueChange={(value) => setAiProvider(value as 'google' | 'perplexity')}
+                    disabled={isLoading.script || apiKeysLoading}
+                  >
+                    <SelectTrigger id="ai-provider">
+                      <SelectValue placeholder="Select AI Provider" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="google">Google Gemini</SelectItem>
+                      <SelectItem value="perplexity">Perplexity AI</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {aiProvider === 'perplexity' && (
+                  <div className="space-y-2">
+                    <Label htmlFor="perplexity-model">Perplexity Model</Label>
+                    <Select
+                      value={perplexityModel || 'sonar-medium-online'} // Reverted to default static value
+                      onValueChange={(value) => setPerplexityModel(value)}
+                      disabled={isLoading.script || apiKeysLoading}
+                    >
+                      <SelectTrigger id="perplexity-model">
+                        <SelectValue placeholder="Select Perplexity Model" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {/* Updated static list of Perplexity models based on user feedback */}
+                        <SelectItem value="sonar-pro">sonar-pro (Advanced search)</SelectItem>
+                        <SelectItem value="sonar">sonar (Lightweight search)</SelectItem>
+                        <SelectItem value="sonar-deep-research">sonar-deep-research (Expert research)</SelectItem>
+                        <SelectItem value="sonar-reasoning-pro">sonar-reasoning-pro (Premier reasoning)</SelectItem>
+                        <SelectItem value="sonar-reasoning">sonar-reasoning (Fast reasoning)</SelectItem>
+                        <SelectItem value="r1-1776">r1-1776 (Offline chat)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+
+                {aiProvider === 'google' && (
+                  <div className="space-y-2">
+                    <Label htmlFor="google-script-model">Google Model</Label>
+                    <Select
+                      value={googleScriptModel || (availableGoogleScriptModels && availableGoogleScriptModels.length > 0 ? availableGoogleScriptModels[0].id : '')}
+                      onValueChange={(value) => setGoogleScriptModel(value)}
+                      disabled={isLoading.script || apiKeysLoading || isLoadingGoogleScriptModels || !availableGoogleScriptModels || availableGoogleScriptModels.length === 0}
+                    >
+                      <SelectTrigger id="google-script-model">
+                        <SelectValue placeholder={isLoadingGoogleScriptModels ? "Loading models..." : "Select Google Model"} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {isLoadingGoogleScriptModels && <SelectItem value="loading" disabled>Loading models...</SelectItem>}
+                        {!isLoadingGoogleScriptModels && availableGoogleScriptModels && availableGoogleScriptModels.length === 0 && (
+                          <SelectItem value="no-models" disabled>No models available or failed to load.</SelectItem>
+                        )}
+                        {availableGoogleScriptModels?.map(model => (
+                          <SelectItem key={model.id} value={model.id}>
+                            {model.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {(!availableGoogleScriptModels || availableGoogleScriptModels.length === 0) && !isLoadingGoogleScriptModels && (
+                       <p className="text-xs text-muted-foreground mt-1">Could not load Google models. Ensure your API key is correct and has access.</p>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <Button
               onClick={handleGenerateScript}
-              disabled={!storyData.userPrompt.trim() || isLoading.script || apiKeysLoading || googleKeyMissing}
+              disabled={!storyData.userPrompt.trim() || isLoading.script || apiKeysLoading || (aiProvider === 'google' && googleKeyMissing) || (aiProvider === 'perplexity' && perplexityKeyMissing)}
               className="w-full"
             >
               {isLoading.script || apiKeysLoading ? (
@@ -337,9 +453,14 @@ export function StoryPromptStep({ storyState }: StoryPromptStepProps) {
                 </>
               )}
             </Button>
-            {googleKeyMissing && (
+            {(aiProvider === 'google' && googleKeyMissing) && (
               <p className="text-xs text-destructive text-center mt-2">
                 Google API Key required for AI script generation. Please set it in <Link href="/settings" className="underline">Account Settings</Link>.
+              </p>
+            )}
+            {(aiProvider === 'perplexity' && perplexityKeyMissing) && (
+              <p className="text-xs text-destructive text-center mt-2">
+                Perplexity API Key required for AI script generation. Please set it in <Link href="/settings" className="underline">Account Settings</Link>.
               </p>
             )}
 

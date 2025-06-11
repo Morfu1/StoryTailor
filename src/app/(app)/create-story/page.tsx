@@ -17,7 +17,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from '@/components/ui/button';
 import { cleanupBrokenImages, getStory, deleteStory, saveStory } from '@/actions/firestoreStoryActions'; // Updated import
-import { getUserApiKeys } from '@/actions/apiKeyActions'; 
+import { getUserApiKeys } from '@/actions/apiKeyActions';
+import { listGoogleScriptModels } from '@/actions/storyActions'; // Removed listPerplexityModels
 import { prepareScriptChunksAI } from '@/utils/narrationUtils';
 import { determineCurrentStep } from '@/utils/storyHelpers';
 import { Loader2, RefreshCw, Trash2, Save, Film, Download, Settings } from 'lucide-react';
@@ -62,10 +63,14 @@ export default function CreateStoryPage() {
     setUploadedAudioFileName,
     setIsImagePromptEditing,
     handleSetLoading,
-    userApiKeys, 
-    setUserApiKeys, 
-    apiKeysLoading, 
-    setApiKeysLoading 
+    userApiKeys,
+    setUserApiKeys,
+    apiKeysLoading,
+    setApiKeysLoading,
+    aiProvider, // Added for model fetching logic
+    setAvailableGoogleScriptModels, // Added
+    setIsLoadingGoogleScriptModels, // Added
+    // Removed Perplexity model state setters as they are no longer fetched dynamically
   } = storyState;
 
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
@@ -126,10 +131,16 @@ export default function CreateStoryPage() {
             if (loadedStory.generatedScript && (!loadedStory.narrationChunks || loadedStory.narrationChunks.length === 0)) {
               console.log("Loaded story has script but no narration chunks. Attempting to prepare them now...");
               try {
-                const newNarrationChunks = await prepareScriptChunksAI(loadedStory.generatedScript, user.uid); // Pass userId
+                const newNarrationChunks = await prepareScriptChunksAI(
+                  loadedStory.generatedScript,
+                  user.uid,
+                  loadedStory.aiProvider, // Pass AI provider from loaded story
+                  undefined, // Perplexity model no longer supported
+                  loadedStory.googleScriptModel // Pass Google model
+                );
                 if (newNarrationChunks.length > 0) {
                   loadedStory = { ...loadedStory, narrationChunks: newNarrationChunks };
-                  toast({ 
+                  toast({
                     title: 'Script Chunks Prepared', 
                     description: `AI created ${newNarrationChunks.length} text chunks for the loaded story.`, 
                     className: 'bg-primary text-primary-foreground'
@@ -219,6 +230,32 @@ export default function CreateStoryPage() {
       setActiveAccordionItem(newValue);
     }
   }, [currentStep, setActiveAccordionItem]);
+
+  // Fetch Google Script Models
+  useEffect(() => {
+    if (user && userApiKeys?.googleApiKey && aiProvider === 'google') {
+      setIsLoadingGoogleScriptModels(true);
+      listGoogleScriptModels(user.uid)
+        .then(result => {
+          if (result.success && result.models) {
+            setAvailableGoogleScriptModels(result.models);
+          } else {
+            setAvailableGoogleScriptModels([]); // Set to empty array on failure to avoid undefined issues
+            toast({ title: "Could not load Google models", description: result.error || "Failed to fetch model list.", variant: "default" });
+          }
+        })
+        .catch(err => {
+          console.error("Error fetching Google script models:", err);
+          setAvailableGoogleScriptModels([]);
+          toast({ title: "Error Loading Google Models", description: "An unexpected error occurred.", variant: "destructive" });
+        })
+        .finally(() => {
+          setIsLoadingGoogleScriptModels(false);
+        });
+    }
+  }, [user, userApiKeys, aiProvider, setIsLoadingGoogleScriptModels, setAvailableGoogleScriptModels, toast]);
+
+  // Removed useEffect for fetching Perplexity models
 
   const handleCleanupImages = async () => {
     if (!storyData.id || !storyData.userId) return;

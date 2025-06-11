@@ -5,6 +5,7 @@
 import { genkit } from 'genkit';
 import { googleAI } from '@genkit-ai/googleai';
 import { z } from 'zod';
+import { runFlow } from '@genkit-ai/flow';
 
 // Import Input/Output schemas from the original flow files - STATIC IMPORTS
 import {
@@ -182,77 +183,191 @@ const scriptChunksPromptTemplate = 'You are a movie director and script editor w
 
 export async function generateTitle(input: GenerateTitleInput): Promise<{ success: boolean, data?: z.infer<typeof AITitleOutputSchema>, error?: string }> {
   const userKeysResult = await getUserApiKeys(input.userId);
-  if (!userKeysResult.success || !userKeysResult.data?.googleApiKey) {
-    return { success: false, error: "Google API key not configured by user. Please set it in Account Settings." };
-  }
-  const userGoogleKey = userKeysResult.data.googleApiKey;
 
-  try {
-    const localAi = genkit({ plugins: [googleAI({ apiKey: userGoogleKey })], model: 'googleai/gemini-2.0-flash' });
-    const prompt = titlePromptTemplate.replace('{{userPrompt}}', input.userPrompt);
-    const { output } = await localAi.generate({ prompt, output: { schema: AITitleOutputSchema, format: 'json' } });
-
-    if (!output?.title) {
-      const promptWords = input.userPrompt.split(' ').slice(0, 5).join(' ');
-      return { success: true, data: { title: `${promptWords}... (Draft)` } };
+  if (input.aiProvider === 'perplexity') {
+    if (!userKeysResult.success || !userKeysResult.data?.perplexityApiKey) {
+      return { success: false, error: "Perplexity API key not configured by user. Please set it in Account Settings." };
     }
-    return { success: true, data: output };
-  } catch (error) {
-    console.error("Error in generateTitle AI call:", error);
-    return { success: false, error: "Failed to generate title with user's key." };
+    try {
+      const { generateWithPerplexity } = await import('../ai/genkit'); // Corrected path
+
+      const promptText = titlePromptTemplate.replace('{{userPrompt}}', input.userPrompt);
+
+      const messages = [
+        { role: 'system' as const, content: 'You are an expert at creating catchy and concise titles for stories. Generate a short title (ideally 3-7 words, maximum 10 words).' },
+        { role: 'user' as const, content: promptText }
+      ];
+
+      const titleText = await runFlow(generateWithPerplexity, {
+        modelName: input.perplexityModel || 'sonar-medium-online', // Default model from useStoryState
+        messages: messages,
+        userId: input.userId,
+      });
+
+      return { success: true, data: { title: titleText } }; // Wrapped to match AITitleOutputSchema
+
+    } catch (error) {
+      console.error("Error in generateTitle with Perplexity AI call:", error);
+      const errorMessage = error instanceof Error ? error.message : "Failed to generate title with Perplexity.";
+      return { success: false, error: errorMessage };
+    }
+  } else { // Default to Google AI
+    if (!userKeysResult.success || !userKeysResult.data?.googleApiKey) {
+      return { success: false, error: "Google API key not configured by user. Please set it in Account Settings." };
+    }
+    const userGoogleKey = userKeysResult.data.googleApiKey;
+
+    try {
+      const modelName = input.googleScriptModel || 'gemini-1.5-flash'; // Default if not provided
+      const localAi = genkit({ plugins: [googleAI({ apiKey: userGoogleKey })], model: `googleai/${modelName}` });
+      const prompt = titlePromptTemplate.replace('{{userPrompt}}', input.userPrompt);
+      const { output } = await localAi.generate({ prompt, output: { schema: AITitleOutputSchema, format: 'json' } });
+
+      if (!output?.title) {
+        const promptWords = input.userPrompt.split(' ').slice(0, 5).join(' ');
+        return { success: true, data: { title: `${promptWords}... (Draft)` } };
+      }
+      return { success: true, data: output };
+    } catch (error) {
+      console.error("Error in generateTitle AI call (Google):", error);
+      return { success: false, error: "Failed to generate title with user's Google key." };
+    }
   }
 }
 
 export async function generateScript(input: GenerateScriptInput): Promise<{ success: boolean, data?: z.infer<typeof AIScriptOutputSchema>, error?: string }> {
   const userKeysResult = await getUserApiKeys(input.userId);
-  if (!userKeysResult.success || !userKeysResult.data?.googleApiKey) {
-    return { success: false, error: "Google API key not configured by user. Please set it in Account Settings." };
-  }
-  const userGoogleKey = userKeysResult.data.googleApiKey;
 
-  try {
-    const localAi = genkit({ plugins: [googleAI({ apiKey: userGoogleKey })], model: 'googleai/gemini-2.0-flash' });
-    const prompt = scriptPromptTemplate.replace('{{{prompt}}}', input.prompt);
-    const { output } = await localAi.generate({ prompt, output: { schema: AIScriptOutputSchema, format: 'json' } });
-    return { success: true, data: output! };
-  } catch (error) {
-    console.error("Error in generateScript AI call:", error);
-    return { success: false, error: "Failed to generate script with user's key." };
+  if (input.aiProvider === 'perplexity') {
+    if (!userKeysResult.success || !userKeysResult.data?.perplexityApiKey) {
+      return { success: false, error: "Perplexity API key not configured by user. Please set it in Account Settings." };
+    }
+    try {
+      const { generateWithPerplexity } = await import('../ai/genkit'); // Corrected path
+
+      const promptText = scriptPromptTemplate.replace('{{{prompt}}}', input.prompt);
+
+      const messages = [
+        { role: 'system' as const, content: 'You are a script writer for animated videos. Your task is to generate a script based on the user prompt. The script should be engaging for both children and adults. The entire script must be written from the perspective of a single narrator.' },
+        { role: 'user' as const, content: promptText }
+      ];
+
+      const scriptText = await runFlow(generateWithPerplexity, {
+        modelName: input.perplexityModel || 'sonar-medium-online', // Default model from useStoryState
+        messages: messages,
+        userId: input.userId,
+      });
+
+      return { success: true, data: { script: scriptText } }; // Wrapped to match AIScriptOutputSchema
+
+    } catch (error) {
+      console.error("Error in generateScript with Perplexity AI call:", error);
+      const errorMessage = error instanceof Error ? error.message : "Failed to generate script with Perplexity.";
+      return { success: false, error: errorMessage };
+    }
+  } else { // Default to Google AI
+    if (!userKeysResult.success || !userKeysResult.data?.googleApiKey) {
+      return { success: false, error: "Google API key not configured by user. Please set it in Account Settings." };
+    }
+    const userGoogleKey = userKeysResult.data.googleApiKey;
+
+    try {
+      const modelName = input.googleScriptModel || 'gemini-1.5-flash'; // Default if not provided
+      const localAi = genkit({ plugins: [googleAI({ apiKey: userGoogleKey })], model: `googleai/${modelName}` });
+      const prompt = scriptPromptTemplate.replace('{{{prompt}}}', input.prompt);
+      const { output } = await localAi.generate({ prompt, output: { schema: AIScriptOutputSchema, format: 'json' } });
+      return { success: true, data: output! };
+    } catch (error) {
+      console.error("Error in generateScript AI call (Google):", error);
+      return { success: false, error: "Failed to generate script with user's Google key." };
+    }
   }
 }
 
 export async function generateCharacterPrompts(input: GenerateCharacterPromptsInput): Promise<{ success: boolean, data?: z.infer<typeof AICharacterPromptsOutputSchema>, error?: string }> {
   const userKeysResult = await getUserApiKeys(input.userId);
-  if (!userKeysResult.success || !userKeysResult.data?.googleApiKey) {
-    return { success: false, error: "Google API key not configured by user. Please set it in Account Settings." };
+  if (!userKeysResult.success || !userKeysResult.data) {
+    return { success: false, error: "Could not fetch user API keys." };
   }
-  const userGoogleKey = userKeysResult.data.googleApiKey;
+  const userApiKeys = userKeysResult.data;
 
-  try {
-    const localAi = genkit({ plugins: [googleAI({ apiKey: userGoogleKey })], model: 'googleai/gemini-2.0-flash' });
+  let stylePromptText: string | undefined;
+  if (input.imageStyleId) {
+    try {
+      const { getStylePromptForProvider } = await import('@/utils/imageStyleUtils');
+      stylePromptText = getStylePromptForProvider(input.imageStyleId as string, input.imageProvider || 'picsart');
+    } catch (error) {
+      console.warn('Failed to get style prompt for character generation:', error);
+    }
+  }
 
-    let stylePromptText: string | undefined;
-    if (input.imageStyleId) {
-      try {
-        const { getStylePromptForProvider } = await import('@/utils/imageStyleUtils');
-        stylePromptText = getStylePromptForProvider(input.imageStyleId as string, input.imageProvider || 'picsart');
-      } catch (error) {
-        console.warn('Failed to get style prompt for character generation:', error);
+  let finalPrompt = characterPromptsPromptTemplate.replace('{{{script}}}', input.script);
+  if (stylePromptText) {
+      finalPrompt = finalPrompt.replace('{{#if stylePrompt}}**ARTISTIC STYLE REQUIREMENTS:** {{{stylePrompt}}}{{/if}}', `**ARTISTIC STYLE REQUIREMENTS:** ${stylePromptText}`);
+  } else {
+      finalPrompt = finalPrompt.replace('{{#if stylePrompt}}**ARTISTIC STYLE REQUIREMENTS:** {{{stylePrompt}}}{{/if}}', '');
+  }
+
+  if (input.aiProvider === 'perplexity') {
+    if (!userApiKeys.perplexityApiKey) {
+      return { success: false, error: "Perplexity API key not configured by user. Please set it in Account Settings." };
+    }
+    try {
+      const { generateWithPerplexity } = await import('../ai/genkit');
+      const messages = [
+        { role: 'system' as const, content: 'You are an expert prompt engineer. Follow the instructions precisely to generate character, item, and location prompts based on the script.' },
+        { role: 'user' as const, content: finalPrompt }
+      ];
+      const resultText = await runFlow(generateWithPerplexity, {
+        modelName: input.perplexityModel || 'sonar', // Default Perplexity model
+        messages: messages,
+        userId: input.userId,
+      });
+      // Perplexity returns a single string. We need to parse it into the structured output.
+      // This parsing logic might need to be robust if Perplexity doesn't strictly adhere to JSON output for this complex prompt.
+      // For now, assuming it might return a JSON string or a string that needs careful parsing.
+      // A safer bet would be to adjust the Perplexity prompt to explicitly ask for JSON.
+      // However, the current prompt asks for specific headings.
+      // Let's try to parse based on headings.
+      const characterPrompts = resultText.match(/Character Prompts:\s*([\s\S]*?)(Item Prompts:|Location Prompts:|$)/)?.[1]?.trim() || '';
+      const itemPrompts = resultText.match(/Item Prompts:\s*([\s\S]*?)(Location Prompts:|$)/)?.[1]?.trim() || '';
+      const locationPrompts = resultText.match(/Location Prompts:\s*([\s\S]*?$)/)?.[1]?.trim() || '';
+      
+      if (!characterPrompts && !itemPrompts && !locationPrompts) {
+        // If parsing fails, return the raw text and let the client handle or show an error
+        console.warn("Could not parse Perplexity output for character prompts. Raw output:", resultText);
+        // Fallback: try to parse as JSON if the above fails.
+        try {
+            const parsedJson = JSON.parse(resultText);
+            if (parsedJson.characterPrompts || parsedJson.itemPrompts || parsedJson.locationPrompts) {
+                 return { success: true, data: parsedJson };
+            }
+        } catch (jsonError) {
+            // not a JSON
+        }
+        return { success: false, error: "Failed to parse character prompts from Perplexity. Output might be partial or malformed. Raw: " + resultText.substring(0, 100) + "..." };
       }
-    }
 
-    let finalPrompt = characterPromptsPromptTemplate.replace('{{{script}}}', input.script);
-    if (stylePromptText) {
-        finalPrompt = finalPrompt.replace('{{#if stylePrompt}}**ARTISTIC STYLE REQUIREMENTS:** {{{stylePrompt}}}{{/if}}', `**ARTISTIC STYLE REQUIREMENTS:** ${stylePromptText}`);
-    } else {
-        finalPrompt = finalPrompt.replace('{{#if stylePrompt}}**ARTISTIC STYLE REQUIREMENTS:** {{{stylePrompt}}}{{/if}}', '');
-    }
+      return { success: true, data: { characterPrompts, itemPrompts, locationPrompts } };
 
-    const { output } = await localAi.generate({ prompt: finalPrompt, output: { schema: AICharacterPromptsOutputSchema, format: 'json' } });
-    return { success: true, data: output! };
-  } catch (error) {
-    console.error("Error in generateCharacterPrompts AI call:", error);
-    return { success: false, error: "Failed to generate character/item/location prompts with user's key." };
+    } catch (error) {
+      console.error("Error in generateCharacterPrompts with Perplexity AI call:", error);
+      const errorMessage = error instanceof Error ? error.message : "Failed to generate character prompts with Perplexity.";
+      return { success: false, error: errorMessage };
+    }
+  } else { // Default to Google AI
+    if (!userApiKeys.googleApiKey) {
+      return { success: false, error: "Google API key not configured by user. Please set it in Account Settings." };
+    }
+    try {
+      const modelName = input.googleScriptModel || 'gemini-1.5-flash';
+      const localAi = genkit({ plugins: [googleAI({ apiKey: userApiKeys.googleApiKey })], model: `googleai/${modelName}` });
+      const { output } = await localAi.generate({ prompt: finalPrompt, output: { schema: AICharacterPromptsOutputSchema, format: 'json' } });
+      return { success: true, data: output! };
+    } catch (error) {
+      console.error("Error in generateCharacterPrompts AI call (Google):", error);
+      return { success: false, error: "Failed to generate character/item/location prompts with Google." };
+    }
   }
 }
 
@@ -440,129 +555,212 @@ export async function generateVoicePreview(input: VoicePreviewInput): Promise<{ 
 
 
 export async function generateImagePrompts(input: GenerateImagePromptsInput): Promise<{ success: boolean, data?: z.infer<typeof AIImagePromptsOutputSchema>, error?: string }> {
-    const userKeysResult = await getUserApiKeys(input.userId);
-    if (!userKeysResult.success || !userKeysResult.data?.googleApiKey) {
+  const userKeysResult = await getUserApiKeys(input.userId);
+  if (!userKeysResult.success || !userKeysResult.data) {
+    return { success: false, error: "Could not fetch user API keys." };
+  }
+  const userApiKeys = userKeysResult.data;
+
+  let numImages: number;
+  let chunksDataForPrompt: Array<{text: string; duration: number; promptCount: number}> | undefined;
+
+  if (input.narrationChunks && input.narrationChunks.length > 0) {
+      chunksDataForPrompt = input.narrationChunks.map((chunk: { text: string; duration: number; audioUrl?: string }) => {
+          let promptCount: number;
+          if (chunk.duration <= 5) promptCount = 1;
+          else if (chunk.duration <= 10) promptCount = chunk.text.length > 100 ? 2 : 1;
+          else if (chunk.duration <= 15) promptCount = 2;
+          else promptCount = 3;
+          return { text: chunk.text, duration: chunk.duration, promptCount };
+      });
+      numImages = chunksDataForPrompt!.reduce((total, chunk) => total + chunk.promptCount, 0);
+  } else {
+      numImages = Math.max(1, Math.ceil(input.audioDurationSeconds * (5 / 60)));
+  }
+  
+  const templateInput = {
+      characterPrompts: input.characterPrompts || '',
+      locationPrompts: input.locationPrompts || '',
+      itemPrompts: input.itemPrompts || '',
+      script: input.script,
+      chunksData: chunksDataForPrompt,
+      numImages: numImages,
+      isPicsart: input.isPicsart,
+      imageProvider: input.imageProvider
+  };
+
+  let finalPrompt = imagePromptsPromptTemplate;
+  for (const key in templateInput) {
+      if (Object.prototype.hasOwnProperty.call(templateInput, key) && key !== 'chunksData') {
+          const value = (templateInput as any)[key];
+          if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+              finalPrompt = finalPrompt.replace(new RegExp(`{{{${key}}}}`, 'g'), String(value));
+              finalPrompt = finalPrompt.replace(new RegExp(`{{${key}}}`, 'g'), String(value));
+          }
+      }
+  }
+
+  if (chunksDataForPrompt) {
+      let chunkDetailsBlock = "";
+      chunksDataForPrompt.forEach((chunk, index) => {
+          chunkDetailsBlock += `**Narration Chunk ${index} (Duration: ${chunk.duration}s, Required prompts: ${chunk.promptCount}):**\n"${chunk.text}"\n\n`;
+          chunkDetailsBlock += `**For THIS CHUNK, generate ${chunk.promptCount} image prompt(s). Each prompt MUST:**\n`;
+          chunkDetailsBlock += `1.  Directly visualize the events, characters, and setting described in THIS CHUNK.\n`;
+          chunkDetailsBlock += `2.  Include a specific @LocationName. If the location is not explicitly stated in the chunk, infer the most logical @LocationName based on the chunk's content, the overall story script, and available location references. DO NOT invent new locations; use only those in the LOCATION REFERENCE.\n`;
+          chunkDetailsBlock += `3.  Follow Prompt Structure: "[Camera shot, e.g., Wide shot, Close-up] of @CharacterName [action/emotion/pose, e.g., looking thoughtful, running quickly] IN @LocationName. [Interaction with @ItemName if relevant, e.g., holding @MagicWand]. [Lighting/mood, e.g., Sunny morning, Dark and stormy night]. [Key visual details from THIS narration chunk]."\n`;
+          chunkDetailsBlock += `    *   Example: "Eye-level medium shot of @Rusty trotting through @ForestPath IN @WhisperingWoods. He is sniffing the ground curiously. Morning light filters through the canopy."\n`;
+          chunkDetailsBlock += `4.  Use @Placeholders Correctly: ONLY use @placeholders for entities listed in the CHARACTER, LOCATION, and ITEM REFERENCE sections. Convert entity names to PascalCase for @references (e.g., "Old Man Grumbles" becomes @OldManGrumbles). Do NOT include descriptions alongside @placeholders; they will be expanded automatically.\n`;
+          chunkDetailsBlock += `5.  No Style Descriptors: ABSOLUTELY DO NOT include artistic style descriptors (like "3D rendered", "cartoon style", "photorealistic", "watercolor"). Style is handled separately.\n`;
+          chunkDetailsBlock += `6.  Natural Language: Write prompts as if describing a scene to a human. Use present tense.\n---\n`;
+      });
+      const chunkLogicRegex = /\{\{#if chunksData\}\}(.|\n)*?\{\{\/if\}\}/;
+      const ifBlockContent = (imagePromptsPromptTemplate.match(chunkLogicRegex)?.[0] || "")
+          .replace(/\{\{#if chunksData\}\}/, '')
+          .replace(/\{\{\/if\}\}/, '')
+          .replace(/\{\{#each chunksData\}\}(.|\n)*?\{\{\/each\}\}/, chunkDetailsBlock)
+          .replace(/\{\{else\}\}(.|\n)*$/, '');
+      finalPrompt = finalPrompt.replace(chunkLogicRegex, ifBlockContent);
+  } else {
+      const fallbackRegex = /\{\{#if chunksData\}\}(.|\n)*?\{\{else\}\}((.|\n)*?)\{\{\/if\}\}/;
+      const fallbackMatch = finalPrompt.match(fallbackRegex);
+      if (fallbackMatch && fallbackMatch[2]) {
+          finalPrompt = finalPrompt.replace(fallbackRegex, fallbackMatch[2].trim());
+      }
+  }
+  
+  const config = { temperature: 0.7, maxOutputTokens: 4096 };
+
+  if (input.aiProvider === 'perplexity') {
+    if (!userApiKeys.perplexityApiKey) {
+      return { success: false, error: "Perplexity API key not configured by user. Please set it in Account Settings." };
+    }
+    try {
+      const { generateWithPerplexity } = await import('../ai/genkit');
+      const messages = [
+        { role: 'system' as const, content: 'You are an expert at creating detailed image prompts. Follow the instructions precisely. Return a JSON object with "imagePrompts" and "actionPrompts" arrays.' },
+        { role: 'user' as const, content: finalPrompt }
+      ];
+      const resultText = await runFlow(generateWithPerplexity, {
+        modelName: input.perplexityModel || 'sonar',
+        messages: messages,
+        userId: input.userId,
+      });
+      try {
+        const parsedOutput = JSON.parse(resultText) as z.infer<typeof AIImagePromptsOutputSchema>;
+        if (!parsedOutput || !Array.isArray(parsedOutput.imagePrompts) || !Array.isArray(parsedOutput.actionPrompts)) {
+          console.warn("Perplexity image prompt generation did not return the expected array structure. Output:", parsedOutput);
+          return { success: false, error: "Perplexity AI did not return valid image/action prompts." };
+        }
+        return { success: true, data: parsedOutput };
+      } catch (e) {
+        console.error("Failed to parse JSON from Perplexity for image prompts:", resultText, e);
+        return { success: false, error: "Failed to parse image prompts from Perplexity. Output was not valid JSON." };
+      }
+    } catch (error) {
+      console.error("Error in generateImagePrompts with Perplexity AI call:", error);
+      const errorMessage = error instanceof Error ? error.message : "Failed to generate image prompts with Perplexity.";
+      return { success: false, error: errorMessage };
+    }
+  } else { // Default to Google AI
+    if (!userApiKeys.googleApiKey) {
       return { success: false, error: "Google API key for prompt generation not configured by user. Please set it in Account Settings." };
     }
-    const userGoogleKey = userKeysResult.data.googleApiKey;
-
     try {
-        const localAi = genkit({ plugins: [googleAI({ apiKey: userGoogleKey })], model: 'googleai/gemini-2.0-flash', })
-
-        let numImages: number;
-        let chunksDataForPrompt: Array<{text: string; duration: number; promptCount: number}> | undefined;
-
-        if (input.narrationChunks && input.narrationChunks.length > 0) {
-            chunksDataForPrompt = input.narrationChunks.map((chunk: { text: string; duration: number; audioUrl?: string }) => {
-                let promptCount: number;
-                if (chunk.duration <= 5) promptCount = 1;
-                else if (chunk.duration <= 10) promptCount = chunk.text.length > 100 ? 2 : 1;
-                else if (chunk.duration <= 15) promptCount = 2;
-                else promptCount = 3;
-                return { text: chunk.text, duration: chunk.duration, promptCount };
-            });
-            numImages = chunksDataForPrompt!.reduce((total, chunk) => total + chunk.promptCount, 0);
-        } else {
-            numImages = Math.max(1, Math.ceil(input.audioDurationSeconds * (5 / 60)));
-        }
-        
-        // Prepare template variables
-        const templateInput = {
-            characterPrompts: input.characterPrompts || '',
-            locationPrompts: input.locationPrompts || '',
-            itemPrompts: input.itemPrompts || '',
-            script: input.script,
-            chunksData: chunksDataForPrompt,
-            numImages: numImages,
-            isPicsart: input.isPicsart, // Keep this if template uses it, otherwise remove
-            imageProvider: input.imageProvider // Keep this if template uses it
-        };
-
-        // Simple Handlebars-like replacement (only for direct matches, not for loops or conditionals)
-        // For a full Handlebars implementation, you'd need a library.
-        // This is a simplified version for direct variable replacement.
-        let finalPrompt = imagePromptsPromptTemplate;
-        for (const key in templateInput) {
-            if (Object.prototype.hasOwnProperty.call(templateInput, key)) {
-                const value = (templateInput as any)[key]; // Type assertion
-                if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
-                    finalPrompt = finalPrompt.replace(new RegExp(`{{{${key}}}}`, 'g'), String(value));
-                    finalPrompt = finalPrompt.replace(new RegExp(`{{${key}}}`, 'g'), String(value)); // Also handle non-triple-stash
-                }
-            }
-        }
-
-        // Manual replacement for the chunksData loop if chunksDataForPrompt exists
-        if (chunksDataForPrompt) {
-            let chunkDetailsBlock = "";
-            chunksDataForPrompt.forEach((chunk, index) => {
-                chunkDetailsBlock += `**Narration Chunk ${index} (Duration: ${chunk.duration}s, Required prompts: ${chunk.promptCount}):**\n"${chunk.text}"\n\n`;
-                chunkDetailsBlock += `**For THIS CHUNK, generate ${chunk.promptCount} image prompt(s). Each prompt MUST:**\n`;
-                chunkDetailsBlock += `1.  Directly visualize the events, characters, and setting described in THIS CHUNK.\n`;
-                chunkDetailsBlock += `2.  Include a specific @LocationName. If the location is not explicitly stated in the chunk, infer the most logical @LocationName based on the chunk's content, the overall story script, and available location references. DO NOT invent new locations; use only those in the LOCATION REFERENCE.\n`;
-                chunkDetailsBlock += `3.  Follow Prompt Structure: "[Camera shot, e.g., Wide shot, Close-up] of @CharacterName [action/emotion/pose, e.g., looking thoughtful, running quickly] IN @LocationName. [Interaction with @ItemName if relevant, e.g., holding @MagicWand]. [Lighting/mood, e.g., Sunny morning, Dark and stormy night]. [Key visual details from THIS narration chunk]."\n`;
-                chunkDetailsBlock += `    *   Example: "Eye-level medium shot of @Rusty trotting through @ForestPath IN @WhisperingWoods. He is sniffing the ground curiously. Morning light filters through the canopy."\n`;
-                chunkDetailsBlock += `4.  Use @Placeholders Correctly: ONLY use @placeholders for entities listed in the CHARACTER, LOCATION, and ITEM REFERENCE sections. Convert entity names to PascalCase for @references (e.g., "Old Man Grumbles" becomes @OldManGrumbles). Do NOT include descriptions alongside @placeholders; they will be expanded automatically.\n`;
-                chunkDetailsBlock += `5.  No Style Descriptors: ABSOLUTELY DO NOT include artistic style descriptors (like "3D rendered", "cartoon style", "photorealistic", "watercolor"). Style is handled separately.\n`;
-                chunkDetailsBlock += `6.  Natural Language: Write prompts as if describing a scene to a human. Use present tense.\n---\n`;
-            });
-            const chunkLogicRegex = /\{\{#if chunksData\}\}(.|\n)*?\{\{\/if\}\}/;
-            finalPrompt = finalPrompt.replace(chunkLogicRegex, `**SOUND CHUNK CORRELATION MODE:**\n You MUST generate prompts that DIRECTLY VISUALIZE the content of EACH narration chunk provided below.\n For each chunk, you need to generate a specific number of image prompts as indicated.\n\n${chunkDetailsBlock}`);
-        } else {
-            // Fallback mode if no chunks
-            const fallbackRegex = /\{\{#if chunksData\}\}(.|\n)*?\{\{else\}\}((.|\n)*?)\{\{\/if\}\}/;
-            const fallbackMatch = finalPrompt.match(fallbackRegex);
-            if (fallbackMatch && fallbackMatch[2]) {
-                finalPrompt = finalPrompt.replace(fallbackRegex, fallbackMatch[2]);
-            }
-        }
-        // End of simplified Handlebars-like replacement
-
-        const { output } = await localAi.generate({
-            prompt: finalPrompt,
-            output: { schema: AIImagePromptsOutputSchema, format: 'json' },
-            config: { temperature: 0.7, maxOutputTokens: 4096 }
-        });
-
-        if (!output || !Array.isArray(output.imagePrompts)) {
-          console.warn("Image prompt generation did not return the expected array structure. Output:", output);
-          return { success: false, error: "AI did not return valid image prompts." };
-        }
-
-        return { success: true, data: output };
+      const modelName = input.googleScriptModel || 'gemini-1.5-flash';
+      const localAi = genkit({ plugins: [googleAI({ apiKey: userApiKeys.googleApiKey })], model: `googleai/${modelName}` });
+      const { output } = await localAi.generate({ prompt: finalPrompt, output: { schema: AIImagePromptsOutputSchema, format: 'json' }, config });
+      
+      if (!output || !Array.isArray(output.imagePrompts) || !Array.isArray(output.actionPrompts)) {
+        console.warn("Google image prompt generation did not return the expected array structure. Output:", output);
+        return { success: false, error: "Google AI did not return valid image/action prompts." };
+      }
+      return { success: true, data: output };
     } catch (error) {
-        console.error("Error in generateImagePrompts AI call:", error);
-        return { success: false, error: "Failed to generate image prompts with user's key." };
+      console.error("Error in generateImagePrompts AI call (Google):", error);
+      return { success: false, error: "Failed to generate image prompts with Google." };
     }
+  }
 }
 
 export async function generateScriptChunks(input: GenerateScriptChunksInput): Promise<{ success: boolean, data?: Omit<z.infer<typeof AIScriptChunksOutputSchema>, 'error'>, error?: string }> {
-    const userKeysResult = await getUserApiKeys(input.userId);
-    if (!userKeysResult.success || !userKeysResult.data?.googleApiKey) {
-      return { success: false, error: "Google API key not configured by user. Please set it in Account Settings." };
+  const userKeysResult = await getUserApiKeys(input.userId);
+  if (!userKeysResult.success || !userKeysResult.data) {
+    return { success: false, error: "Could not fetch user API keys." };
+  }
+  const userApiKeys = userKeysResult.data;
+  const prompt = scriptChunksPromptTemplate.replace('{{{script}}}', input.script);
+  const config = { temperature: 0.3, maxOutputTokens: 2048 };
+
+  if (input.aiProvider === 'perplexity') {
+    if (!userApiKeys.perplexityApiKey) {
+      return { success: false, error: "Perplexity API key not configured by user. Please set it in Account Settings." };
     }
-    const userGoogleKey = userKeysResult.data.googleApiKey;
-
     try {
-        const localAi = genkit({ plugins: [googleAI({ apiKey: userGoogleKey })], model: 'googleai/gemini-2.0-flash' });
-        const prompt = scriptChunksPromptTemplate.replace('{{{script}}}', input.script);
-
-        const { output } = await localAi.generate({
-            prompt,
-            output: { schema: AIScriptChunksOutputSchema, format: 'json' },
-            config: { temperature: 0.3, maxOutputTokens: 2048 }
-        });
-
-        if (output && output.scriptChunks && Array.isArray(output.scriptChunks)) {
-          const nonEmptyChunks = output.scriptChunks.filter((chunk: string) => chunk.trim().length > 0);
+      const { generateWithPerplexity } = await import('../ai/genkit');
+      const messages = [
+        { role: 'system' as const, content: 'You are a movie director and script editor. Follow the instructions precisely to split the script into meaningful visual chunks. Return a JSON object with a single key "scriptChunks" which is an array of strings.' },
+        { role: 'user' as const, content: prompt }
+      ];
+      const resultText = await runFlow(generateWithPerplexity, {
+        modelName: input.perplexityModel || 'sonar',
+        messages: messages,
+        userId: input.userId,
+      });
+      
+      try {
+        const parsedOutput = JSON.parse(resultText) as z.infer<typeof AIScriptChunksOutputSchema>;
+        if (parsedOutput?.error) {
+          return { success: false, error: parsedOutput.error };
+        }
+        if (parsedOutput?.scriptChunks && Array.isArray(parsedOutput.scriptChunks)) {
+          const nonEmptyChunks = parsedOutput.scriptChunks.filter((chunk: string) => chunk.trim().length > 0);
+          if (nonEmptyChunks.length === 0) {
+            return { success: false, error: "Perplexity AI returned no script chunks or only empty chunks." };
+          }
           return { success: true, data: { scriptChunks: nonEmptyChunks } };
         }
-        console.error('AI did not return the expected scriptChunks array:', output);
-        return { success: false, error: 'Failed to parse script chunks from AI response.' };
+        console.error('Perplexity AI did not return the expected scriptChunks array:', parsedOutput);
+        return { success: false, error: 'Failed to parse script chunks from Perplexity AI response.' };
+      } catch (e) {
+        console.error("Failed to parse JSON from Perplexity for script chunks:", resultText, e);
+        return { success: false, error: "Failed to parse script chunks from Perplexity. Output was not valid JSON." };
+      }
+
     } catch (error) {
-        console.error("Error in generateScriptChunks AI call:", error);
-        return { success: false, error: "Failed to generate script chunks with user's key." };
+      console.error("Error in generateScriptChunks with Perplexity AI call:", error);
+      const errorMessage = error instanceof Error ? error.message : "Failed to generate script chunks with Perplexity.";
+      return { success: false, error: errorMessage };
     }
+  } else { // Default to Google AI
+    if (!userApiKeys.googleApiKey) {
+      return { success: false, error: "Google API key not configured by user. Please set it in Account Settings." };
+    }
+    try {
+      const modelName = input.googleScriptModel || 'gemini-1.5-flash';
+      const localAi = genkit({ plugins: [googleAI({ apiKey: userApiKeys.googleApiKey })], model: `googleai/${modelName}` });
+      const { output } = await localAi.generate({ prompt, output: { schema: AIScriptChunksOutputSchema, format: 'json' }, config });
+
+      if (output?.error) {
+        return { success: false, error: output.error };
+      }
+      if (output?.scriptChunks && Array.isArray(output.scriptChunks)) {
+        const nonEmptyChunks = output.scriptChunks.filter((chunk: string) => chunk.trim().length > 0);
+        if (nonEmptyChunks.length === 0) {
+            return { success: false, error: "Google AI returned no script chunks or only empty chunks." };
+        }
+        return { success: true, data: { scriptChunks: nonEmptyChunks } };
+      }
+      console.error('Google AI did not return the expected scriptChunks array:', output);
+      return { success: false, error: 'Failed to parse script chunks from Google AI response.' };
+    } catch (error) {
+      console.error("Error in generateScriptChunks AI call (Google):", error);
+      const errorMessage = error instanceof Error ? error.message : "Failed to generate script chunks with Google.";
+      if (errorMessage.toLowerCase().includes("api key not configured")) {
+          return { success: false, error: "Google API key not configured. Please set it in Account Settings." };
+      }
+      return { success: false, error: errorMessage };
+    }
+  }
 }
 
 
@@ -957,4 +1155,86 @@ async function pollForPicsArtImage(
     }
   }
   return { success: false, error: "Image generation timed out after polling.", requestPrompt };
+}
+
+export async function listGoogleScriptModels(userId: string): Promise<{ success: boolean; models?: Array<{ id: string; name: string }>; error?: string }> {
+  const userKeysResult = await getUserApiKeys(userId);
+  if (!userKeysResult.success || !userKeysResult.data?.googleApiKey) {
+    return { success: false, error: "Google API key not configured by user. Please set it in Account Settings." };
+  }
+  const apiKey = userKeysResult.data.googleApiKey;
+
+  try {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
+    if (!response.ok) {
+      const errorBody = await response.text();
+      console.error("Failed to fetch Google models:", response.status, errorBody);
+      return { success: false, error: `Failed to fetch Google models: ${response.status}` };
+    }
+    const data = await response.json();
+    
+    const scriptModels = data.models
+      .filter((model: any) => model.supportedGenerationMethods && model.supportedGenerationMethods.includes('generateContent') && model.name.includes('gemini')) // Filter for gemini models supporting generateContent
+      .map((model: any) => ({
+        id: model.name.startsWith('models/') ? model.name.substring('models/'.length) : model.name, // Strip "models/" prefix for Genkit compatibility
+        name: model.displayName || model.name,
+      }))
+      .sort((a: {name: string}, b: {name: string}) => a.name.localeCompare(b.name)); // Sort by display name
+
+    return { success: true, models: scriptModels };
+  } catch (error) {
+    console.error("Error listing Google script models:", error);
+    const errorMessage = error instanceof Error ? error.message : "An unexpected error occurred while fetching Google models.";
+    return { success: false, error: errorMessage };
+  }
+}
+
+export async function listPerplexityModels(userId: string): Promise<{ success: boolean; models?: Array<{ id: string; name: string }>; error?: string }> {
+  const userKeysResult = await getUserApiKeys(userId);
+  if (!userKeysResult.success || !userKeysResult.data?.perplexityApiKey) {
+    return { success: false, error: "Perplexity API key not configured by user. Please set it in Account Settings." };
+  }
+  const apiKey = userKeysResult.data.perplexityApiKey;
+
+  try {
+    // Note: The Perplexity API documentation should be checked for the correct endpoint and response structure.
+    // This is an assumed endpoint and structure.
+    const response = await fetch(`https://api.perplexity.ai/models`, {
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Accept': 'application/json',
+      }
+    });
+
+    if (!response.ok) {
+      const errorBody = await response.text();
+      console.error("Failed to fetch Perplexity models:", response.status, errorBody);
+      return { success: false, error: `Failed to fetch Perplexity models: ${response.status}` };
+    }
+    const data = await response.json();
+    
+    // Assuming the API returns a list of models, potentially under a 'data' key,
+    // and each model object has an 'id' and a 'name' or 'display_name'.
+    // This mapping might need adjustment based on the actual API response.
+    const modelsArray = data.data || data.models || data; // Try common structures
+    if (!Array.isArray(modelsArray)) {
+      console.error("Perplexity models response is not an array:", data);
+      return { success: false, error: "Unexpected response format from Perplexity models API." };
+    }
+
+    const scriptModels = modelsArray
+      .map((model: any) => ({
+        id: model.id,
+        // Prefer a display name if available, otherwise use id.
+        // Some Perplexity models might have more user-friendly names.
+        name: model.name || model.display_name || model.id,
+      }))
+      .sort((a: {name: string}, b: {name: string}) => a.name.localeCompare(b.name));
+
+    return { success: true, models: scriptModels };
+  } catch (error) {
+    console.error("Error listing Perplexity script models:", error);
+    const errorMessage = error instanceof Error ? error.message : "An unexpected error occurred while fetching Perplexity models.";
+    return { success: false, error: errorMessage };
+  }
 }
