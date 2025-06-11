@@ -14,5 +14,6 @@ export const initialStoryState: Story = {
   scriptChunks: [], // Initialize
   narrationChunks: [], // Initialize
   aiProvider: 'google',
-  perplexityModel: 'sonar-medium-online',
+  perplexityModel: 'sonar', // Updated default Perplexity model
+  googleScriptModel: 'gemini-1.5-flash', // Default Google script model
 };

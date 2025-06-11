@@ -35,7 +35,12 @@ export function StoryPromptStep({ storyState }: StoryPromptStepProps) {
     aiProvider,
     setAiProvider,
     perplexityModel,
-    setPerplexityModel
+    setPerplexityModel,
+    googleScriptModel,
+    setGoogleScriptModel,
+    availableGoogleScriptModels,
+    isLoadingGoogleScriptModels
+    // Removed Perplexity dynamic model states
   } = storyState;
 
   const [activeTab, setActiveTab] = useState('ai-generate');
@@ -54,9 +59,15 @@ export function StoryPromptStep({ storyState }: StoryPromptStepProps) {
 
       setIsAutoSaving(true);
       try {
-        const narrationChunks = await prepareScriptChunksAI(script, storyData.userId);
+        const narrationChunks = await prepareScriptChunksAI(
+          script,
+          storyData.userId,
+          aiProvider,
+          perplexityModel,
+          googleScriptModel
+        );
         
-        const updatedStoryDataInternal = { 
+        const updatedStoryDataInternal = {
           ...storyData,
           title: title.trim(),
           generatedScript: script,
@@ -153,8 +164,9 @@ export function StoryPromptStep({ storyState }: StoryPromptStepProps) {
       const titleResult = await generateTitle({
         userPrompt: storyData.userPrompt,
         userId: storyData.userId,
-        aiProvider: aiProvider, // Pass the selected AI provider
-        perplexityModel: perplexityModel // Pass the selected Perplexity model
+        aiProvider: aiProvider,
+        perplexityModel: perplexityModel,
+        googleScriptModel: googleScriptModel
       });
       handleSetLoading('titleGen', false);
       if (titleResult.success && titleResult.data?.title) {
@@ -174,13 +186,20 @@ export function StoryPromptStep({ storyState }: StoryPromptStepProps) {
     const scriptResult = await generateScript({
       prompt: storyData.userPrompt,
       userId: storyData.userId,
-      aiProvider: aiProvider, // Pass the selected AI provider
-      perplexityModel: perplexityModel // Pass the selected Perplexity model
+      aiProvider: aiProvider,
+      perplexityModel: perplexityModel,
+      googleScriptModel: googleScriptModel
     });
     if (scriptResult.success && scriptResult.data) {
       const scriptText = scriptResult.data.script;
       handleSetLoading('scriptChunks', true);
-      const narrationChunks = await prepareScriptChunksAI(scriptText, storyData.userId);
+      const narrationChunks = await prepareScriptChunksAI(
+        scriptText,
+        storyData.userId,
+        aiProvider,
+        perplexityModel,
+        googleScriptModel
+      );
       handleSetLoading('scriptChunks', false);
       
       const updatedStoryData = {
@@ -246,7 +265,13 @@ export function StoryPromptStep({ storyState }: StoryPromptStepProps) {
 
     handleSetLoading('scriptChunks', true);
     try {
-      const narrationChunks = await prepareScriptChunksAI(manualScript, storyData.userId);
+      const narrationChunks = await prepareScriptChunksAI(
+        manualScript,
+        storyData.userId,
+        aiProvider, // Assuming the current aiProvider selection should apply here too
+        perplexityModel,
+        googleScriptModel
+      );
       
       updateStoryData({
         generatedScript: manualScript,
@@ -360,7 +385,7 @@ export function StoryPromptStep({ storyState }: StoryPromptStepProps) {
                   <div className="space-y-2">
                     <Label htmlFor="perplexity-model">Perplexity Model</Label>
                     <Select
-                      value={perplexityModel || 'sonar'} // Use 'sonar' as default if undefined, per prompt
+                      value={perplexityModel || 'sonar-medium-online'} // Reverted to default static value
                       onValueChange={(value) => setPerplexityModel(value)}
                       disabled={isLoading.script || apiKeysLoading}
                     >
@@ -368,17 +393,50 @@ export function StoryPromptStep({ storyState }: StoryPromptStepProps) {
                         <SelectValue placeholder="Select Perplexity Model" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="sonar">Sonar (Lightweight Search)</SelectItem>
-                        <SelectItem value="sonar-pro">Sonar Pro (Advanced Search)</SelectItem>
-                        <SelectItem value="r1-1776">R1-1776 (Offline Chat)</SelectItem>
+                        {/* Updated static list of Perplexity models based on user feedback */}
+                        <SelectItem value="sonar-pro">sonar-pro (Advanced search)</SelectItem>
+                        <SelectItem value="sonar">sonar (Lightweight search)</SelectItem>
+                        <SelectItem value="sonar-deep-research">sonar-deep-research (Expert research)</SelectItem>
+                        <SelectItem value="sonar-reasoning-pro">sonar-reasoning-pro (Premier reasoning)</SelectItem>
+                        <SelectItem value="sonar-reasoning">sonar-reasoning (Fast reasoning)</SelectItem>
+                        <SelectItem value="r1-1776">r1-1776 (Offline chat)</SelectItem>
                       </SelectContent>
                     </Select>
+                  </div>
+                )}
+
+                {aiProvider === 'google' && (
+                  <div className="space-y-2">
+                    <Label htmlFor="google-script-model">Google Model</Label>
+                    <Select
+                      value={googleScriptModel || (availableGoogleScriptModels && availableGoogleScriptModels.length > 0 ? availableGoogleScriptModels[0].id : '')}
+                      onValueChange={(value) => setGoogleScriptModel(value)}
+                      disabled={isLoading.script || apiKeysLoading || isLoadingGoogleScriptModels || !availableGoogleScriptModels || availableGoogleScriptModels.length === 0}
+                    >
+                      <SelectTrigger id="google-script-model">
+                        <SelectValue placeholder={isLoadingGoogleScriptModels ? "Loading models..." : "Select Google Model"} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {isLoadingGoogleScriptModels && <SelectItem value="loading" disabled>Loading models...</SelectItem>}
+                        {!isLoadingGoogleScriptModels && availableGoogleScriptModels && availableGoogleScriptModels.length === 0 && (
+                          <SelectItem value="no-models" disabled>No models available or failed to load.</SelectItem>
+                        )}
+                        {availableGoogleScriptModels?.map(model => (
+                          <SelectItem key={model.id} value={model.id}>
+                            {model.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {(!availableGoogleScriptModels || availableGoogleScriptModels.length === 0) && !isLoadingGoogleScriptModels && (
+                       <p className="text-xs text-muted-foreground mt-1">Could not load Google models. Ensure your API key is correct and has access.</p>
+                    )}
                   </div>
                 )}
               </div>
             </div>
 
-            <Button 
+            <Button
               onClick={handleGenerateScript}
               disabled={!storyData.userPrompt.trim() || isLoading.script || apiKeysLoading || (aiProvider === 'google' && googleKeyMissing) || (aiProvider === 'perplexity' && perplexityKeyMissing)}
               className="w-full"

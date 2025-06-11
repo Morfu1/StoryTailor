@@ -109,4 +109,5 @@ export interface Story {
   // AI Provider and Model Selection
   aiProvider?: 'google' | 'perplexity';
   perplexityModel?: string;
+  googleScriptModel?: string; // Model for Google script generation
 }

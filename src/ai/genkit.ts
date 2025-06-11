@@ -1,8 +1,19 @@
 import {genkit} from 'genkit';
 import {googleAI} from '@genkit-ai/googleai';
-import { defineFlow } from 'genkit/flow';
+import { defineFlow } from '@genkit-ai/flow'; // Changed import
 import { z } from 'zod';
-import { getUserApiKeys } from '@/actions/apiKeyActions'; // Adjust path if necessary
+import { getUserApiKeys } from '../actions/apiKeyActions'; // Adjust path if necessary
+
+// Define schemas separately
+const perplexityInputSchema = z.object({
+  modelName: z.string(),
+  messages: z.array(z.object({
+    role: z.enum(['system', 'user', 'assistant']),
+    content: z.string(),
+  })),
+  userId: z.string(),
+});
+const perplexityOutputSchema = z.string();
 
 export const ai = genkit({
   plugins: [googleAI()],
@@ -12,17 +23,10 @@ export const ai = genkit({
 export const generateWithPerplexity = defineFlow(
   {
     name: 'generateWithPerplexity',
-    inputSchema: z.object({
-      modelName: z.string(),
-      messages: z.array(z.object({
-        role: z.enum(['system', 'user', 'assistant']),
-        content: z.string(),
-      })),
-      userId: z.string(),
-    }),
-    outputSchema: z.string(), // Assuming we directly return the content string
+    inputSchema: perplexityInputSchema, // Use defined schema
+    outputSchema: perplexityOutputSchema, // Use defined schema
   },
-  async (input) => {
+  async (input: z.infer<typeof perplexityInputSchema>) => { // Infer type from defined schema
     const { modelName, messages, userId } = input;
 
     const { data: userApiKeys, error: apiKeyError } = await getUserApiKeys(userId);
