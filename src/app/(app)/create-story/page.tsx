@@ -68,6 +68,9 @@ export default function CreateStoryPage() {
     apiKeysLoading,
     setApiKeysLoading,
     aiProvider, // Added for model fetching logic
+    googleScriptModel,
+    setGoogleScriptModel,
+    availableGoogleScriptModels,
     setAvailableGoogleScriptModels, // Added
     setIsLoadingGoogleScriptModels, // Added
     // Removed Perplexity model state setters as they are no longer fetched dynamically
@@ -254,6 +257,22 @@ export default function CreateStoryPage() {
         });
     }
   }, [user, userApiKeys, aiProvider, setIsLoadingGoogleScriptModels, setAvailableGoogleScriptModels, toast]);
+
+  // Set default Google model if none is selected and models are available
+  useEffect(() => {
+    if (aiProvider === 'google' && availableGoogleScriptModels && availableGoogleScriptModels.length > 0 && !googleScriptModel) {
+      // Check if the default model from storyDefaults is available
+      const defaultModel = storyData.googleScriptModel;
+      const isDefaultAvailable = availableGoogleScriptModels.some(model => model.id === defaultModel);
+      
+      if (isDefaultAvailable) {
+        setGoogleScriptModel(defaultModel);
+      } else {
+        // Fallback to first available model if default is not available
+        setGoogleScriptModel(availableGoogleScriptModels[0].id);
+      }
+    }
+  }, [aiProvider, availableGoogleScriptModels, googleScriptModel, storyData.googleScriptModel, setGoogleScriptModel]);
 
   // Removed useEffect for fetching Perplexity models
 

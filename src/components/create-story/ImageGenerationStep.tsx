@@ -309,14 +309,46 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
       const updatedGeneratedImages = (storyData.generatedImages || []).filter(img => img.sceneIndex !== sceneIdx);
       updatedGeneratedImages.push(newImage);
       
+      // Update enhanced prompt data
+      const updatedImagePromptsData = [...(storyData.imagePromptsData || [])];
+      
+      // Ensure array is large enough
+      while (updatedImagePromptsData.length <= sceneIdx) {
+        updatedImagePromptsData.push({ originalPrompt: '' });
+      }
+      
+      // Initialize if not exists
+      if (!updatedImagePromptsData[sceneIdx]) {
+        updatedImagePromptsData[sceneIdx] = { originalPrompt: promptTextForGeneration };
+      }
+      
+      // Update the original prompt if not set
+      if (!updatedImagePromptsData[sceneIdx].originalPrompt) {
+        updatedImagePromptsData[sceneIdx].originalPrompt = promptTextForGeneration;
+      }
+      
+      // Save the expanded prompt based on provider
+      if (result.expandedPrompt) {
+        if (storyData.imageProvider === 'picsart') {
+          updatedImagePromptsData[sceneIdx].picsartPrompt = result.expandedPrompt;
+        } else if (storyData.imageProvider === 'imagen3') {
+          updatedImagePromptsData[sceneIdx].imagenPrompt = result.expandedPrompt;
+        }
+      }
+      
       setStoryData({
         ...storyData,
-        generatedImages: updatedGeneratedImages 
+        generatedImages: updatedGeneratedImages,
+        imagePromptsData: updatedImagePromptsData
       });
       
       if (storyData.id && storyData.userId) {
         try {
-          await saveStory({ ...storyData, generatedImages: updatedGeneratedImages }, storyData.userId);
+          await saveStory({ 
+            ...storyData, 
+            generatedImages: updatedGeneratedImages,
+            imagePromptsData: updatedImagePromptsData
+          }, storyData.userId);
         } catch (error) {
           console.error('Failed to auto-save story:', error);
         }

@@ -235,7 +235,7 @@ function RenderVideoButton({ storyData }: { storyData: UseStoryStateReturn['stor
           const jobs: VideoJob[] = await response.json();
           const completedJob = jobs.find((job) => job.status === 'completed' && job.downloadUrl);
           if (completedJob) {
-            setVideoUrl(completedJob.downloadUrl);
+            setVideoUrl(completedJob.downloadUrl || null);
           }
           
           const inProgressJob = jobs.find((job) => job.status === 'processing' || job.status === 'pending');

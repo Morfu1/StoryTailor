@@ -17,7 +17,7 @@ const perplexityOutputSchema = z.string();
 
 export const ai = genkit({
   plugins: [googleAI()],
-  model: 'googleai/gemini-2.0-flash',
+  model: 'googleai/gemini-2.5-flash-preview-05-20',
 });
 
 export const generateWithPerplexity = defineFlow(
@@ -35,21 +35,26 @@ export const generateWithPerplexity = defineFlow(
       throw new Error('Perplexity API key not configured or failed to fetch.');
     }
 
-    const response = await fetch('https://api.perplexity.ai/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${userApiKeys.perplexityApiKey}`,
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-      },
-      body: JSON.stringify({
-        model: modelName,
-        messages: messages,
-        // Add other parameters like temperature, max_tokens if needed,
-        // based on Perplexity API docs for chat completions.
-        // For now, keeping it simple.
-      }),
-    });
+    let response;
+    try {
+      response = await fetch('https://api.perplexity.ai/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${userApiKeys.perplexityApiKey}`,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: JSON.stringify({
+          model: modelName,
+          messages: messages,
+          temperature: 0.7,
+          max_tokens: 8192, // Increased token limit for better coverage
+        }),
+      });
+    } catch (fetchError) {
+      console.error('Perplexity API fetch error:', fetchError);
+      throw new Error(`Network error connecting to Perplexity API: ${fetchError instanceof Error ? fetchError.message : 'Unknown network error'}`);
+    }
 
     if (!response.ok) {
       const errorBody = await response.text();

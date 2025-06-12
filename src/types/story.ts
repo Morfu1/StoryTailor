@@ -87,6 +87,13 @@ export interface Story {
   narrationVoice?: string; // Voice name (e.g., "Laura")
   narrationVoiceId?: string; // Voice ID from ElevenLabs (alias for elevenLabsVoiceId)
   imagePrompts?: string[]; // Array of scene prompts. The index is the sceneIndex.
+  
+  // Enhanced prompt tracking for export
+  imagePromptsData?: {
+    originalPrompt: string;     // Initial prompt from AI generation
+    picsartPrompt?: string;     // Expanded prompt sent to Picsart
+    imagenPrompt?: string;      // Expanded prompt sent to Imagen 3
+  }[]; // Enhanced prompt data matching imagePrompts indices
   generatedImages?: GeneratedImage[]; // Stores the *latest* image for each sceneIndex.
   actionPrompts?: ActionPrompt[]; // Action prompts for future use, linked by sceneIndex
   imageStyleId?: ImageStyleId; // Selected image generation style

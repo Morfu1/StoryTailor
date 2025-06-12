@@ -30,7 +30,7 @@ import {
 
 
 // import { firebaseAdmin, dbAdmin } from '@/lib/firebaseAdmin'; // Unused based on lint
-import type { ElevenLabsVoice, GeneratedImage } from '@/types/story'; // Story, AdminTimestamp might be used later
+import type { ElevenLabsVoice } from '@/types/story'; // Story, AdminTimestamp might be used later
 // import type { Timestamp as AdminTimestamp } from 'firebase-admin/firestore'; // Unused based on lint
 // import { revalidatePath } from 'next/cache'; // Unused based on lint
 import { getUserApiKeys } from './apiKeyActions';
@@ -158,6 +158,40 @@ Return your response as a JSON object with two keys:
 2.  "actionPrompts": An array of strings, where each string is an action prompt corresponding to the image prompt at the same index. The total number of action prompts must also be exactly {{numImages}}.
 `;
 
+// Helper function to extract JSON from Perplexity responses that may contain reasoning tags and markdown code blocks
+function extractJsonFromPerplexityResponse(responseText: string): string {
+  let cleanedText = responseText;
+  
+  // Step 1: If the response has <think> tags, extract content after </think>
+  if (cleanedText.includes('<think>') && cleanedText.includes('</think>')) {
+    const afterThinkMatch = cleanedText.match(/<\/think>\s*([\s\S]*)/);
+    if (afterThinkMatch && afterThinkMatch[1]) {
+      cleanedText = afterThinkMatch[1].trim();
+    }
+  }
+  
+  // Step 2: Remove markdown code block formatting if present
+  if (cleanedText.includes('```json') || cleanedText.includes('```')) {
+    // Extract content between code block markers
+    const codeBlockMatch = cleanedText.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (codeBlockMatch && codeBlockMatch[1]) {
+      cleanedText = codeBlockMatch[1].trim();
+    } else {
+      // If there's a starting ``` but no ending, just remove the starting marker
+      cleanedText = cleanedText.replace(/```(?:json)?\s*/, '').trim();
+    }
+  }
+  
+  // Step 3: Try to find JSON within the cleaned response by looking for { and }
+  const jsonMatch = cleanedText.match(/\{[\s\S]*\}/);
+  if (jsonMatch) {
+    return jsonMatch[0];
+  }
+  
+  // If no JSON patterns found, return the cleaned text
+  return cleanedText;
+}
+
 const scriptChunksPromptTemplate = 'You are a movie director and script editor who thinks visually. Your task is to split the following story script into meaningful visual scenes/chunks. Each chunk will have a corresponding image generated and narration audio, so think like you\'re creating an animated storybook.\n\n' +
 'Think like a movie director analyzing a script:\n' +
 '- What would each scene look like visually?\n' +
@@ -199,7 +233,7 @@ export async function generateTitle(input: GenerateTitleInput): Promise<{ succes
       ];
 
       const titleText = await runFlow(generateWithPerplexity, {
-        modelName: input.perplexityModel || 'sonar-medium-online', // Default model from useStoryState
+        modelName: input.perplexityModel || 'sonar-reasoning-pro', // Default model
         messages: messages,
         userId: input.userId,
       });
@@ -218,7 +252,7 @@ export async function generateTitle(input: GenerateTitleInput): Promise<{ succes
     const userGoogleKey = userKeysResult.data.googleApiKey;
 
     try {
-      const modelName = input.googleScriptModel || 'gemini-1.5-flash'; // Default if not provided
+      const modelName = input.googleScriptModel || 'gemini-2.5-flash-preview-05-20'; // Default if not provided
       const localAi = genkit({ plugins: [googleAI({ apiKey: userGoogleKey })], model: `googleai/${modelName}` });
       const prompt = titlePromptTemplate.replace('{{userPrompt}}', input.userPrompt);
       const { output } = await localAi.generate({ prompt, output: { schema: AITitleOutputSchema, format: 'json' } });
@@ -253,7 +287,7 @@ export async function generateScript(input: GenerateScriptInput): Promise<{ succ
       ];
 
       const scriptText = await runFlow(generateWithPerplexity, {
-        modelName: input.perplexityModel || 'sonar-medium-online', // Default model from useStoryState
+        modelName: input.perplexityModel || 'sonar-reasoning-pro', // Default model
         messages: messages,
         userId: input.userId,
       });
@@ -272,7 +306,7 @@ export async function generateScript(input: GenerateScriptInput): Promise<{ succ
     const userGoogleKey = userKeysResult.data.googleApiKey;
 
     try {
-      const modelName = input.googleScriptModel || 'gemini-1.5-flash'; // Default if not provided
+      const modelName = input.googleScriptModel || 'gemini-2.5-flash-preview-05-20'; // Default if not provided
       const localAi = genkit({ plugins: [googleAI({ apiKey: userGoogleKey })], model: `googleai/${modelName}` });
       const prompt = scriptPromptTemplate.replace('{{{prompt}}}', input.prompt);
       const { output } = await localAi.generate({ prompt, output: { schema: AIScriptOutputSchema, format: 'json' } });
@@ -319,33 +353,31 @@ export async function generateCharacterPrompts(input: GenerateCharacterPromptsIn
         { role: 'user' as const, content: finalPrompt }
       ];
       const resultText = await runFlow(generateWithPerplexity, {
-        modelName: input.perplexityModel || 'sonar', // Default Perplexity model
+        modelName: input.perplexityModel || 'sonar-reasoning-pro', // Default Perplexity model
         messages: messages,
         userId: input.userId,
       });
-      // Perplexity returns a single string. We need to parse it into the structured output.
-      // This parsing logic might need to be robust if Perplexity doesn't strictly adhere to JSON output for this complex prompt.
-      // For now, assuming it might return a JSON string or a string that needs careful parsing.
-      // A safer bet would be to adjust the Perplexity prompt to explicitly ask for JSON.
-      // However, the current prompt asks for specific headings.
-      // Let's try to parse based on headings.
-      const characterPrompts = resultText.match(/Character Prompts:\s*([\s\S]*?)(Item Prompts:|Location Prompts:|$)/)?.[1]?.trim() || '';
-      const itemPrompts = resultText.match(/Item Prompts:\s*([\s\S]*?)(Location Prompts:|$)/)?.[1]?.trim() || '';
-      const locationPrompts = resultText.match(/Location Prompts:\s*([\s\S]*?$)/)?.[1]?.trim() || '';
+      // First, try to extract JSON from reasoning tags if present
+      const cleanedResultText = extractJsonFromPerplexityResponse(resultText);
+      
+      // Try to parse as JSON first
+      try {
+        const parsedJson = JSON.parse(cleanedResultText);
+        if (parsedJson.characterPrompts || parsedJson.itemPrompts || parsedJson.locationPrompts) {
+          return { success: true, data: parsedJson };
+        }
+      } catch {
+        // Not JSON, continue with text parsing
+      }
+      
+      // Fallback to text-based parsing for headings format
+      const characterPrompts = cleanedResultText.match(/Character Prompts:\s*([\s\S]*?)(Item Prompts:|Location Prompts:|$)/)?.[1]?.trim() || '';
+      const itemPrompts = cleanedResultText.match(/Item Prompts:\s*([\s\S]*?)(Location Prompts:|$)/)?.[1]?.trim() || '';
+      const locationPrompts = cleanedResultText.match(/Location Prompts:\s*([\s\S]*?$)/)?.[1]?.trim() || '';
       
       if (!characterPrompts && !itemPrompts && !locationPrompts) {
-        // If parsing fails, return the raw text and let the client handle or show an error
-        console.warn("Could not parse Perplexity output for character prompts. Raw output:", resultText);
-        // Fallback: try to parse as JSON if the above fails.
-        try {
-            const parsedJson = JSON.parse(resultText);
-            if (parsedJson.characterPrompts || parsedJson.itemPrompts || parsedJson.locationPrompts) {
-                 return { success: true, data: parsedJson };
-            }
-        } catch (jsonError) {
-            // not a JSON
-        }
-        return { success: false, error: "Failed to parse character prompts from Perplexity. Output might be partial or malformed. Raw: " + resultText.substring(0, 100) + "..." };
+        console.warn("Could not parse Perplexity output for character prompts. Raw output:", cleanedResultText);
+        return { success: false, error: "Failed to parse character prompts from Perplexity. Output might be partial or malformed. Raw: " + cleanedResultText.substring(0, 100) + "..." };
       }
 
       return { success: true, data: { characterPrompts, itemPrompts, locationPrompts } };
@@ -360,7 +392,7 @@ export async function generateCharacterPrompts(input: GenerateCharacterPromptsIn
       return { success: false, error: "Google API key not configured by user. Please set it in Account Settings." };
     }
     try {
-      const modelName = input.googleScriptModel || 'gemini-1.5-flash';
+      const modelName = input.googleScriptModel || 'gemini-2.5-flash-preview-05-20';
       const localAi = genkit({ plugins: [googleAI({ apiKey: userApiKeys.googleApiKey })], model: `googleai/${modelName}` });
       const { output } = await localAi.generate({ prompt: finalPrompt, output: { schema: AICharacterPromptsOutputSchema, format: 'json' } });
       return { success: true, data: output! };
@@ -592,7 +624,7 @@ export async function generateImagePrompts(input: GenerateImagePromptsInput): Pr
   let finalPrompt = imagePromptsPromptTemplate;
   for (const key in templateInput) {
       if (Object.prototype.hasOwnProperty.call(templateInput, key) && key !== 'chunksData') {
-          const value = (templateInput as any)[key];
+          const value = (templateInput as Record<string, unknown>)[key];
           if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
               finalPrompt = finalPrompt.replace(new RegExp(`{{{${key}}}}`, 'g'), String(value));
               finalPrompt = finalPrompt.replace(new RegExp(`{{${key}}}`, 'g'), String(value));
@@ -636,17 +668,104 @@ export async function generateImagePrompts(input: GenerateImagePromptsInput): Pr
     }
     try {
       const { generateWithPerplexity } = await import('../ai/genkit');
+      
+      // For large requests (>12 chunks), process in batches to avoid token limits
+      if (chunksDataForPrompt && chunksDataForPrompt.length > 12) {
+        console.log(`Processing ${chunksDataForPrompt.length} chunks in batches for Perplexity`);
+        const batchSize = 8; // Process 8 chunks at a time
+        const allImagePrompts: string[] = [];
+        const allActionPrompts: string[] = [];
+        
+        for (let i = 0; i < chunksDataForPrompt.length; i += batchSize) {
+          const chunkBatch = chunksDataForPrompt.slice(i, i + batchSize);
+          const batchNumImages = chunkBatch.reduce((total, chunk) => total + chunk.promptCount, 0);
+          
+          // Create batch-specific prompt
+          const batchTemplateInput = {
+            ...templateInput,
+            chunksData: chunkBatch,
+            numImages: batchNumImages
+          };
+          
+          let batchPrompt = imagePromptsPromptTemplate;
+          for (const key in batchTemplateInput) {
+            if (Object.prototype.hasOwnProperty.call(batchTemplateInput, key) && key !== 'chunksData') {
+              const value = (batchTemplateInput as Record<string, unknown>)[key];
+              if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+                batchPrompt = batchPrompt.replace(new RegExp(`{{{${key}}}}`, 'g'), String(value));
+                batchPrompt = batchPrompt.replace(new RegExp(`{{${key}}}`, 'g'), String(value));
+              }
+            }
+          }
+          
+          // Process chunksData for this batch
+          let chunkDetailsBlock = "";
+          chunkBatch.forEach((chunk, index) => {
+            const globalIndex = i + index; // Use global index for consistency
+            chunkDetailsBlock += `**Narration Chunk ${globalIndex} (Duration: ${chunk.duration}s, Required prompts: ${chunk.promptCount}):**\n"${chunk.text}"\n\n`;
+            chunkDetailsBlock += `**For THIS CHUNK, generate ${chunk.promptCount} image prompt(s). Each prompt MUST:**\n`;
+            chunkDetailsBlock += `1.  Directly visualize the events, characters, and setting described in THIS CHUNK.\n`;
+            chunkDetailsBlock += `2.  Include a specific @LocationName. If the location is not explicitly stated in the chunk, infer the most logical @LocationName based on the chunk's content, the overall story script, and available location references. DO NOT invent new locations; use only those in the LOCATION REFERENCE.\n`;
+            chunkDetailsBlock += `3.  Follow Prompt Structure: "[Camera shot, e.g., Wide shot, Close-up] of @CharacterName [action/emotion/pose, e.g., looking thoughtful, running quickly] IN @LocationName. [Interaction with @ItemName if relevant, e.g., holding @MagicWand]. [Lighting/mood, e.g., Sunny morning, Dark and stormy night]. [Key visual details from THIS narration chunk]."\n`;
+            chunkDetailsBlock += `    *   Example: "Eye-level medium shot of @Rusty trotting through @ForestPath IN @WhisperingWoods. He is sniffing the ground curiously. Morning light filters through the canopy."\n`;
+            chunkDetailsBlock += `4.  Use @Placeholders Correctly: ONLY use @placeholders for entities listed in the CHARACTER, LOCATION, and ITEM REFERENCE sections. Convert entity names to PascalCase for @references (e.g., "Old Man Grumbles" becomes @OldManGrumbles). Do NOT include descriptions alongside @placeholders; they will be expanded automatically.\n`;
+            chunkDetailsBlock += `5.  No Style Descriptors: ABSOLUTELY DO NOT include artistic style descriptors (like "3D rendered", "cartoon style", "photorealistic", "watercolor"). Style is handled separately.\n`;
+            chunkDetailsBlock += `6.  Natural Language: Write prompts as if describing a scene to a human. Use present tense.\n---\n`;
+          });
+          
+          const chunkLogicRegex = /\{\{#if chunksData\}\}(.|\n)*?\{\{\/if\}\}/;
+          const ifBlockContent = (batchPrompt.match(chunkLogicRegex)?.[0] || "")
+            .replace(/\{\{#if chunksData\}\}/, '')
+            .replace(/\{\{\/if\}\}/, '')
+            .replace(/\{\{#each chunksData\}\}(.|\n)*?\{\{\/each\}\}/, chunkDetailsBlock)
+            .replace(/\{\{else\}\}(.|\n)*$/, '');
+          batchPrompt = batchPrompt.replace(chunkLogicRegex, ifBlockContent);
+          
+          const messages = [
+            { role: 'system' as const, content: 'You are an expert at creating detailed image prompts. Follow the instructions precisely. Return a JSON object with "imagePrompts" and "actionPrompts" arrays.' },
+            { role: 'user' as const, content: batchPrompt }
+          ];
+          
+          const resultText = await runFlow(generateWithPerplexity, {
+            modelName: input.perplexityModel || 'sonar-reasoning-pro',
+            messages: messages,
+            userId: input.userId,
+          });
+          
+          const extractedJson = extractJsonFromPerplexityResponse(resultText);
+          const batchOutput = JSON.parse(extractedJson) as z.infer<typeof AIImagePromptsOutputSchema>;
+          
+          if (!batchOutput || !Array.isArray(batchOutput.imagePrompts) || !Array.isArray(batchOutput.actionPrompts)) {
+            console.warn(`Batch ${Math.floor(i/batchSize) + 1} did not return valid structure:`, batchOutput);
+            continue; // Skip this batch but continue with others
+          }
+          
+          allImagePrompts.push(...batchOutput.imagePrompts);
+          allActionPrompts.push(...batchOutput.actionPrompts);
+          
+          console.log(`Batch ${Math.floor(i/batchSize) + 1} completed: ${batchOutput.imagePrompts.length} prompts`);
+        }
+        
+        if (allImagePrompts.length === 0) {
+          return { success: false, error: "Failed to generate any image prompts in batch processing." };
+        }
+        
+        return { success: true, data: { imagePrompts: allImagePrompts, actionPrompts: allActionPrompts } };
+      }
+      
+      // Original single request for smaller chunk counts (≤12 chunks)
       const messages = [
         { role: 'system' as const, content: 'You are an expert at creating detailed image prompts. Follow the instructions precisely. Return a JSON object with "imagePrompts" and "actionPrompts" arrays.' },
         { role: 'user' as const, content: finalPrompt }
       ];
       const resultText = await runFlow(generateWithPerplexity, {
-        modelName: input.perplexityModel || 'sonar',
+        modelName: input.perplexityModel || 'sonar-reasoning-pro',
         messages: messages,
         userId: input.userId,
       });
       try {
-        const parsedOutput = JSON.parse(resultText) as z.infer<typeof AIImagePromptsOutputSchema>;
+        const extractedJson = extractJsonFromPerplexityResponse(resultText);
+        const parsedOutput = JSON.parse(extractedJson) as z.infer<typeof AIImagePromptsOutputSchema>;
         if (!parsedOutput || !Array.isArray(parsedOutput.imagePrompts) || !Array.isArray(parsedOutput.actionPrompts)) {
           console.warn("Perplexity image prompt generation did not return the expected array structure. Output:", parsedOutput);
           return { success: false, error: "Perplexity AI did not return valid image/action prompts." };
@@ -666,7 +785,7 @@ export async function generateImagePrompts(input: GenerateImagePromptsInput): Pr
       return { success: false, error: "Google API key for prompt generation not configured by user. Please set it in Account Settings." };
     }
     try {
-      const modelName = input.googleScriptModel || 'gemini-1.5-flash';
+      const modelName = input.googleScriptModel || 'gemini-2.5-flash-preview-05-20';
       const localAi = genkit({ plugins: [googleAI({ apiKey: userApiKeys.googleApiKey })], model: `googleai/${modelName}` });
       const { output } = await localAi.generate({ prompt: finalPrompt, output: { schema: AIImagePromptsOutputSchema, format: 'json' }, config });
       
@@ -702,13 +821,14 @@ export async function generateScriptChunks(input: GenerateScriptChunksInput): Pr
         { role: 'user' as const, content: prompt }
       ];
       const resultText = await runFlow(generateWithPerplexity, {
-        modelName: input.perplexityModel || 'sonar',
+        modelName: input.perplexityModel || 'sonar-reasoning-pro',
         messages: messages,
         userId: input.userId,
       });
       
       try {
-        const parsedOutput = JSON.parse(resultText) as z.infer<typeof AIScriptChunksOutputSchema>;
+        const extractedJson = extractJsonFromPerplexityResponse(resultText);
+        const parsedOutput = JSON.parse(extractedJson) as z.infer<typeof AIScriptChunksOutputSchema>;
         if (parsedOutput?.error) {
           return { success: false, error: parsedOutput.error };
         }
@@ -736,7 +856,7 @@ export async function generateScriptChunks(input: GenerateScriptChunksInput): Pr
       return { success: false, error: "Google API key not configured by user. Please set it in Account Settings." };
     }
     try {
-      const modelName = input.googleScriptModel || 'gemini-1.5-flash';
+      const modelName = input.googleScriptModel || 'gemini-2.5-flash-preview-05-20';
       const localAi = genkit({ plugins: [googleAI({ apiKey: userApiKeys.googleApiKey })], model: `googleai/${modelName}` });
       const { output } = await localAi.generate({ prompt, output: { schema: AIScriptChunksOutputSchema, format: 'json' }, config });
 
@@ -849,7 +969,7 @@ export async function generateImageFromImagen3(
   userId: string,
   storyId?: string,
   styleId?: string
-): Promise<{ success: boolean; imageUrl?: string; error?: string; requestPrompt?: string }> {
+): Promise<{ success: boolean; imageUrl?: string; error?: string; requestPrompt?: string; expandedPrompt?: string }> {
   const userKeysResult = await getUserApiKeys(userId);
   if (!userKeysResult.success || !userKeysResult.data?.googleApiKey) {
     return { success: false, error: "Google API key for Imagen3 not configured by user. Please set it in Account Settings." };
@@ -865,9 +985,15 @@ export async function generateImageFromImagen3(
       const storyResult = await getStory(storyId, userId);
       if (storyResult.success && storyResult.data) {
         const { nameToReference, extractEntityNames } = await import('@/app/(app)/assemble-video/utils');
-        const entityReferencesInPrompt = Array.from(new Set(originalPrompt.match(/@[A-Za-z0-9_.-]+/g) || [])); // Unique references
+        const entityReferencesInPrompt = Array.from(new Set(originalPrompt.match(/@[A-Za-z0-9_]+/g) || [])); // Unique references, exclude dots that might be punctuation
         
         const allEntityNamesFromStory = extractEntityNames(storyResult.data);
+        
+        // Helper function to normalize references for robust comparison (matching utils.ts)
+        const normalizeRefForComparison = (ref: string): string => {
+          if (!ref.startsWith('@')) return ref.toLowerCase().replace(/[^a-z0-9]/g, '');
+          return '@' + ref.substring(1).toLowerCase().replace(/[^a-z0-9]/g, '');
+        };
         
         if (entityReferencesInPrompt.length > 0) {
             descriptionParts.push("Here are the descriptions of the entities involved:");
@@ -878,10 +1004,44 @@ export async function generateImageFromImagen3(
           let entityType: 'character' | 'item' | 'location' | null = null;
           let descriptionText: string | null = null;
 
-          // Check characters
-          for (const charName of allEntityNamesFromStory.characters) { if (nameToReference(charName) === ref) { actualEntityName = charName; entityType = 'character'; break; } }
-          if (!actualEntityName) { for (const itemName of allEntityNamesFromStory.items) { if (nameToReference(itemName) === ref) { actualEntityName = itemName; entityType = 'item'; break; } } }
-          if (!actualEntityName) { for (const locName of allEntityNamesFromStory.locations) { if (nameToReference(locName) === ref) { actualEntityName = locName; entityType = 'location'; break; } } }
+          const normalizedRef = normalizeRefForComparison(ref);
+
+          // Check characters with case-insensitive matching
+          for (const charName of allEntityNamesFromStory.characters) { 
+            const generatedRef = nameToReference(charName);
+            const normalizedGeneratedRef = normalizeRefForComparison(generatedRef);
+            if (normalizedGeneratedRef === normalizedRef) { 
+              actualEntityName = charName; 
+              entityType = 'character'; 
+              break; 
+            } 
+          }
+          
+          // Check items if not found
+          if (!actualEntityName) { 
+            for (const itemName of allEntityNamesFromStory.items) { 
+              const generatedRef = nameToReference(itemName);
+              const normalizedGeneratedRef = normalizeRefForComparison(generatedRef);
+              if (normalizedGeneratedRef === normalizedRef) { 
+                actualEntityName = itemName; 
+                entityType = 'item'; 
+                break; 
+              } 
+            } 
+          }
+          
+          // Check locations if not found
+          if (!actualEntityName) { 
+            for (const locName of allEntityNamesFromStory.locations) { 
+              const generatedRef = nameToReference(locName);
+              const normalizedGeneratedRef = normalizeRefForComparison(generatedRef);
+              if (normalizedGeneratedRef === normalizedRef) { 
+                actualEntityName = locName; 
+                entityType = 'location'; 
+                break; 
+              } 
+            } 
+          }
           
           if (actualEntityName && entityType) {
             const promptsSection = entityType === 'character' ? storyResult.data.detailsPrompts?.characterPrompts || ''
@@ -910,7 +1070,7 @@ export async function generateImageFromImagen3(
     } catch (error) { console.warn("[generateImageFromImagen3] Error processing placeholders:", error); }
   }
   
-  let structuredPromptParts = [];
+  const structuredPromptParts: string[] = [];
   if (descriptionParts.length > 0) {
     structuredPromptParts.push(descriptionParts.join('\n-----\n')); // Join descriptions with separator
   }
@@ -942,6 +1102,7 @@ export async function generateImageFromImagen3(
   }
   
   const requestPromptWithStyle = basePrompt;
+  const expandedPromptForExport = requestPromptWithStyle; // Store the full structured prompt with style
 
   try {
     console.log(`Calling Imagen 3 API with structured prompt: \n"${requestPromptWithStyle}"\nUsing user's key.`);
@@ -968,18 +1129,18 @@ export async function generateImageFromImagen3(
 
     if (!response.ok) {
       console.error("Imagen 3 API Error Response:", JSON.stringify(result, null, 2));
-      return { success: false, error: `Imagen 3 API request failed: ${response.status} - ${result?.error?.message || 'Unknown error'}`, requestPrompt: requestPromptWithStyle };
+      return { success: false, error: `Imagen 3 API request failed: ${response.status} - ${result?.error?.message || 'Unknown error'}`, requestPrompt: requestPromptWithStyle, expandedPrompt: expandedPromptForExport };
     }
     
     const predictions = result.predictions;
     if (!predictions || predictions.length === 0) {
       console.error("Imagen 3 API returned no predictions. Full response:", JSON.stringify(result, null, 2));
-      return { success: false, error: "No image data returned from Imagen 3 API", requestPrompt: requestPromptWithStyle };
+      return { success: false, error: "No image data returned from Imagen 3 API", requestPrompt: requestPromptWithStyle, expandedPrompt: expandedPromptForExport };
     }
     const imageData = predictions[0]?.bytesBase64Encoded;
     if (!imageData) {
       console.error("Imagen 3 API returned prediction but no image bytes. Full response:", JSON.stringify(result, null, 2));
-      return { success: false, error: "No image bytes in Imagen 3 response", requestPrompt: requestPromptWithStyle };
+      return { success: false, error: "No image bytes in Imagen 3 response", requestPrompt: requestPromptWithStyle, expandedPrompt: expandedPromptForExport };
     }
 
     if (userId && storyId) {
@@ -988,17 +1149,17 @@ export async function generateImageFromImagen3(
         const imageName = `imagen3_${Date.now()}_${safePrompt}`;
         const imageBuffer = Buffer.from(imageData, 'base64');
         const firebaseUrl = await uploadImageBufferToFirebaseStorage(imageBuffer, userId, storyId, imageName, 'image/png');
-        return { success: true, imageUrl: firebaseUrl, requestPrompt: requestPromptWithStyle };
+        return { success: true, imageUrl: firebaseUrl, requestPrompt: requestPromptWithStyle, expandedPrompt: expandedPromptForExport };
       } catch (uploadError) {
         console.error("Error uploading image to Firebase Storage:", uploadError);
-        return { success: true, imageUrl: `data:image/png;base64,${imageData}`, requestPrompt: requestPromptWithStyle };
+        return { success: true, imageUrl: `data:image/png;base64,${imageData}`, requestPrompt: requestPromptWithStyle, expandedPrompt: expandedPromptForExport };
       }
     }
-    return { success: true, imageUrl: `data:image/png;base64,${imageData}`, requestPrompt: requestPromptWithStyle };
+    return { success: true, imageUrl: `data:image/png;base64,${imageData}`, requestPrompt: requestPromptWithStyle, expandedPrompt: expandedPromptForExport };
   } catch (error: unknown) {
     console.error("Error calling Imagen 3 API:", error);
     const message = error instanceof Error ? error.message : "An unknown error occurred while generating the image.";
-    return { success: false, error: message, requestPrompt: requestPromptWithStyle };
+    return { success: false, error: message, requestPrompt: requestPromptWithStyle, expandedPrompt: expandedPromptForExport };
   }
 }
 
@@ -1008,7 +1169,7 @@ export async function generateImageFromPrompt(
   storyId?: string,
   provider: 'picsart' | 'gemini' | 'imagen3' = 'picsart',
   styleId?: string
-): Promise<{ success: boolean; imageUrl?: string; error?: string; requestPrompt?: string }> {
+): Promise<{ success: boolean; imageUrl?: string; error?: string; requestPrompt?: string; expandedPrompt?: string }> {
   if (provider === 'gemini') {
     return generateImageFromGemini(originalPrompt, userId, storyId);
   }
@@ -1057,6 +1218,7 @@ export async function generateImageFromPrompt(
   }
 
   const requestPrompt = finalPrompt;
+  const expandedPromptForExport = finalPrompt; // Store the full prompt with entity references + style that's sent to API
   const negativePrompt = "ugly, tiling, poorly drawn hands, poorly drawn feet, poorly drawn face, out of frame, extra limbs, disfigured, deformed, body out of frame, blurry, bad anatomy, blurred, watermark, grainy, signature, cut off, draft, low quality, worst quality, SFW, text, words, letters, nsfw, nude";
   const width = 1024; const height = 576; const count = 1;
 
@@ -1073,12 +1235,12 @@ export async function generateImageFromPrompt(
       console.error("PicsArt API Error Response Text:", responseText);
       let errorData: { message?: string; title?: string; };
       try { errorData = JSON.parse(responseText); } catch { errorData = { message: `PicsArt API request failed with status ${response.status}. Response: ${responseText}` }; }
-      return { success: false, error: errorData.message || errorData.title || `PicsArt API request failed: ${response.status}`, requestPrompt };
+      return { success: false, error: errorData.message || errorData.title || `PicsArt API request failed: ${response.status}`, requestPrompt, expandedPrompt: expandedPromptForExport };
     }
 
     const result = JSON.parse(responseText);
     if (response.status === 202 && result.status === 'ACCEPTED' && result.inference_id) {
-      const pollResult = await pollForPicsArtImage(result.inference_id, picsartApiKey!, requestPrompt);
+      const pollResult = await pollForPicsArtImage(result.inference_id, picsartApiKey!, requestPrompt, expandedPromptForExport);
       if (pollResult.success && pollResult.imageUrl && userId && storyId) {
         try {
           const safePrompt = originalPrompt.substring(0, 30).replace(/[^a-z0-9]/gi, '_').toLowerCase();
@@ -1097,21 +1259,21 @@ export async function generateImageFromPrompt(
           const safePrompt = originalPrompt.substring(0, 30).replace(/[^a-z0-9]/gi, '_').toLowerCase();
           const imageName = `${Date.now()}_${safePrompt}`;
           const firebaseUrl = await uploadImageToFirebaseStorage(result.data[0].url, userId, storyId, imageName);
-          return { success: true, imageUrl: firebaseUrl, requestPrompt };
+          return { success: true, imageUrl: firebaseUrl, requestPrompt, expandedPrompt: expandedPromptForExport };
         } catch (uploadError) {
           console.error("Error uploading image to Firebase Storage:", uploadError);
-          return { success: true, imageUrl: result.data[0].url, requestPrompt };
+          return { success: true, imageUrl: result.data[0].url, requestPrompt, expandedPrompt: expandedPromptForExport };
         }
       }
-      return { success: true, imageUrl: result.data[0].url, requestPrompt };
+      return { success: true, imageUrl: result.data[0].url, requestPrompt, expandedPrompt: expandedPromptForExport };
     } else {
       const errorDetail = `Status: ${response.status}, Body: ${JSON.stringify(result)}`;
-      return { success: false, error: `Unexpected response format from PicsArt API after POST. Details: ${errorDetail}`, requestPrompt };
+      return { success: false, error: `Unexpected response format from PicsArt API after POST. Details: ${errorDetail}`, requestPrompt, expandedPrompt: expandedPromptForExport };
     }
   } catch (error: unknown) {
     console.error("Error calling PicsArt API:", error);
     const message = error instanceof Error ? error.message : "An unknown error occurred while generating the image.";
-    return { success: false, error: message, requestPrompt };
+    return { success: false, error: message, requestPrompt, expandedPrompt: expandedPromptForExport };
   }
 }
 
@@ -1119,9 +1281,10 @@ async function pollForPicsArtImage(
   inferenceId: string,
   apiKey: string,
   requestPrompt: string,
+  expandedPrompt: string,
   maxAttempts = 20,
   delayMs = 6000
-): Promise<{ success: boolean; imageUrl?: string; error?: string; requestPrompt?: string }> {
+): Promise<{ success: boolean; imageUrl?: string; error?: string; requestPrompt?: string; expandedPrompt?: string }> {
   const pollingUrl = `https://genai-api.picsart.io/v1/text2image/inferences/${inferenceId}`;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
@@ -1132,29 +1295,29 @@ async function pollForPicsArtImage(
         result = JSON.parse(responseText);
       } catch {
         if (response.status === 202 && attempt < maxAttempts) { await new Promise(resolve => setTimeout(resolve, delayMs)); continue; }
-        return { success: false, error: `PicsArt Polling: Failed to parse JSON. Status: ${response.status}, Body: ${responseText}`, requestPrompt };
+        return { success: false, error: `PicsArt Polling: Failed to parse JSON. Status: ${response.status}, Body: ${responseText}`, requestPrompt, expandedPrompt };
       }
       if (response.status === 200) {
         let imageUrl: string | undefined;
         if (result.data && result.data.url) { imageUrl = result.data.url; }
         else if (result.data && Array.isArray(result.data) && result.data.length > 0 && result.data[0].url) { imageUrl = result.data[0].url; }
         else if (result.url) { imageUrl = result.url; }
-        if (imageUrl) { return { success: true, imageUrl, requestPrompt }; }
-        else { return { success: false, error: "PicsArt Polling: Image success (200 OK) but no URL found.", requestPrompt }; }
+        if (imageUrl) { return { success: true, imageUrl, requestPrompt, expandedPrompt }; }
+        else { return { success: false, error: "PicsArt Polling: Image success (200 OK) but no URL found.", requestPrompt, expandedPrompt }; }
       } else if (response.status === 202) {
         if (attempt < maxAttempts) { await new Promise(resolve => setTimeout(resolve, delayMs)); }
       } else {
-        return { success: false, error: `PicsArt Polling: Request failed with status ${response.status}. Details: ${JSON.stringify(result)}`, requestPrompt };
+        return { success: false, error: `PicsArt Polling: Request failed with status ${response.status}. Details: ${JSON.stringify(result)}`, requestPrompt, expandedPrompt };
       }
     } catch (error: unknown) {
       if (attempt >= maxAttempts) {
         const message = error instanceof Error ? error.message : "PicsArt Polling: Error after multiple attempts";
-        return { success: false, error: message, requestPrompt };
+        return { success: false, error: message, requestPrompt, expandedPrompt };
       }
       await new Promise(resolve => setTimeout(resolve, delayMs));
     }
   }
-  return { success: false, error: "Image generation timed out after polling.", requestPrompt };
+  return { success: false, error: "Image generation timed out after polling.", requestPrompt, expandedPrompt };
 }
 
 export async function listGoogleScriptModels(userId: string): Promise<{ success: boolean; models?: Array<{ id: string; name: string }>; error?: string }> {
@@ -1174,8 +1337,8 @@ export async function listGoogleScriptModels(userId: string): Promise<{ success:
     const data = await response.json();
     
     const scriptModels = data.models
-      .filter((model: any) => model.supportedGenerationMethods && model.supportedGenerationMethods.includes('generateContent') && model.name.includes('gemini')) // Filter for gemini models supporting generateContent
-      .map((model: any) => ({
+      .filter((model: {supportedGenerationMethods?: string[], name: string}) => model.supportedGenerationMethods && model.supportedGenerationMethods.includes('generateContent') && model.name.includes('gemini')) // Filter for gemini models supporting generateContent
+      .map((model: {name: string, displayName?: string}) => ({
         id: model.name.startsWith('models/') ? model.name.substring('models/'.length) : model.name, // Strip "models/" prefix for Genkit compatibility
         name: model.displayName || model.name,
       }))
@@ -1223,7 +1386,7 @@ export async function listPerplexityModels(userId: string): Promise<{ success: b
     }
 
     const scriptModels = modelsArray
-      .map((model: any) => ({
+      .map((model: {id: string, name?: string, display_name?: string}) => ({
         id: model.id,
         // Prefer a display name if available, otherwise use id.
         // Some Perplexity models might have more user-friendly names.

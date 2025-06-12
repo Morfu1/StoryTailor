@@ -48,9 +48,15 @@ For each chunk, you need to generate a specific number of image prompts as indic
 **For THIS CHUNK, generate {{promptCount}} image prompt(s). Each prompt MUST:**
 1.  **Visualize THIS CHUNK's content**: The image should depict characters, actions, and settings explicitly mentioned or clearly implied in THIS narration chunk.
 2.  **Include a SPECIFIC Location**: Use an @LocationName from the LOCATION REFERENCE. If no location is directly mentioned in the chunk, infer the most logical @LocationName based on the chunk's content, the overall story script, and available location references. DO NOT invent new locations; use only those in the LOCATION REFERENCE.
-3.  **Follow Prompt Structure**: "[Camera shot, e.g., Wide shot, Close-up] of @CharacterName [action/emotion/pose, e.g., looking thoughtful, running quickly] IN @LocationName. [Interaction with @ItemName if relevant, e.g., holding @MagicWand]. [Lighting/mood, e.g., Sunny morning, Dark and stormy night]. [Key visual details from THIS narration chunk]."
-    *   Example: "Eye-level medium shot of @Rusty trotting through @ForestPath IN @WhisperingWoods. He is sniffing the ground curiously. Morning light filters through the canopy."
-4.  **Use @Placeholders Correctly**: ONLY use @placeholders for entities listed in the CHARACTER, LOCATION, and ITEM REFERENCE sections. Convert entity names to PascalCase for @references (e.g., "Old Man Grumbles" becomes @OldManGrumbles). Do NOT include descriptions alongside @placeholders; they will be expanded automatically.
+3.  **Follow Prompt Structure**: "[Camera shot, e.g., Wide shot, Close-up] of @CharacterName [action/emotion/pose, e.g., looking thoughtful, running quickly] in @LocationName. [Interaction with @ItemName if relevant, e.g., holding @MagicWand]. [Lighting/mood, e.g., Sunny morning, Dark and stormy night]. [Key visual details from THIS narration chunk]."
+    *   Example: "Eye-level medium shot of @Rusty trotting through @ForestPath in @WhisperingWoods. He is sniffing the ground curiously. Morning light filters through the canopy."
+4.  **CRITICAL: Use @Placeholders Instead of Full Names**: For ANY entity mentioned in the CHARACTER, LOCATION, and ITEM REFERENCE sections above, you MUST use @placeholder format, NOT the full entity name. Convert entity names to PascalCase for @references:
+    *   "Zara" → @Zara
+    *   "ALEX" → @ALEX  
+    *   "Zara's Backyard" → @ZarasBackyard
+    *   "Old Man Grumbles" → @OldManGrumbles
+    *   "Magic Sword" → @MagicSword
+    Do NOT write the full entity name or description in the prompt; use ONLY the @placeholder. The descriptions will be expanded automatically during image generation.
 5.  **No Style Descriptors**: ABSOLUTELY DO NOT include artistic style descriptors (like "3D rendered", "cartoon style", "photorealistic", "watercolor"). Style is handled separately.
 6.  **Natural Language**: Write prompts as if describing a scene to a human. Use present tense.
 ---
@@ -68,6 +74,19 @@ Action prompts should be:
 Analyze the full STORY SCRIPT and identify {{numImages}} key scenes that need visualization.
 For each scene, generate one image prompt and one corresponding action prompt, following all the rules above (especially including a @LocationName and adhering to the prompt structure).
 {{/if}}
+
+**EXAMPLES OF CORRECT @PLACEHOLDER USAGE:**
+✅ CORRECT: "Wide shot of @Zara rushing to help @ALEX in @ZarasBackyard. Sunny afternoon."
+❌ WRONG: "Wide shot of Zara rushing to help ALEX in Zara's Backyard. Sunny afternoon."
+❌ WRONG: "Wide shot of Zara rushing to help ALEX in @Zara's Backyard. Sunny afternoon."
+❌ WRONG: "Wide shot of Zara rushing to help ALEX in @Zara'sBackyard. Sunny afternoon."
+❌ WRONG: "Wide shot of a young inventor rushing to help a robot in a backyard. Sunny afternoon."
+
+✅ CORRECT: "Close-up of @ALEX holding @LearningPods in its metallic hands."
+❌ WRONG: "Close-up of ALEX holding Learning Pods in its metallic hands."
+
+✅ CORRECT: "Medium shot of @Zara examining @ALEX in @ZarasBackyard." (use lowercase "in")
+❌ WRONG: "Medium shot of @Zara examining @ALEX IN @ZarasBackyard." (avoid uppercase "IN")
 
 **OUTPUT FORMAT (Strict JSON):**
 Return your response as a JSON object with two keys:

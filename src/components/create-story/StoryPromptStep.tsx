@@ -123,7 +123,7 @@ export function StoryPromptStep({ storyState }: StoryPromptStepProps) {
         debouncedSaveFnRef.current.cancel();
       }
     };
-  }, [storyData, googleKeyMissing, activeTab, updateStoryData, toast, setIsAutoSaving]); // Removed prepareScriptChunksAI, saveStory
+  }, [storyData, googleKeyMissing, activeTab, updateStoryData, toast, setIsAutoSaving, aiProvider, googleScriptModel, perplexityModel]); // Removed prepareScriptChunksAI, saveStory
 
   const autoSaveStory = useCallback((title: string, script: string) => {
     if (debouncedSaveFnRef.current) {
@@ -409,7 +409,7 @@ export function StoryPromptStep({ storyState }: StoryPromptStepProps) {
                   <div className="space-y-2">
                     <Label htmlFor="google-script-model">Google Model</Label>
                     <Select
-                      value={googleScriptModel || (availableGoogleScriptModels && availableGoogleScriptModels.length > 0 ? availableGoogleScriptModels[0].id : '')}
+                      value={googleScriptModel || storyData.googleScriptModel || (availableGoogleScriptModels && availableGoogleScriptModels.length > 0 ? availableGoogleScriptModels[0].id : '')}
                       onValueChange={(value) => setGoogleScriptModel(value)}
                       disabled={isLoading.script || apiKeysLoading || isLoadingGoogleScriptModels || !availableGoogleScriptModels || availableGoogleScriptModels.length === 0}
                     >

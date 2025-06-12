@@ -3,6 +3,195 @@ import JSZip from 'jszip';
 import { Story, GeneratedImage } from '@/types/story'; // Added GeneratedImage
 
 /**
+ * Expand entity references like Picsart does - replace @references with full descriptions
+ */
+async function expandEntityReferencesForExport(prompt: string, storyData: Story): Promise<string> {
+  try {
+    const { parseEntityReferences } = await import('@/app/(app)/assemble-video/utils');
+    return parseEntityReferences(prompt, storyData);
+  } catch (error) {
+    console.warn('Failed to expand entity references:', error);
+    return prompt;
+  }
+}
+
+/**
+ * Expand entity references like Imagen3 does - replace @references with entity names only
+ */
+async function expandEntityNamesOnlyForExport(prompt: string, storyData: Story): Promise<string> {
+  try {
+    const { extractEntityNames, nameToReference } = await import('@/app/(app)/assemble-video/utils');
+    
+    // Helper function to normalize references for robust comparison
+    const normalizeRefForComparison = (ref: string): string => {
+      if (!ref.startsWith('@')) return ref.toLowerCase().replace(/[^a-z0-9]/g, '');
+      return '@' + ref.substring(1).toLowerCase().replace(/[^a-z0-9]/g, '');
+    };
+    
+    let expandedPrompt = prompt;
+    const entityReferencesInPrompt = Array.from(new Set(prompt.match(/@[A-Za-z0-9_]+/g) || []));
+    const { characters, items, locations } = extractEntityNames(storyData);
+    
+    for (const ref of entityReferencesInPrompt) {
+      let actualEntityName: string | null = null;
+      
+      const normalizedRef = normalizeRefForComparison(ref);
+      
+      // Check all entity types with case-insensitive matching
+      const allEntityNames = [...characters, ...items, ...locations];
+      for (const storyEntityName of allEntityNames) {
+        const generatedRef = nameToReference(storyEntityName);
+        const normalizedGeneratedRef = normalizeRefForComparison(generatedRef);
+        if (normalizedGeneratedRef === normalizedRef) {
+          actualEntityName = storyEntityName;
+          break;
+        }
+      }
+      
+      if (actualEntityName) {
+        expandedPrompt = expandedPrompt.replace(ref, actualEntityName);
+      }
+    }
+    
+    return expandedPrompt;
+  } catch (error) {
+    console.warn('Failed to expand entity names:', error);
+    return prompt;
+  }
+}
+
+/**
+ * Generate the full prompt with entity references + style that would be sent to Picsart
+ */
+async function generateFullPicsartPromptForExport(prompt: string, storyData: Story, style: string): Promise<string> {
+  try {
+    const { parseEntityReferences } = await import('@/app/(app)/assemble-video/utils');
+    
+    // First expand entity references
+    let expandedPrompt = prompt;
+    if (storyData.detailsPrompts) {
+      expandedPrompt = parseEntityReferences(prompt, storyData);
+    }
+    
+    // Then apply style
+    if (style) {
+      // Simply append the style string to the expanded prompt
+      expandedPrompt = `${expandedPrompt}, ${style}`;
+    }
+    
+    return expandedPrompt;
+  } catch (error) {
+    console.warn('Failed to generate full Picsart prompt:', error);
+    return prompt;
+  }
+}
+
+/**
+ * Generate the full structured prompt that would be sent to Imagen 3
+ */
+async function generateFullImagenPromptForExport(prompt: string, storyData: Story, style: string): Promise<string> {
+  try {
+    const { extractEntityNames, nameToReference } = await import('@/app/(app)/assemble-video/utils');
+    
+    const descriptionParts: string[] = [];
+    let actionPromptPart = prompt;
+    
+    // Helper function to normalize references for robust comparison
+    const normalizeRefForComparison = (ref: string): string => {
+      if (!ref.startsWith('@')) return ref.toLowerCase().replace(/[^a-z0-9]/g, '');
+      return '@' + ref.substring(1).toLowerCase().replace(/[^a-z0-9]/g, '');
+    };
+    
+    if (storyData.detailsPrompts) {
+      const entityReferencesInPrompt = Array.from(new Set(prompt.match(/@[A-Za-z0-9_]+/g) || []));
+      const { characters, items, locations } = extractEntityNames(storyData);
+      
+      for (const ref of entityReferencesInPrompt) {
+        let actualEntityName: string | null = null;
+        let entityType: 'character' | 'item' | 'location' | null = null;
+        let descriptionText: string | null = null;
+        
+        const normalizedRef = normalizeRefForComparison(ref);
+        
+        // Find the entity with case-insensitive matching
+        // Check characters
+        for (const storyEntityName of characters) {
+          const generatedRef = nameToReference(storyEntityName);
+          const normalizedGeneratedRef = normalizeRefForComparison(generatedRef);
+          if (normalizedGeneratedRef === normalizedRef) {
+            actualEntityName = storyEntityName;
+            entityType = 'character';
+            break;
+          }
+        }
+        
+        // Check items if not found
+        if (!actualEntityName) {
+          for (const storyEntityName of items) {
+            const generatedRef = nameToReference(storyEntityName);
+            const normalizedGeneratedRef = normalizeRefForComparison(generatedRef);
+            if (normalizedGeneratedRef === normalizedRef) {
+              actualEntityName = storyEntityName;
+              entityType = 'item';
+              break;
+            }
+          }
+        }
+        
+        // Check locations if not found
+        if (!actualEntityName) {
+          for (const storyEntityName of locations) {
+            const generatedRef = nameToReference(storyEntityName);
+            const normalizedGeneratedRef = normalizeRefForComparison(generatedRef);
+            if (normalizedGeneratedRef === normalizedRef) {
+              actualEntityName = storyEntityName;
+              entityType = 'location';
+              break;
+            }
+          }
+        }
+        
+        if (actualEntityName && entityType) {
+          // Extract description from the appropriate prompts section
+          const promptsSection = entityType === 'character' ? storyData.detailsPrompts.characterPrompts :
+                                entityType === 'item' ? storyData.detailsPrompts.itemPrompts :
+                                storyData.detailsPrompts.locationPrompts;
+          
+          if (promptsSection) {
+            const escapedEntityName = actualEntityName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const entityPattern = new RegExp(`^\\s*${escapedEntityName}\\s*\\n(.*?)(?=\\n\\n|$)`, "ms");
+            const entityMatch = promptsSection.match(entityPattern);
+            
+            if (entityMatch && entityMatch[1]) {
+              descriptionText = entityMatch[1].trim();
+              descriptionParts.push(`Entity: ${actualEntityName}\nDescription: ${descriptionText}`);
+              actionPromptPart = actionPromptPart.replace(ref, actualEntityName);
+            }
+          }
+        }
+      }
+    }
+    
+    const structuredPromptParts: string[] = [];
+    if (descriptionParts.length > 0) {
+      structuredPromptParts.push(descriptionParts.join('\n-----\n'));
+    }
+    structuredPromptParts.push(actionPromptPart);
+    
+    let basePrompt = structuredPromptParts.join('\n\n');
+    
+    if (style) {
+      basePrompt += `\n\nUse the following artistic style:\n${style}`;
+    }
+    
+    return basePrompt;
+  } catch (error) {
+    console.warn('Failed to generate full Imagen prompt:', error);
+    return prompt;
+  }
+}
+
+/**
  * Add WAV headers to raw PCM data from Google TTS
  * Google TTS returns 24kHz, 16-bit, mono PCM data
  */
@@ -156,9 +345,51 @@ export async function downloadStoryAsZip(storyData: Story) {
   const scenePromptsFolder = zip.folder('Scene_Prompts');
   if (scenePromptsFolder && storyData.imagePrompts) {
     let scenePromptsText = '=== SCENE IMAGE PROMPTS ===\n\n';
-    storyData.imagePrompts.forEach((prompt: string, index: number) => {
-      scenePromptsText += `Scene ${index + 1}:\n${prompt}\n\n`;
-    });
+    
+    for (let index = 0; index < storyData.imagePrompts.length; index++) {
+      const prompt = storyData.imagePrompts[index];
+      scenePromptsText += `Scene ${index + 1}:\n`;
+      scenePromptsText += `Original Prompt: ${prompt}\n`;
+      
+      // Always generate the COMPLETE prompts that get sent to each AI
+      try {
+        let picsartExpanded = prompt;
+        let imagenExpanded = prompt;
+        
+        if (storyData.detailsPrompts) {
+          // Get style for both providers
+          let picsartStyle = '';
+          let imagenStyle = '';
+          
+          if (storyData.imageStyleId && storyData.imageStyleId !== 'undefined' && storyData.imageStyleId !== 'null') {
+            const { getStylePromptForProvider } = await import('@/utils/imageStyleUtils');
+            picsartStyle = getStylePromptForProvider(storyData.imageStyleId, 'picsart');
+            imagenStyle = getStylePromptForProvider(storyData.imageStyleId, 'imagen3');
+          } else {
+            // Use default style
+            const { getStylePromptForProvider } = await import('@/utils/imageStyleUtils');
+            picsartStyle = getStylePromptForProvider(undefined, 'picsart');
+            imagenStyle = getStylePromptForProvider(undefined, 'imagen3');
+          }
+          
+          // For Picsart: Generate the complete prompt with entity descriptions + style (what actually gets sent to Picsart API)
+          picsartExpanded = await generateFullPicsartPromptForExport(prompt, storyData, picsartStyle);
+          
+          // For Imagen 3: Generate the complete structured prompt (what actually gets sent to Imagen3 API)
+          imagenExpanded = await generateFullImagenPromptForExport(prompt, storyData, imagenStyle);
+        }
+        
+        scenePromptsText += `Picsart Expanded Prompt: ${picsartExpanded}\n`;
+        scenePromptsText += `Imagen 3 Expanded Prompt: ${imagenExpanded}\n`;
+      } catch (error) {
+        console.warn('Failed to generate expanded prompts for export:', error);
+        scenePromptsText += `Note: Could not generate expanded prompts. Original prompt preserved above.\n`;
+      }
+      
+
+      scenePromptsText += '\n';
+    }
+    
     scenePromptsFolder.file('scene_image_prompts.txt', scenePromptsText);
   }
 
@@ -228,7 +459,7 @@ export async function downloadStoryAsZip(storyData: Story) {
       if(storyData.imageStyleId) toolsInfo += `Style ID: ${storyData.imageStyleId}\n`;
       toolsInfo += 'Format: PNG/JPEG\n\n';
     }
-    toolsInfo += '=== STORY GENERATION ===\nService: Google Gemini (via Genkit)\nModel: gemini-1.5-flash (or equivalent based on implementation)\n\n';
+    toolsInfo += '=== STORY GENERATION ===\nService: Google Gemini (via Genkit)\nModel: gemini-2.5-flash-preview-05-20 (or equivalent based on implementation)\n\n';
     toolsUsedFolder.file('ai_tools_details.txt', toolsInfo);
   }
 

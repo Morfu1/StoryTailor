@@ -531,9 +531,9 @@ export default function AssembleVideoPage() {
 
         if (result.success && result.imageUrl) {
           newImages.push({
+            sceneIndex: i, // Use the loop index as scene index
             requestPrompt: result.requestPrompt || expandedPrompt, // Store the prompt sent to API
             originalPrompt: originalPromptWithReferences, // Store original prompt with @references
-            expandedPrompt: expandedPrompt, // Store expanded prompt
             imageUrl: result.imageUrl,
             isChapterGenerated: true, // Mark as generated for this chapter
             chapterNumber: currentChapter, // Assign current chapter number
@@ -629,9 +629,9 @@ export default function AssembleVideoPage() {
 
       if (result.success && result.imageUrl) {
         const newImage: GeneratedImage = {
+          sceneIndex: storyData.generatedImages[selectedTimelineImage].sceneIndex,
           requestPrompt: result.requestPrompt || finalPromptToGenerate, // Store the prompt sent to API
           originalPrompt: editedPrompt, // This is the prompt with @references
-          expandedPrompt: finalPromptToGenerate, // This is the prompt sent to the AI
           imageUrl: result.imageUrl,
           isChapterGenerated: storyData.generatedImages[selectedTimelineImage].isChapterGenerated,
           chapterNumber: storyData.generatedImages[selectedTimelineImage].chapterNumber,
@@ -703,13 +703,10 @@ export default function AssembleVideoPage() {
 
     // Create the updated image object based on the history
     const revertedImage: GeneratedImage = {
-      // Assuming historyImage.expandedPrompt is the prompt that was sent to the API for that version
-      // or historyImage.originalPrompt if expandedPrompt wasn't stored in history previously.
-      // For safety, let's use originalPrompt if expanded is not there.
-      requestPrompt: historyImage.expandedPrompt || historyImage.originalPrompt,
+      sceneIndex: storyData.generatedImages[selectedTimelineImage].sceneIndex,
+      requestPrompt: historyImage.requestPrompt || historyImage.originalPrompt,
       imageUrl: historyImage.imageUrl,
       originalPrompt: historyImage.originalPrompt, // Use history's original prompt
-      expandedPrompt: historyImage.expandedPrompt, // Use history's expanded prompt
       isChapterGenerated: storyData.generatedImages[selectedTimelineImage].isChapterGenerated,
       chapterNumber: storyData.generatedImages[selectedTimelineImage].chapterNumber,
       history: storyData.generatedImages[selectedTimelineImage].history,
