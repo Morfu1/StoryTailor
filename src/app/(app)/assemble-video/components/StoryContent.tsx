@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { saveStory } from "@/actions/firestoreStoryActions"; // Corrected import
+import { saveStory } from '@/actions/baserowStoryActions'; // Corrected import
 import {
   AlignCenter,
   AlignJustify,

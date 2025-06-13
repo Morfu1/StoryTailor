@@ -2,7 +2,7 @@ import {genkit} from 'genkit';
 import {googleAI} from '@genkit-ai/googleai';
 import { defineFlow } from '@genkit-ai/flow'; // Changed import
 import { z } from 'zod';
-import { getUserApiKeys } from '../actions/apiKeyActions'; // Adjust path if necessary
+import { getUserApiKeys } from '../actions/baserowApiKeyActions'; // Adjust path if necessary
 
 // Define schemas separately
 const perplexityInputSchema = z.object({

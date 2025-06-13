@@ -25,7 +25,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 // Corrected import path using alias
-import { deleteStory } from '@/actions/firestoreStoryActions';
+import { deleteStory } from '@/actions/baserowStoryActions';
 
 export default function DashboardPage() {
   const { user } = useAuth();

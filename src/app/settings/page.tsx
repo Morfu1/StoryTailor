@@ -12,7 +12,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Header } from '@/components/header';
 import { useAuth } from '@/components/auth-provider';
-import { saveUserApiKeys, getUserApiKeys } from '@/actions/apiKeyActions';
+import { saveUserApiKeys, getUserApiKeys } from '@/actions/baserowApiKeyActions';
 import type { UserApiKeys } from '@/types/apiKeys';
 
 interface CreditBalance {

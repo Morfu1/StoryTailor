@@ -15,7 +15,7 @@ import {
   getStory,
   saveStory,
   updateStoryTimeline,
-} from "@/actions/firestoreStoryActions"; // Corrected import path
+} from '@/actions/baserowStoryActions'; // Corrected import path
 import { generateImageFromPrompt } from "@/actions/storyActions"; // Kept for this function
 import type { GeneratedImage } from "@/types/story";
 import {

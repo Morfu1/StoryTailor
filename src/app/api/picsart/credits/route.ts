@@ -1,7 +1,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { firebaseAdmin } from '@/lib/firebaseAdmin'; // For token verification
-import { getUserApiKeys } from '@/actions/apiKeyActions'; // To fetch user's Picsart key
+import { getUserApiKeys } from '@/actions/baserowApiKeyActions'; // To fetch user's Picsart key
 
 export async function GET(request: NextRequest) {
   try {

@@ -4,13 +4,13 @@
  */
 
 /**
- * Refresh an expired Firebase Storage URL by calling the server action
+ * Refresh an expired MinIO Storage URL by calling the server action
  */
 async function refreshExpiredUrl(expiredUrl: string): Promise<string | null> {
   try {
     // Call server action to refresh the URL
-    const { refreshFirebaseStorageUrlClient } = await import('@/actions/firebaseStorageClientActions');
-    return await refreshFirebaseStorageUrlClient(expiredUrl);
+    const { refreshMinIOStorageUrlClient } = await import('@/actions/minioStorageClientActions');
+    return await refreshMinIOStorageUrlClient(expiredUrl);
   } catch (error) {
     console.error('Error refreshing URL:', error);
     return null;

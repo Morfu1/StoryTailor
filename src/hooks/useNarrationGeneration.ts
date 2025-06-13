@@ -1,7 +1,7 @@
 import { useCallback, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { generateNarrationAudio } from '@/actions/storyActions';
-import { saveStory } from '@/actions/firestoreStoryActions';
+import { saveStory } from '@/actions/baserowStoryActions';
 import { prepareScriptChunksAI, calculateTotalNarrationDuration } from '@/utils/narrationUtils';
 // import type { Story } from '@/types/story'; // Unused
 import type { UseStoryStateReturn } from './useStoryState';

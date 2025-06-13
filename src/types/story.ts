@@ -79,6 +79,7 @@ export interface Story {
   userId: string;
   title: string;
   userPrompt: string;
+  status?: string; // Story status: draft, generating, completed, error
   generatedScript?: string;
   detailsPrompts?: StoryCharacterLocationItemPrompts;
   narrationAudioUrl?: string; // Data URI or URL

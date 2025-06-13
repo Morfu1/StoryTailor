@@ -16,8 +16,8 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from '@/components/ui/button';
-import { cleanupBrokenImages, getStory, deleteStory, saveStory } from '@/actions/firestoreStoryActions'; // Updated import
-import { getUserApiKeys } from '@/actions/apiKeyActions';
+import { cleanupBrokenImages, getStory, deleteStory, saveStory } from '@/actions/baserowStoryActions'; // Updated import
+import { getUserApiKeys } from '@/actions/baserowApiKeyActions';
 import { listGoogleScriptModels } from '@/actions/storyActions'; // Removed listPerplexityModels
 import { prepareScriptChunksAI } from '@/utils/narrationUtils';
 import { determineCurrentStep } from '@/utils/storyHelpers';
@@ -116,7 +116,7 @@ export default function CreateStoryPage() {
       setPageLoading(true);
       setFirebaseError(null);
       
-      getStory(storyId, user.uid) // Uses getStory from firestoreStoryActions
+      getStory(storyId, user.uid) // Uses getStory from baserowStoryActions
         .then(async response => {
           if (response.success && response.data) {
             let loadedStory = response.data;
@@ -508,7 +508,7 @@ export default function CreateStoryPage() {
               handleSetLoading('save', true);
               
               try {
-                // Use the statically imported saveStory from firestoreStoryActions
+                // Use the statically imported saveStory from baserowStoryActions
                 const result = await saveStory(storyData, storyData.userId);
                 if (result.success) {
                   toast({ 

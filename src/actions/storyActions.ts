@@ -33,13 +33,13 @@ import {
 import type { ElevenLabsVoice } from '@/types/story'; // Story, AdminTimestamp might be used later
 // import type { Timestamp as AdminTimestamp } from 'firebase-admin/firestore'; // Unused based on lint
 // import { revalidatePath } from 'next/cache'; // Unused based on lint
-import { getUserApiKeys } from './apiKeyActions';
+import { getUserApiKeys } from './baserowApiKeyActions';
 // import type { UserApiKeys } from '@/types/apiKeys'; // Unused based on lint
 import { 
-  uploadAudioToFirebaseStorage, 
-  uploadImageToFirebaseStorage, 
-  uploadImageBufferToFirebaseStorage 
-} from './firebaseStorageActions'; // Import necessary storage actions
+  uploadAudioToMinIOStorage, 
+  uploadImageToMinIOStorage,
+  uploadImageBufferToMinIOStorage
+} from './minioStorageActions'; // Import necessary storage actions
 
 // Prompt templates (extracted or simplified from original flow files)
 const titlePromptTemplate = 'You are an expert at creating catchy and concise titles for stories.\n' +
@@ -497,11 +497,11 @@ export async function generateNarrationAudio(actionInput: GenerateNarrationAudio
         try {
           const fileExtension = result.audioDataUri.startsWith('data:audio/wav;base64,') ? 'wav' : 'mp3';
           const filename = `narration_chunk_${actionInput.chunkId}.${fileExtension}`;
-          const storageUrl = await uploadAudioToFirebaseStorage(result.audioDataUri, actionInput.userId, actionInput.storyId, filename);
+          const storageUrl = await uploadAudioToMinIOStorage(result.audioDataUri, actionInput.userId, actionInput.storyId, filename);
           console.log(`Uploaded narration chunk ${actionInput.chunkId} to: ${storageUrl}`);
           return { success: true, data: { audioStorageUrl: storageUrl, duration } };
         } catch (uploadError) {
-          console.error(`Failed to upload narration chunk ${actionInput.chunkId} to Firebase Storage:`, uploadError);
+          console.error(`Failed to upload narration chunk ${actionInput.chunkId} to MinIO Storage:`, uploadError);
           return { success: false, error: `Failed to upload audio for chunk ${actionInput.chunkId}: ${(uploadError as Error).message}` };
         }
       } else {
@@ -949,10 +949,10 @@ export async function generateImageFromGemini(
         const safePrompt = originalPrompt.substring(0, 30).replace(/[^a-z0-9]/gi, '_').toLowerCase();
         const imageName = `gemini_${Date.now()}_${safePrompt}`;
         const imageBuffer = Buffer.from(imageData, 'base64');
-        const firebaseUrl = await uploadImageBufferToFirebaseStorage(imageBuffer, userId, storyId, imageName, 'image/png');
+        const firebaseUrl = await uploadImageBufferToMinIOStorage(imageBuffer, userId, storyId, imageName, 'image/png');
         return { success: true, imageUrl: firebaseUrl, requestPrompt };
       } catch (uploadError) {
-        console.error("Error uploading image to Firebase Storage:", uploadError);
+        console.error("Error uploading image to MinIO Storage:", uploadError);
         return { success: true, imageUrl: `data:image/png;base64,${imageData}`, requestPrompt };
       }
     }
@@ -981,7 +981,7 @@ export async function generateImageFromImagen3(
 
   if (userId && storyId) {
     try {
-      const { getStory } = await import('@/actions/firestoreStoryActions'); 
+      const { getStory } = await import('@/actions/baserowStoryActions'); 
       const storyResult = await getStory(storyId, userId);
       if (storyResult.success && storyResult.data) {
         const { nameToReference, extractEntityNames } = await import('@/app/(app)/assemble-video/utils');
@@ -1088,7 +1088,7 @@ export async function generateImageFromImagen3(
     } catch (error) { console.warn("[generateImageFromImagen3] Failed to apply style from styleId:", error); }
   } else if (userId && storyId) {
     try {
-      const { getStory } = await import('@/actions/firestoreStoryActions'); 
+      const { getStory } = await import('@/actions/baserowStoryActions'); 
       const storyResult = await getStory(storyId, userId);
       if (storyResult.success && storyResult.data?.imageStyleId) {
         const { getStylePromptForProvider } = await import('@/utils/imageStyleUtils');
@@ -1148,10 +1148,10 @@ export async function generateImageFromImagen3(
         const safePrompt = originalPrompt.substring(0, 30).replace(/[^a-z0-9]/gi, '_').toLowerCase();
         const imageName = `imagen3_${Date.now()}_${safePrompt}`;
         const imageBuffer = Buffer.from(imageData, 'base64');
-        const firebaseUrl = await uploadImageBufferToFirebaseStorage(imageBuffer, userId, storyId, imageName, 'image/png');
+        const firebaseUrl = await uploadImageBufferToMinIOStorage(imageBuffer, userId, storyId, imageName, 'image/png');
         return { success: true, imageUrl: firebaseUrl, requestPrompt: requestPromptWithStyle, expandedPrompt: expandedPromptForExport };
       } catch (uploadError) {
-        console.error("Error uploading image to Firebase Storage:", uploadError);
+        console.error("Error uploading image to MinIO Storage:", uploadError);
         return { success: true, imageUrl: `data:image/png;base64,${imageData}`, requestPrompt: requestPromptWithStyle, expandedPrompt: expandedPromptForExport };
       }
     }
@@ -1190,7 +1190,7 @@ export async function generateImageFromPrompt(
   let processedPrompt = originalPrompt; // This is the prompt with @placeholders
   if (userId && storyId) {
     try {
-      const { getStory } = await import('@/actions/firestoreStoryActions'); 
+      const { getStory } = await import('@/actions/baserowStoryActions'); 
       const storyResult = await getStory(storyId, userId);
       if (storyResult.success && storyResult.data) {
         const { parseEntityReferences } = await import('@/app/(app)/assemble-video/utils');
@@ -1208,7 +1208,7 @@ export async function generateImageFromPrompt(
     } catch (error) { console.warn("Failed to apply style for Picsart:", error); }
   } else if (userId && storyId) {
     try {
-      const { getStory } = await import('@/actions/firestoreStoryActions'); 
+      const { getStory } = await import('@/actions/baserowStoryActions'); 
       const storyResult = await getStory(storyId, userId);
       if (storyResult.success && storyResult.data?.imageStyleId) {
         const { applyStyleToPrompt } = await import('@/utils/imageStyleUtils');
@@ -1245,10 +1245,10 @@ export async function generateImageFromPrompt(
         try {
           const safePrompt = originalPrompt.substring(0, 30).replace(/[^a-z0-9]/gi, '_').toLowerCase();
           const imageName = `${Date.now()}_${safePrompt}`;
-          const firebaseUrl = await uploadImageToFirebaseStorage(pollResult.imageUrl, userId, storyId, imageName);
+          const firebaseUrl = await uploadImageToMinIOStorage(pollResult.imageUrl, userId, storyId, imageName);
           return { success: true, imageUrl: firebaseUrl, requestPrompt: pollResult.requestPrompt };
         } catch (uploadError) {
-          console.error("Error uploading image to Firebase Storage:", uploadError);
+          console.error("Error uploading image to MinIO Storage:", uploadError);
           return pollResult;
         }
       }
@@ -1258,10 +1258,10 @@ export async function generateImageFromPrompt(
         try {
           const safePrompt = originalPrompt.substring(0, 30).replace(/[^a-z0-9]/gi, '_').toLowerCase();
           const imageName = `${Date.now()}_${safePrompt}`;
-          const firebaseUrl = await uploadImageToFirebaseStorage(result.data[0].url, userId, storyId, imageName);
+          const firebaseUrl = await uploadImageToMinIOStorage(result.data[0].url, userId, storyId, imageName);
           return { success: true, imageUrl: firebaseUrl, requestPrompt, expandedPrompt: expandedPromptForExport };
         } catch (uploadError) {
-          console.error("Error uploading image to Firebase Storage:", uploadError);
+          console.error("Error uploading image to MinIO Storage:", uploadError);
           return { success: true, imageUrl: result.data[0].url, requestPrompt, expandedPrompt: expandedPromptForExport };
         }
       }

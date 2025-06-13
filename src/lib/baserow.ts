@@ -12,6 +12,7 @@ const BASEROW_STORIES_TABLE_ID = process.env.BASEROW_STORIES_TABLE_ID || '696';
 interface BaserowHeaders {
   'Authorization': string;
   'Content-Type': string;
+  [key: string]: string;
 }
 
 class BaserowService {
@@ -28,7 +29,7 @@ class BaserowService {
     };
   }
 
-  private async apiCall(endpoint: string, method: string = 'GET', body?: any): Promise<any> {
+  async apiCall(endpoint: string, method: string = 'GET', body?: any): Promise<any> {
     const url = `${BASEROW_API_URL}${endpoint}`;
     
     const response = await fetch(url, {

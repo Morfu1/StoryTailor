@@ -21,7 +21,7 @@ import {
 import { Clapperboard, Loader2, Edit2, ImageIcon, RefreshCw, Download, Settings, ListMusic, ChevronsRight } from 'lucide-react';
 import Link from 'next/link';
 import { generateImagePrompts, generateImageFromPrompt } from '@/actions/storyActions';
-import { saveStory } from '@/actions/firestoreStoryActions';
+import { saveStory } from '@/actions/baserowStoryActions';
 import { useToast } from '@/hooks/use-toast';
 import { countSceneImages } from '@/utils/storyHelpers';
 import Image from 'next/image';

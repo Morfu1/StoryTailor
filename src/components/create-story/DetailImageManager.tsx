@@ -7,7 +7,7 @@ import { useState } from 'react';
 import { ImagePopup } from '@/components/ui/image-popup';
 import { parseNamedPrompts } from '@/utils/storyHelpers';
 import { generateImageFromPrompt } from '@/actions/storyActions';
-import { saveStory } from '@/actions/firestoreStoryActions'; // Corrected import path
+import { saveStory } from '@/actions/baserowStoryActions'; // Corrected import path
 import { useToast } from '@/hooks/use-toast';
 import type { UseStoryStateReturn } from '@/hooks/useStoryState';
 import type { GeneratedImage } from '@/types/story';

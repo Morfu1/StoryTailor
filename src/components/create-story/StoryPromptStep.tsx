@@ -9,7 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Bot, Loader2, FileText, Edit3, Save } from 'lucide-react'; // Removed Settings
 import Link from 'next/link';
 import { generateTitle, generateScript } from '@/actions/storyActions'; // Kept these
-import { saveStory } from '@/actions/firestoreStoryActions'; // Changed for saveStory
+import { saveStory } from '@/actions/baserowStoryActions'; // Changed for saveStory
 import { prepareScriptChunksAI } from '@/utils/narrationUtils';
 import { useToast } from '@/hooks/use-toast';
 import { useState, useCallback, useRef, useEffect } from 'react';
@@ -216,7 +216,7 @@ export function StoryPromptStep({ storyState }: StoryPromptStepProps) {
       if (storyData.userId) {
         try {
           handleSetLoading('save', true);
-          const saveResult = await saveStory(updatedStoryData, storyData.userId); // Uses saveStory from firestoreStoryActions
+          const saveResult = await saveStory(updatedStoryData, storyData.userId); // Uses saveStory from baserowStoryActions
           handleSetLoading('save', false);
           
           if (saveResult.success) {
@@ -287,7 +287,7 @@ export function StoryPromptStep({ storyState }: StoryPromptStepProps) {
           narrationChunks
         };
         
-        const saveResult = await saveStory(updatedStoryData, storyData.userId); // Uses saveStory from firestoreStoryActions
+        const saveResult = await saveStory(updatedStoryData, storyData.userId); // Uses saveStory from baserowStoryActions
         handleSetLoading('save', false);
         
         if (saveResult.success && saveResult.storyId && !storyData.id) {

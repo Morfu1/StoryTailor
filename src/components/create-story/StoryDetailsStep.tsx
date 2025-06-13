@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Users, Loader2, Edit2, RefreshCw } from 'lucide-react'; // Removed Settings
 import Link from 'next/link'; // Added Link
 import { generateCharacterPrompts } from '@/actions/storyActions';
-import { saveStory } from '@/actions/firestoreStoryActions'; // Corrected import path
+import { saveStory } from '@/actions/baserowStoryActions'; // Corrected import path
 import { useToast } from '@/hooks/use-toast';
 import type { UseStoryStateReturn } from '@/hooks/useStoryState';
 import type { StoryCharacterLocationItemPrompts } from '@/types/story';
