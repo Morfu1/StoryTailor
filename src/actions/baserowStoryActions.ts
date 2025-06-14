@@ -173,20 +173,27 @@ export async function getStory(storyId: string, userId: string): Promise<{ succe
   }
 
   try {
-    // First try to get by Baserow ID
+    // Find the story by searching through all stories for the firebase_story_id
     let story: Story | null = null;
+    let baserowRowId: string | null = null;
     
-    try {
-      const row = await baserowService.getStory(storyId);
-      if (row) {
-        story = transformBaserowToStory(row);
-      }
-    } catch (error) {
-      // If not found by Baserow ID, try by firebase_story_id
-      const stories = await baserowService.getStories();
-      const matchingRow = stories.find((row: any) => row.firebase_story_id === storyId);
-      if (matchingRow) {
-        story = transformBaserowToStory(matchingRow);
+    // Always search by firebase_story_id first since that's what we typically have
+    const stories = await baserowService.getStories(userId); // Only get stories for this user
+    const matchingRow = stories.find((row: any) => row.firebase_story_id === storyId);
+    
+    if (matchingRow) {
+      story = transformBaserowToStory(matchingRow);
+      baserowRowId = matchingRow.id.toString(); // Store the actual Baserow row ID for updates
+    } else {
+      // Fallback: try as Baserow row ID (for legacy compatibility)
+      try {
+        const row = await baserowService.getStory(storyId);
+        if (row && row.user_id === userId) { // Security check here too
+          story = transformBaserowToStory(row);
+          baserowRowId = storyId; // It's already a Baserow row ID
+        }
+      } catch (error) {
+        // If both approaches fail, story doesn't exist
       }
     }
 
@@ -194,7 +201,7 @@ export async function getStory(storyId: string, userId: string): Promise<{ succe
       return { success: false, error: "Story not found." };
     }
 
-    // Security check
+    // Security check (redundant but safe)
     if (story.userId !== userId) {
       return { success: false, error: "Unauthorized: You can only access your own stories." };
     }
@@ -254,14 +261,14 @@ export async function getStory(storyId: string, userId: string): Promise<{ succe
       }
     }
 
-    // Update story in Baserow if URLs were refreshed
-    if (needsUpdate) {
+    // Update story in Baserow if URLs were refreshed (use the correct Baserow row ID)
+    if (needsUpdate && baserowRowId) {
       try {
         updates.updated_at = new Date().toISOString().split('T')[0];
-        await baserowService.updateStory(story.id || storyId, updates);
-        console.log(`[getStory Action] Refreshed and updated URLs for story ${story.id || storyId}`);
+        await baserowService.updateStory(baserowRowId, updates);
+        console.log(`[getStory Action] Refreshed and updated URLs for story ${storyId} (row ${baserowRowId})`);
       } catch (updateError) {
-        console.error(`[getStory Action] Failed to update story ${story.id || storyId} with refreshed URLs:`, updateError);
+        console.error(`[getStory Action] Failed to update story ${storyId} with refreshed URLs:`, updateError);
       }
     }
 
