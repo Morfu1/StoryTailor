@@ -242,9 +242,19 @@ export async function downloadStoryAsZip(storyData: Story) {
     throw new Error('Story must have a title to download');
   }
 
+  console.log('[ZIP] Starting download for story:', {
+    title: storyData.title,
+    imagePromptsCount: storyData.imagePrompts?.length || 0,
+    generatedImagesCount: storyData.generatedImages?.length || 0,
+    hasSceneImages: storyData.generatedImages?.some(img => img.sceneIndex !== null && img.sceneIndex !== undefined && img.sceneIndex >= 0)
+  });
+
   const zip = new JSZip();
   
   const fetchFile = async (url: string, isAudio = false): Promise<Blob | null> => {
+    // Check if this is a Minio URL that might need special handling
+    const isMinioUrl = url.includes('minio-api.holoanima.com');
+    
     try {
       if (!url || typeof url !== 'string') {
         console.warn(`[ZIP] Invalid URL provided:`, url);
@@ -261,7 +271,11 @@ export async function downloadStoryAsZip(storyData: Story) {
       
       console.log(`[ZIP] Fetching ${isAudio ? 'audio' : 'image'} from:`, url);
       
-      // Add headers for better compatibility
+      if (isMinioUrl && !isAudio) {
+        console.log(`[ZIP] Detected Minio image URL - will handle content-type detection properly`);
+      }
+      
+      // Add headers for better compatibility - use original URL to preserve Minio signatures
       const response = await fetch(url, {
         method: 'GET',
         headers: {
@@ -313,7 +327,10 @@ export async function downloadStoryAsZip(storyData: Story) {
         }
         
         console.log(`[ZIP] Detected image type: ${mimeType} from signature (content-type was: ${contentType})`);
-        return new Blob([arrayBuffer], { type: mimeType });
+        const blob = new Blob([arrayBuffer], { type: mimeType });
+        // Add detected MIME type as a property for filename extension detection
+        (blob as any).detectedMimeType = mimeType;
+        return blob;
       }
     } catch (error) {
       console.warn(`[ZIP] Error fetching file from ${url}:`, error);
@@ -347,6 +364,37 @@ export async function downloadStoryAsZip(storyData: Story) {
     }
   };
 
+  const getFileExtensionFromMimeType = (mimeType: string): string => {
+    switch (mimeType) {
+      case 'image/jpeg':
+        return '.jpg';
+      case 'image/png':
+        return '.png';
+      case 'image/gif':
+        return '.gif';
+      case 'image/webp':
+        return '.webp';
+      default:
+        return '.jpg'; // fallback to jpg
+    }
+  };
+
+  const getProperFilename = (url: string, blob: Blob, fallbackName: string): string => {
+    const urlFilename = getFilenameFromUrl(url, fallbackName);
+    
+    // Check if the filename already has an extension
+    if (urlFilename.includes('.') && !urlFilename.endsWith('/')) {
+      return urlFilename;
+    }
+    
+    // If no extension, add one based on the detected MIME type
+    const detectedMimeType = (blob as any).detectedMimeType || blob.type;
+    const extension = getFileExtensionFromMimeType(detectedMimeType);
+    
+    console.log(`[ZIP] Adding extension ${extension} to filename: ${urlFilename} (MIME: ${detectedMimeType})`);
+    return urlFilename + extension;
+  };
+
   const charactersImagesFolder = zip.folder('Character_Locations_Items_Images');
   if (charactersImagesFolder && storyData.generatedImages) {
     const detailImages = storyData.generatedImages.filter(image => 
@@ -355,11 +403,18 @@ export async function downloadStoryAsZip(storyData: Story) {
     
     for (let i = 0; i < detailImages.length; i++) {
       const image = detailImages[i];
-      const imageBlob = await fetchFile(image.imageUrl!);
-      if (imageBlob) {
-        const filename = getFilenameFromUrl(image.imageUrl!, `detail_${i + 1}.jpg`);
-        const safeName = image.originalPrompt.substring(0, 50).replace(/[^a-zA-Z0-9]/g, '_');
-        charactersImagesFolder.file(`detail_${i + 1}_${safeName}_${filename}`, imageBlob);
+      try {
+        const imageBlob = await fetchFile(image.imageUrl!);
+        if (imageBlob && imageBlob.size > 0) {
+          const filename = getProperFilename(image.imageUrl!, imageBlob, `detail_${i + 1}.jpg`);
+          const safeName = (image.originalPrompt || '').substring(0, 50).replace(/[^a-zA-Z0-9]/g, '_');
+          charactersImagesFolder.file(`detail_${i + 1}_${safeName}_${filename}`, imageBlob);
+          console.log(`[ZIP] Successfully added detail image ${i + 1} (${imageBlob.size} bytes)`);
+        } else {
+          console.warn(`[ZIP] Failed to fetch or empty detail image ${i + 1}`);
+        }
+      } catch (error) {
+        console.error(`[ZIP] Error processing detail image ${i + 1}:`, error);
       }
     }
   }
@@ -383,54 +438,48 @@ export async function downloadStoryAsZip(storyData: Story) {
   if (sceneImagesFolder && storyData.imagePrompts && storyData.generatedImages) {
     // Create a map of sceneIndex to GeneratedImage for quick lookup and ensure we only get one image per sceneIndex
     const sceneImagesMap = new Map<number, GeneratedImage>();
+    
+    // First, let's debug what images we have
+    console.log('[ZIP] All generated images:', storyData.generatedImages.map(img => ({
+      sceneIndex: img.sceneIndex,
+      hasUrl: !!img.imageUrl,
+      prompt: img.originalPrompt?.substring(0, 50),
+      url: img.imageUrl?.substring(0, 100)
+    })));
+    
     storyData.generatedImages.forEach(img => {
-      if (img.sceneIndex !== undefined && img.sceneIndex >= 0 && img.imageUrl) {
+      // Use explicit null check - sceneIndex can be 0 which is falsy but valid
+      if (img.sceneIndex !== null && img.sceneIndex !== undefined && img.sceneIndex >= 0 && img.imageUrl) {
+        console.log(`[ZIP] Mapping scene ${img.sceneIndex} to image: ${img.originalPrompt?.substring(0, 50)}...`);
         // If an image for this sceneIndex already exists, this logic will take the last one encountered,
         // which should be the most recent if array is ordered by generation or update time.
         sceneImagesMap.set(img.sceneIndex, img);
       }
     });
 
-    // If we have fewer mapped scenes than image prompts, try to find any unmapped images that could be scene images
-    const unmappedImages = storyData.generatedImages.filter(img => 
-      img.imageUrl && 
-      (img.sceneIndex === undefined || img.sceneIndex < 0) &&
-      !img.originalPrompt?.toLowerCase().includes('character') &&
-      !img.originalPrompt?.toLowerCase().includes('location') &&
-      !img.originalPrompt?.toLowerCase().includes('item')
-    );
+    console.log(`[ZIP] Found ${sceneImagesMap.size} actual scene images for ${storyData.imagePrompts.length} total scenes`);
 
-    console.log(`[ZIP] Found ${sceneImagesMap.size} mapped scene images and ${unmappedImages.length} unmapped images for ${storyData.imagePrompts.length} scenes`);
-
-    for (let sceneIdx = 0; sceneIdx < storyData.imagePrompts.length; sceneIdx++) {
-      let imageForScene = sceneImagesMap.get(sceneIdx);
-      
-      // If no mapped image found, try to use an unmapped image
-      if (!imageForScene && unmappedImages.length > 0) {
-        // Try to find an image with matching prompt content or use the next available unmapped image
-        const targetPrompt = storyData.imagePrompts[sceneIdx].toLowerCase();
-        const matchingImage = unmappedImages.find(img => 
-          img.originalPrompt?.toLowerCase().includes(targetPrompt.substring(0, 20)) ||
-          targetPrompt.includes(img.originalPrompt?.toLowerCase().substring(0, 20) || '')
-        );
-        
-        imageForScene = matchingImage || unmappedImages[sceneIdx % unmappedImages.length];
-        
-        if (imageForScene) {
-          console.log(`[ZIP] Using unmapped image for scene ${sceneIdx + 1}: ${imageForScene.originalPrompt?.substring(0, 50)}...`);
-        }
-      }
-      
-      if (imageForScene) {
+    // Only process scenes that actually have generated images - don't create fake ones
+    for (const [sceneIdx, imageForScene] of sceneImagesMap.entries()) {
+      try {
         const imageBlob = await fetchFile(imageForScene.imageUrl);
-        if (imageBlob) {
-          const baseFilename = getFilenameFromUrl(imageForScene.imageUrl, `image.jpg`);
+        if (imageBlob && imageBlob.size > 0) {
+          const baseFilename = getProperFilename(imageForScene.imageUrl, imageBlob, `scene_${sceneIdx + 1}.jpg`);
           const chapterInfo = imageForScene.chapterNumber ? `_chapter_${imageForScene.chapterNumber}` : '';
           sceneImagesFolder.file(`scene_${sceneIdx + 1}${chapterInfo}_${baseFilename}`, imageBlob);
+          console.log(`[ZIP] Successfully added scene ${sceneIdx + 1} image (${imageBlob.size} bytes)`);
+        } else {
+          console.warn(`[ZIP] Failed to fetch or empty image for scene ${sceneIdx + 1}`);
         }
-      } else {
-        console.warn(`[DownloadZip] No image found for scene index ${sceneIdx}.`);
+      } catch (error) {
+        console.error(`[ZIP] Error processing image for scene ${sceneIdx + 1}:`, error);
       }
+    }
+    
+    console.log(`[ZIP] Added ${sceneImagesMap.size} actual scene images (no fake ones created)`);
+    
+    if (sceneImagesMap.size < storyData.imagePrompts.length) {
+      console.log(`[ZIP] Note: Story has ${storyData.imagePrompts.length} image prompts but only ${sceneImagesMap.size} generated scene images`);
     }
   }
 
@@ -510,20 +559,34 @@ export async function downloadStoryAsZip(storyData: Story) {
     for (let i = 0; i < storyData.narrationChunks.length; i++) {
       const chunk = storyData.narrationChunks[i];
       if (chunk.audioUrl) {
-        const audioBlob = await fetchFile(chunk.audioUrl, true);
-        if (audioBlob) {
-          const extension = audioBlob.type === 'audio/mpeg' ? 'mp3' : 'wav';
-          sceneAudioFolder.file(`chunk_${chunk.index !== undefined ? chunk.index + 1 : i + 1}.${extension}`, audioBlob);
+        try {
+          const audioBlob = await fetchFile(chunk.audioUrl, true);
+          if (audioBlob && audioBlob.size > 0) {
+            const extension = audioBlob.type === 'audio/mpeg' ? 'mp3' : 'wav';
+            sceneAudioFolder.file(`chunk_${chunk.index !== undefined ? chunk.index + 1 : i + 1}.${extension}`, audioBlob);
+            console.log(`[ZIP] Successfully added audio chunk ${i + 1} (${audioBlob.size} bytes)`);
+          } else {
+            console.warn(`[ZIP] Failed to fetch or empty audio chunk ${i + 1}`);
+          }
+        } catch (error) {
+          console.error(`[ZIP] Error processing audio chunk ${i + 1}:`, error);
         }
       }
     }
   }
 
   if (sceneAudioFolder && storyData.narrationAudioUrl) {
-    const mainAudioBlob = await fetchFile(storyData.narrationAudioUrl, true);
-    if (mainAudioBlob) {
-      const extension = mainAudioBlob.type === 'audio/mpeg' ? 'mp3' : 'wav';
-      sceneAudioFolder.file(`full_narration.${extension}`, mainAudioBlob);
+    try {
+      const mainAudioBlob = await fetchFile(storyData.narrationAudioUrl, true);
+      if (mainAudioBlob && mainAudioBlob.size > 0) {
+        const extension = mainAudioBlob.type === 'audio/mpeg' ? 'mp3' : 'wav';
+        sceneAudioFolder.file(`full_narration.${extension}`, mainAudioBlob);
+        console.log(`[ZIP] Successfully added full narration (${mainAudioBlob.size} bytes)`);
+      } else {
+        console.warn(`[ZIP] Failed to fetch or empty full narration audio`);
+      }
+    } catch (error) {
+      console.error(`[ZIP] Error processing full narration audio:`, error);
     }
   }
 
@@ -655,13 +718,34 @@ export async function downloadStoryAsZip(storyData: Story) {
     toolsUsedFolder.file('ai_tools_details.txt', toolsInfo);
   }
 
-  const content = await zip.generateAsync({ type: 'blob' });
-  const url = window.URL.createObjectURL(content);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = `${storyData.title.replace(/[^a-zA-Z0-9]/g, '_')}.zip`;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  window.URL.revokeObjectURL(url);
+  try {
+    console.log('[ZIP] Starting ZIP file generation...');
+    const content = await zip.generateAsync({ 
+      type: 'blob',
+      compression: 'DEFLATE',
+      compressionOptions: {
+        level: 6
+      }
+    });
+    
+    console.log(`[ZIP] ZIP file generated successfully, size: ${content.size} bytes`);
+    
+    if (content.size === 0) {
+      throw new Error('Generated ZIP file is empty');
+    }
+    
+    const url = window.URL.createObjectURL(content);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${storyData.title.replace(/[^a-zA-Z0-9]/g, '_')}.zip`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+    
+    console.log('[ZIP] Download initiated successfully');
+  } catch (error) {
+    console.error('[ZIP] Error generating or downloading ZIP file:', error);
+    throw new Error(`Failed to create ZIP file: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
 }
