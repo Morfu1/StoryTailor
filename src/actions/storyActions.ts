@@ -872,7 +872,7 @@ export async function generateScriptChunks(input: GenerateScriptChunksInput): Pr
       
       const localAi = genkit({ plugins: [googleAI({ apiKey: userApiKeys.googleApiKey })], model: `googleai/${modelName}` });
       
-      let parsedOutput: any;
+      let parsedOutput: unknown;
       
       // First try with schema validation (preferred method)
       try {
@@ -880,7 +880,7 @@ export async function generateScriptChunks(input: GenerateScriptChunksInput): Pr
         const { output } = await localAi.generate({ prompt, output: { schema: AIScriptChunksOutputSchema, format: 'json' }, config });
         console.log(`[generateScriptChunks] Schema-validated output:`, JSON.stringify(output, null, 2));
         parsedOutput = output;
-      } catch (schemaError) {
+      } catch {
         console.log(`[generateScriptChunks] Schema validation failed, trying text parsing...`);
         // Fall back to text generation and manual parsing
         const { text } = await localAi.generate({ prompt, config });
@@ -904,11 +904,11 @@ export async function generateScriptChunks(input: GenerateScriptChunksInput): Pr
       
       console.log(`[generateScriptChunks] Final parsed output:`, JSON.stringify(parsedOutput, null, 2));
       
-      if (parsedOutput?.error) {
-        return { success: false, error: parsedOutput.error };
+      if ((parsedOutput as { error?: string })?.error) {
+        return { success: false, error: (parsedOutput as { error: string }).error };
       }
-      if (parsedOutput?.scriptChunks && Array.isArray(parsedOutput.scriptChunks)) {
-        const nonEmptyChunks = parsedOutput.scriptChunks.filter((chunk: string) => chunk.trim().length > 0);
+      if ((parsedOutput as { scriptChunks?: unknown[] })?.scriptChunks && Array.isArray((parsedOutput as { scriptChunks: unknown[] }).scriptChunks)) {
+        const nonEmptyChunks = (parsedOutput as { scriptChunks: string[] }).scriptChunks.filter((chunk: string) => chunk.trim().length > 0);
         if (nonEmptyChunks.length === 0) {
             return { success: false, error: "Google AI returned no script chunks or only empty chunks." };
         }

@@ -32,14 +32,14 @@ function getMinioClient(): Minio.Client {
     const endpointUrl = new URL(MINIO_ENDPOINT);
 
     // Compare with hardcoded values that worked
-    const hardcodedConfig = {
-      endPoint: 'minio-api.holoanima.com',
-      port: 443,
-      useSSL: true,
-      accessKey: 'admin',
-      secretKey: 'Maslina12#Calda',
-      region: 'us-east-1'
-    };
+    // const hardcodedConfig = {
+    //   endPoint: 'minio-api.holoanima.com',
+    //   port: 443,
+    //   useSSL: true,
+    //   accessKey: 'admin',
+    //   secretKey: 'Maslina12#Calda',
+    //   region: 'us-east-1'
+    // };
 
     // MinIO client using environment variables
     const clientConfig = {
@@ -85,15 +85,15 @@ class MinIOStorageService implements StorageService {
       const client = getMinioClient();
       await client.bucketExists(MINIO_BUCKET_NAME);
       return true;
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.log('MinIO connection test failed:', error);
       console.log('Endpoint used:', MINIO_ENDPOINT);
       console.log('Error details:', {
-        code: error.code,
-        errno: error.errno,
-        syscall: error.syscall,
-        address: error.address,
-        port: error.port
+        code: (error as { code?: unknown }).code,
+        errno: (error as { errno?: unknown }).errno,
+        syscall: (error as { syscall?: unknown }).syscall,
+        address: (error as { address?: unknown }).address,
+        port: (error as { port?: unknown }).port
       });
       return false;
     }
@@ -146,19 +146,19 @@ class MinIOStorageService implements StorageService {
       await client.putObject(MINIO_BUCKET_NAME, key, buffer, buffer.length, metadata);
       console.log('MinIO upload successful');
       return `${MINIO_ENDPOINT}/${MINIO_BUCKET_NAME}/${key}`;
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('MinIO upload failed:', error);
       console.error('Upload error details:', {
-        code: error.code,
-        errno: error.errno,
-        syscall: error.syscall,
-        address: error.address,
-        port: error.port,
-        message: error.message
+        code: (error as { code?: unknown }).code,
+        errno: (error as { errno?: unknown }).errno,
+        syscall: (error as { syscall?: unknown }).syscall,
+        address: (error as { address?: unknown }).address,
+        port: (error as { port?: unknown }).port,
+        message: (error as { message?: unknown }).message
       });
       
       // More descriptive error message
-      if (error.code === 'EHOSTUNREACH') {
+      if ((error as { code?: unknown }).code === 'EHOSTUNREACH') {
         throw new Error(`Cannot reach MinIO server at ${MINIO_ENDPOINT}. This may be due to network connectivity issues or IPv6 resolution problems. Please check your network configuration.`);
       }
       

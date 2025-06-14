@@ -5,7 +5,7 @@ import { Story, GeneratedImage } from '@/types/story'; // Added GeneratedImage
 /**
  * Expand entity references like Picsart does - replace @references with full descriptions
  */
-async function expandEntityReferencesForExport(prompt: string, storyData: Story): Promise<string> {
+/* async function expandEntityReferencesForExport(prompt: string, storyData: Story): Promise<string> {
   try {
     const { parseEntityReferences } = await import('@/app/(app)/assemble-video/utils');
     return parseEntityReferences(prompt, storyData);
@@ -13,12 +13,12 @@ async function expandEntityReferencesForExport(prompt: string, storyData: Story)
     console.warn('Failed to expand entity references:', error);
     return prompt;
   }
-}
+} */
 
 /**
  * Expand entity references like Imagen3 does - replace @references with entity names only
  */
-async function expandEntityNamesOnlyForExport(prompt: string, storyData: Story): Promise<string> {
+/* async function expandEntityNamesOnlyForExport(prompt: string, storyData: Story): Promise<string> {
   try {
     const { extractEntityNames, nameToReference } = await import('@/app/(app)/assemble-video/utils');
     
@@ -58,7 +58,7 @@ async function expandEntityNamesOnlyForExport(prompt: string, storyData: Story):
     console.warn('Failed to expand entity names:', error);
     return prompt;
   }
-}
+} */
 
 /**
  * Generate the full prompt with entity references + style that would be sent to Picsart
@@ -329,7 +329,7 @@ export async function downloadStoryAsZip(storyData: Story) {
         console.log(`[ZIP] Detected image type: ${mimeType} from signature (content-type was: ${contentType})`);
         const blob = new Blob([arrayBuffer], { type: mimeType });
         // Add detected MIME type as a property for filename extension detection
-        (blob as any).detectedMimeType = mimeType;
+        (blob as Blob & { detectedMimeType?: string }).detectedMimeType = mimeType;
         return blob;
       }
     } catch (error) {
@@ -388,7 +388,7 @@ export async function downloadStoryAsZip(storyData: Story) {
     }
     
     // If no extension, add one based on the detected MIME type
-    const detectedMimeType = (blob as any).detectedMimeType || blob.type;
+    const detectedMimeType = (blob as Blob & { detectedMimeType?: string }).detectedMimeType || blob.type;
     const extension = getFileExtensionFromMimeType(detectedMimeType);
     
     console.log(`[ZIP] Adding extension ${extension} to filename: ${urlFilename} (MIME: ${detectedMimeType})`);

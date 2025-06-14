@@ -35,7 +35,7 @@ export async function saveUserApiKeys(userId: string, apiKeys: UserApiKeys): Pro
 
     // Always fetch all rows to check if user exists
     const apiKeyRows = await baserowService.apiCall(`/database/rows/table/${BASEROW_USER_API_KEYS_TABLE_ID}/?user_field_names=true`);
-    const userRow = apiKeyRows.results.find((row: any) => row.user_id === userId);
+    const userRow = apiKeyRows.results.find((row: Record<string, unknown>) => row.user_id === userId);
     
     if (userRow) {
       // Update existing record
@@ -88,7 +88,7 @@ export async function getUserApiKeys(userId: string): Promise<{ success: boolean
   try {
     // Get all API key rows and filter by user_id
     const apiKeyRows = await baserowService.apiCall(`/database/rows/table/${BASEROW_USER_API_KEYS_TABLE_ID}/?user_field_names=true`);
-    const userRow = apiKeyRows.results.find((row: any) => row.user_id === userId);
+    const userRow = apiKeyRows.results.find((row: Record<string, unknown>) => row.user_id === userId);
 
     if (userRow && userRow.api_key_hash) {
       try {
@@ -140,7 +140,7 @@ export async function deleteUserApiKeys(userId: string): Promise<{ success: bool
   try {
     // Find the user's API key row
     const apiKeyRows = await baserowService.apiCall(`/database/rows/table/${BASEROW_USER_API_KEYS_TABLE_ID}/?user_field_names=true`);
-    const userRow = apiKeyRows.results.find((row: any) => row.user_id === userId);
+    const userRow = apiKeyRows.results.find((row: Record<string, unknown>) => row.user_id === userId);
 
     if (userRow) {
       await baserowService.apiCall(`/database/rows/table/${BASEROW_USER_API_KEYS_TABLE_ID}/${userRow.id}/?user_field_names=true`, 'DELETE');

@@ -29,7 +29,7 @@ class BaserowService {
     };
   }
 
-  async apiCall(endpoint: string, method: string = 'GET', body?: any): Promise<any> {
+  async apiCall(endpoint: string, method: string = 'GET', body?: unknown): Promise<unknown> {
     const url = `${BASEROW_API_URL}${endpoint}`;
     
     const response = await fetch(url, {
@@ -52,7 +52,7 @@ class BaserowService {
   }
 
   // Stories CRUD operations
-  async getStories(userId?: string): Promise<any[]> {
+  async getStories(userId?: string): Promise<Record<string, unknown>[]> {
     const endpoint = `/database/rows/table/${BASEROW_STORIES_TABLE_ID}/`;
     const params = new URLSearchParams({ user_field_names: 'true' });
     if (userId) {
@@ -64,17 +64,17 @@ class BaserowService {
     return response.results || [];
   }
 
-  async getStory(storyId: string): Promise<any> {
+  async getStory(storyId: string): Promise<Record<string, unknown>> {
     const endpoint = `/database/rows/table/${BASEROW_STORIES_TABLE_ID}/${storyId}/?user_field_names=true`;
     return this.apiCall(endpoint);
   }
 
-  async createStory(storyData: any): Promise<any> {
+  async createStory(storyData: Record<string, unknown>): Promise<Record<string, unknown>> {
     const endpoint = `/database/rows/table/${BASEROW_STORIES_TABLE_ID}/?user_field_names=true`;
     return this.apiCall(endpoint, 'POST', storyData);
   }
 
-  async updateStory(storyId: string, updates: any): Promise<any> {
+  async updateStory(storyId: string, updates: Record<string, unknown>): Promise<Record<string, unknown>> {
     const endpoint = `/database/rows/table/${BASEROW_STORIES_TABLE_ID}/${storyId}/?user_field_names=true`;
     return this.apiCall(endpoint, 'PATCH', updates);
   }
@@ -85,7 +85,7 @@ class BaserowService {
   }
 
   // Field information
-  async getTableFields(): Promise<any[]> {
+  async getTableFields(): Promise<Record<string, unknown>[]> {
     const endpoint = `/database/fields/table/${BASEROW_STORIES_TABLE_ID}/`;
     const response = await this.apiCall(endpoint);
     return response || [];

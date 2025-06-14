@@ -89,7 +89,7 @@ export function parseMinIOUrl(url: string, minioEndpoint?: string): {
     }
 
     return { isMinIOUrl: true };
-  } catch (error) {
+  } catch {
     return { isMinIOUrl: false };
   }
 }

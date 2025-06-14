@@ -316,8 +316,8 @@ function RenderVideoButton({ storyData }: { storyData: UseStoryStateReturn['stor
       } else {
         throw new Error('No job ID returned from server');
       }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'An unexpected error occurred');
+    } catch {
+    setError('An unexpected error occurred');
       setIsRendering(false);
     }
   };
@@ -341,7 +341,7 @@ function RenderVideoButton({ storyData }: { storyData: UseStoryStateReturn['stor
       } else {
         setError(data.error || 'Failed to stop rendering.');
       }
-    } catch (err) {
+    } catch {
       setError('An error occurred while trying to stop rendering.');
     }
   };

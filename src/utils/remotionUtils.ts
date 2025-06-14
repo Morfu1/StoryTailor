@@ -131,8 +131,7 @@ interface LocalImageWithMetadata {
 
 export const downloadAssetsForRendering = async (
   images: (string | GeneratedImage)[],
-  audioChunks: NarrationChunk[],
-  targetDirectory: string // Added targetDirectory argument
+  audioChunks: NarrationChunk[]
 ): Promise<{ localImages: LocalImageWithMetadata[]; localAudioChunks: NarrationChunk[]; imageDimensions?: { width: number; height: number }; placeholderAssetPath: string }> => {
   if (!isNode) {
     throw new Error('Asset downloading is only supported on the server side');

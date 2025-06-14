@@ -12,8 +12,8 @@ interface BaserowErrorWithCode extends Error {
 /**
  * Transform Firebase Story structure to Baserow row format
  */
-function transformStoryToBaserow(story: Story): Record<string, any> {
-  const baserowRow: Record<string, any> = {
+function transformStoryToBaserow(story: Story): Record<string, unknown> {
+  const baserowRow: Record<string, unknown> = {
     firebase_story_id: story.id || '',
     user_id: story.userId,
     Title: story.title,
@@ -65,7 +65,7 @@ function transformStoryToBaserow(story: Story): Record<string, any> {
 /**
  * Transform Baserow row to Firebase Story structure
  */
-function transformBaserowToStory(row: any): Story {
+function transformBaserowToStory(row: Record<string, unknown>): Story {
   const story: Story = {
     id: row.firebase_story_id || row.id?.toString(),
     userId: row.user_id,
@@ -135,7 +135,7 @@ async function uploadAudioToMinIO(audioDataUri: string, userId: string, storyId:
   const audioBuffer = Buffer.from(base64Data, 'base64');
   const filePath = minioService.generateFilePath(userId, storyId, filename, 'audio');
   
-  const fileUrl = await minioService.uploadFile(filePath, audioBuffer, contentType);
+  await minioService.uploadFile(filePath, audioBuffer, contentType);
   
   // Return a presigned URL that expires in 7 days (matching Firebase behavior)
   return await minioService.getSignedUrl(filePath, 7 * 24 * 60 * 60);
@@ -144,7 +144,7 @@ async function uploadAudioToMinIO(audioDataUri: string, userId: string, storyId:
 /**
  * Refresh MinIO signed URLs (similar to Firebase refresh logic)
  */
-async function refreshMinIOUrl(url: string, userId: string, storyId: string): Promise<string | null> {
+async function refreshMinIOUrl(url: string): Promise<string | null> {
   if (!url || typeof url !== 'string') return null;
   
   try {
@@ -179,7 +179,7 @@ export async function getStory(storyId: string, userId: string): Promise<{ succe
     
     // Always search by firebase_story_id first since that's what we typically have
     const stories = await baserowService.getStories(userId); // Only get stories for this user
-    const matchingRow = stories.find((row: any) => row.firebase_story_id === storyId);
+    const matchingRow = stories.find((row: Record<string, unknown>) => row.firebase_story_id === storyId);
     
     if (matchingRow) {
       story = transformBaserowToStory(matchingRow);
@@ -192,7 +192,7 @@ export async function getStory(storyId: string, userId: string): Promise<{ succe
           story = transformBaserowToStory(row);
           baserowRowId = storyId; // It's already a Baserow row ID
         }
-      } catch (error) {
+      } catch {
         // If both approaches fail, story doesn't exist
       }
     }
@@ -207,11 +207,11 @@ export async function getStory(storyId: string, userId: string): Promise<{ succe
     }
 
     let needsUpdate = false;
-    const updates: any = {};
+    const updates: Record<string, unknown> = {};
 
     // Refresh signed URLs for narration audio
     if (story.narrationAudioUrl) {
-      const refreshedUrl = await refreshMinIOUrl(story.narrationAudioUrl, userId, story.id || storyId);
+      const refreshedUrl = await refreshMinIOUrl(story.narrationAudioUrl);
       if (refreshedUrl && refreshedUrl !== story.narrationAudioUrl) {
         story.narrationAudioUrl = refreshedUrl;
         updates.narration_audio_url = refreshedUrl;
@@ -224,7 +224,7 @@ export async function getStory(storyId: string, userId: string): Promise<{ succe
       let hasUpdatedChunks = false;
       const refreshedChunks = await Promise.all(story.narrationChunks.map(async (chunk) => {
         if (chunk && chunk.audioUrl) {
-          const refreshedUrl = await refreshMinIOUrl(chunk.audioUrl, userId, story!.id || storyId);
+          const refreshedUrl = await refreshMinIOUrl(chunk.audioUrl);
           if (refreshedUrl && refreshedUrl !== chunk.audioUrl) {
             hasUpdatedChunks = true;
             return { ...chunk, audioUrl: refreshedUrl };
@@ -245,7 +245,7 @@ export async function getStory(storyId: string, userId: string): Promise<{ succe
       let hasUpdatedImages = false;
       const refreshedImages = await Promise.all(story.generatedImages.map(async (image) => {
         if (image && image.imageUrl) {
-          const refreshedUrl = await refreshMinIOUrl(image.imageUrl, userId, story!.id || storyId);
+          const refreshedUrl = await refreshMinIOUrl(image.imageUrl);
           if (refreshedUrl && refreshedUrl !== image.imageUrl) {
             hasUpdatedImages = true;
             return { ...image, imageUrl: refreshedUrl };
@@ -337,10 +337,10 @@ export async function saveStory(storyData: Story, userId: string): Promise<{ suc
             baserowRowId = storyData.id; // It's already a Baserow row ID
             existingStory = transformBaserowToStory(row);
           }
-        } catch (error) {
+        } catch {
           // If not found by Baserow ID, try by firebase_story_id
           const stories = await baserowService.getStories();
-          const matchingRow = stories.find((row: any) => row.firebase_story_id === storyData.id);
+          const matchingRow = stories.find((row: Record<string, unknown>) => row.firebase_story_id === storyData.id);
           if (matchingRow) {
             baserowRowId = matchingRow.id.toString(); // Use the Baserow row ID
             existingStory = transformBaserowToStory(matchingRow);
@@ -377,7 +377,7 @@ export async function saveStory(storyData: Story, userId: string): Promise<{ suc
       const baserowData = transformStoryToBaserow(processedStoryData);
       baserowData.firebase_story_id = storyIdForPath; // Set the ID for new stories
       
-      const createdStory = await baserowService.createStory(baserowData);
+      await baserowService.createStory(baserowData);
       
       revalidatePath('/dashboard');
       return { 
@@ -424,10 +424,10 @@ export async function updateStoryTimeline(
         baserowRowId = storyId; // It's already a Baserow row ID
         existingStory = transformBaserowToStory(row);
       }
-    } catch (error) {
+    } catch {
       // If not found by Baserow ID, try by firebase_story_id
       const stories = await baserowService.getStories();
-      const matchingRow = stories.find((row: any) => row.firebase_story_id === storyId);
+      const matchingRow = stories.find((row: Record<string, unknown>) => row.firebase_story_id === storyId);
       if (matchingRow) {
         baserowRowId = matchingRow.id.toString(); // Use the Baserow row ID
         existingStory = transformBaserowToStory(matchingRow);
@@ -489,10 +489,10 @@ export async function deleteStory(
         baserowRowId = storyId; // It's already a Baserow row ID
         existingStory = transformBaserowToStory(row);
       }
-    } catch (error) {
+    } catch {
       // If not found by Baserow ID, try by firebase_story_id
       const stories = await baserowService.getStories();
-      const matchingRow = stories.find((row: any) => row.firebase_story_id === storyId);
+      const matchingRow = stories.find((row: Record<string, unknown>) => row.firebase_story_id === storyId);
       if (matchingRow) {
         baserowRowId = matchingRow.id.toString(); // Use the Baserow row ID
         existingStory = transformBaserowToStory(matchingRow);
@@ -570,7 +570,7 @@ export async function cleanupBrokenImages(storyId: string): Promise<{ success: b
     }
 
     let updated = false;
-    const updates: any = {};
+    const updates: Record<string, unknown> = {};
 
     // Parse and clean generated images
     if (story.generated_images) {

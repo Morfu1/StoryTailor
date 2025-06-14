@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useCallback, memo } from 'react';
+import React, { useMemo, memo } from 'react';
 import {
   Composition,
   getInputProps,
@@ -247,7 +247,7 @@ const calculateTotalDuration = (scenes: SceneData[]): number => {
 };
 
 // Cache for image sources to prevent repeated processing
-const imageSrcCache = new Map<string, string>();
+// const imageSrcCache = new Map<string, string>();
 
 // Individual Scene component - memoized for performance
 const SceneComponent = ({ image: imagePathProp, index }: { image: string; index: number }) => { // Renamed image to imagePathProp for clarity
@@ -273,8 +273,8 @@ const SceneComponent = ({ image: imagePathProp, index }: { image: string; index:
       // Keep imageToRenderSource as transparent pixel or error SVG
       imageToRenderSource = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTkyMCIgaGVpZ2h0PSIxMDgwIiB2aWV3Qm94PSIwIDAgMTkyMCAxMDgwIiBmaWxsPSJub25lIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPgo8cmVjdCB3aWR0aD0iMTkyMCIgaGVpZ2h0PSIxMDgwIiBmaWxsPSIjRkY0NDQ0Ii8+Cjx0ZXh0IHg9Ijk2MCIgeT0iNTQwIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iNjQiIGZpbGw9IndoaXRlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0iY2VudGVyIj5JbWFnZSBFcnJvcjwvZm9udD48L3N2Zz4K';
     }
-  } catch (e: any) {
-    staticFileErrorDisplay = e.message || 'Unknown error during staticFile()';
+  } catch (e: unknown) {
+    staticFileErrorDisplay = (e as Error).message || 'Unknown error during staticFile()';
     staticPathDisplay = `Error resolving: ${staticFileErrorDisplay}`;
     imageToRenderSource = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTkyMCIgaGVpZ2h0PSIxMDgwIiB2aWV3Qm94PSIwIDAgMTkyMCAxMDgwIiBmaWxsPSJub25lIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPgo8cmVjdCB3aWR0aD0iMTkyMCIgaGVpZ2h0PSIxMDgwIiBmaWxsPSIjRkY0NDQ0Ii8+Cjx0ZXh0IHg9Ijk2MCIgeT0iNTQwIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iNjQiIGZpbGw9IndoaXRlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkb21pbmFudC1iYXNlbGluZT0iY2VudGVyIj5TdGF0aWNGaWxlIEVycm9yPC90ZXh0Pjwvc3ZnPgo='; // SVG for StaticFile Error
   }

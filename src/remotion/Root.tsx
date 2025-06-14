@@ -1,7 +1,7 @@
 "use client";
 
 import React from 'react';
-import { Composition } from 'remotion'; // Import Composition
+// import { Composition } from 'remotion'; // Import Composition
 import { StoryVideo } from './StoryVideo';
 
 export const RemotionRoot: React.FC = () => {

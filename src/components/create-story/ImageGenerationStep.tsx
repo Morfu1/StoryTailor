@@ -429,8 +429,8 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
     
     let successCount = 0;
     let errorCount = 0;
-    let currentStoryData = { ...storyData }; 
-    let newImagesThisBatch: GeneratedImage[] = [];
+    const currentStoryData = { ...storyData }; 
+    const newImagesThisBatch: GeneratedImage[] = [];
     
     for (let i = 0; i < (storyData.actionPrompts?.length || 0); i++) {
       if (isGenerationStoppedRef.current) {

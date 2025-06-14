@@ -6,6 +6,7 @@ import { minioService } from '@/lib/minio';
  * Convert raw PCM data to proper WAV format with headers
  * Google TTS returns 24kHz, 16-bit, mono PCM data
  */
+/*
 function convertPcmToWav(pcmBuffer: Buffer): Buffer {
   const pcmBytes = pcmBuffer.byteLength;
   const sampleRate = 24000; // Google TTS uses 24kHz
@@ -45,6 +46,7 @@ function convertPcmToWav(pcmBuffer: Buffer): Buffer {
   
   return buffer;
 }
+*/
 
 export async function getStorageBucket(): Promise<string | undefined> {
   return process.env.MINIO_BUCKET_NAME;
@@ -298,7 +300,7 @@ export async function checkFileExists(filePath: string): Promise<boolean> {
   try {
     await minioService.downloadFile(filePath);
     return true;
-  } catch (error) {
+  } catch {
     return false;
   }
 }
