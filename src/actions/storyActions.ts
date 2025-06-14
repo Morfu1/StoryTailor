@@ -198,13 +198,16 @@ const scriptChunksPromptTemplate = 'You are a movie director and script editor w
 '- Where are the natural visual transitions?\n' +
 '- What moments need their own "frame" or "shot"?\n' +
 '- How can you group sentences that paint the same visual picture?\n\n' +
-'Instructions:\n' +
-'1. Read the entire script and visualize it as an animated story with scenes.\n' +
-'2. Split into chunks that represent distinct visual scenes or moments - NOT sentence by sentence.\n' +
-'3. Each chunk should paint a clear, cohesive visual picture that an AI can generate as a single image.\n' +
-'4. Group related sentences together if they describe the same scene, character introduction, or visual moment.\n' +
-'5. Aim for chunks that are suitable for a single narration segment and a single accompanying image. This means chunks shouldn\'t be too long or too short.\n' +
-'6. Each chunk should be 1-3 sentences, but prioritize visual coherence over sentence count.\n\n' +
+'CRITICAL REQUIREMENTS:\n' +
+'1. Read the ENTIRE script and ensure COMPLETE COVERAGE - every single word, sentence, and detail from the original script MUST appear in the chunks.\n' +
+'2. NO CONTENT should be lost, skipped, or omitted during the splitting process.\n' +
+'3. The chunks, when combined, should recreate the exact original script word-for-word.\n' +
+'4. Split into chunks that represent distinct visual scenes or moments - NOT sentence by sentence.\n' +
+'5. Each chunk should paint a clear, cohesive visual picture that an AI can generate as a single image.\n' +
+'6. Group related sentences together if they describe the same scene, character introduction, or visual moment.\n' +
+'7. Aim for chunks that are suitable for a single narration segment and a single accompanying image.\n' +
+'8. Each chunk should be 1-3 sentences, but prioritize visual coherence over sentence count.\n' +
+'9. VERIFY that all content from the original script is included - double-check for missing sentences or phrases.\n\n' +
 'Script to split:\n' +
 '{{{script}}}\n\n' +
 'Return your response as a JSON object with a single key "scriptChunks". The value of "scriptChunks" MUST be an array of strings, where each string is one of the generated script chunks. Do not include numbering or any other formatting within the chunk strings themselves.\n' +
@@ -812,7 +815,7 @@ export async function generateScriptChunks(input: GenerateScriptChunksInput): Pr
   }
   const userApiKeys = userKeysResult.data;
   console.log(`[generateScriptChunks] Available API keys:`, Object.keys(userApiKeys).filter(key => userApiKeys[key as keyof typeof userApiKeys]));
-  const prompt = scriptChunksPromptTemplate.replace('{{{script}}}', input.script);
+  const prompt = scriptChunksPromptTemplate.replace('{{{script}}}', input.script) + '\n\nREMEMBER: Every word from the original script must appear in your chunks. No content should be lost!';
   const config = { temperature: 0.3, maxOutputTokens: 2048 };
 
   if (input.aiProvider === 'perplexity') {
@@ -861,8 +864,8 @@ export async function generateScriptChunks(input: GenerateScriptChunksInput): Pr
       return { success: false, error: "Google API key not configured by user. Please set it in Account Settings." };
     }
     try {
-      // Use the user-selected model or original default
-      const modelName = input.googleScriptModel || 'gemini-2.5-flash-preview-05-20';
+      // Use the user-selected model or a reliable default for chunking
+      const modelName = input.googleScriptModel || 'gemini-1.5-flash';
       console.log(`[generateScriptChunks] Using Google AI with model: ${modelName}`);
       console.log(`[generateScriptChunks] API key present: ${!!userApiKeys.googleApiKey}`);
       console.log(`[generateScriptChunks] Script length: ${input.script.length} characters`);
@@ -912,7 +915,18 @@ export async function generateScriptChunks(input: GenerateScriptChunksInput): Pr
         return { success: true, data: { scriptChunks: nonEmptyChunks } };
       }
       console.error('Google AI did not return the expected scriptChunks array:', parsedOutput);
-      return { success: false, error: 'Failed to parse script chunks from Google AI response.' };
+      console.log('Falling back to simple sentence-based chunking...');
+      
+      // Fallback to simple chunking if AI fails
+      const sentences = input.script.split(/(?<=[.!?])\s+/).map(s => s.trim()).filter(s => s.length > 0);
+      const fallbackChunks = sentences;
+      
+      if (fallbackChunks.length > 0) {
+        console.log(`Using fallback chunking with ${fallbackChunks.length} chunks`);
+        return { success: true, data: { scriptChunks: fallbackChunks } };
+      }
+      
+      return { success: false, error: 'Failed to parse script chunks from Google AI response and fallback also failed.' };
     } catch (error) {
       console.error("Error in generateScriptChunks AI call (Google):", error);
       const errorMessage = error instanceof Error ? error.message : "Failed to generate script chunks with Google.";
@@ -1290,7 +1304,7 @@ export async function generateImageFromPrompt(
           return { success: true, imageUrl: firebaseUrl, requestPrompt: pollResult.requestPrompt };
         } catch (uploadError) {
           console.error("Error uploading image to MinIO Storage:", uploadError);
-          return pollResult;
+          return { success: false, error: `Image generation succeeded but failed to save to storage: ${uploadError}`, requestPrompt: pollResult.requestPrompt };
         }
       }
       return pollResult;
@@ -1303,10 +1317,10 @@ export async function generateImageFromPrompt(
           return { success: true, imageUrl: firebaseUrl, requestPrompt, expandedPrompt: expandedPromptForExport };
         } catch (uploadError) {
           console.error("Error uploading image to MinIO Storage:", uploadError);
-          return { success: true, imageUrl: result.data[0].url, requestPrompt, expandedPrompt: expandedPromptForExport };
+          return { success: false, error: `Image generation succeeded but failed to save to storage: ${uploadError}`, requestPrompt, expandedPrompt: expandedPromptForExport };
         }
       }
-      return { success: true, imageUrl: result.data[0].url, requestPrompt, expandedPrompt: expandedPromptForExport };
+      return { success: false, error: "Storage upload required but userId or storyId missing", requestPrompt, expandedPrompt: expandedPromptForExport };
     } else {
       const errorDetail = `Status: ${response.status}, Body: ${JSON.stringify(result)}`;
       return { success: false, error: `Unexpected response format from PicsArt API after POST. Details: ${errorDetail}`, requestPrompt, expandedPrompt: expandedPromptForExport };

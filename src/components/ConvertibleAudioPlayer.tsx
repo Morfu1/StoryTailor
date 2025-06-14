@@ -133,15 +133,16 @@ export function ConvertibleAudioPlayer({
           if (errorMsg.includes("DEMUXER_ERROR_COULD_NOT_OPEN")) {
             console.warn(`Possible reasons for audio error:
               1. Story may not have been saved before generating audio (should be fixed now)
-              2. Ad blocker or privacy extension might be blocking Firebase Storage
+              2. Ad blocker or privacy extension might be blocking storage connections
               3. The audio file might be corrupted or in an unsupported format`);
             
-            if (audioSrc.includes('storage.googleapis.com')) {
-              console.warn('Firebase Storage URL detected. This might be blocked by ad blockers or privacy extensions.');
+            if (audioSrc.includes('storage.googleapis.com') || audioSrc.includes('minio-api.holoanima.com')) {
+              const storageType = audioSrc.includes('storage.googleapis.com') ? 'Firebase Storage' : 'MinIO Storage';
+              console.warn(`${storageType} URL detected. This might be blocked by ad blockers or privacy extensions.`);
               
               setConversionError(
                 `Audio failed to load. This may be caused by an ad blocker or privacy extension
-                blocking Firebase Storage connections. Try disabling them temporarily for this site.`
+                blocking ${storageType} connections. Try disabling them temporarily for this site.`
               );
               return;
             }

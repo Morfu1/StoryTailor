@@ -39,7 +39,8 @@ function transformStoryToBaserow(story: Story): Record<string, any> {
       perplexityModel: story.perplexityModel,
       googleScriptModel: story.googleScriptModel,
       imagePromptsData: story.imagePromptsData,
-      generatedScript: story.generatedScript // Store generated script in settings JSON
+      generatedScript: story.generatedScript, // Store generated script in settings JSON
+      detailsPrompts: story.detailsPrompts // Store details prompts in settings JSON
     })
   };
 
@@ -89,6 +90,7 @@ function transformBaserowToStory(row: any): Story {
       story.googleScriptModel = settings.googleScriptModel;
       story.imagePromptsData = settings.imagePromptsData;
       story.generatedScript = settings.generatedScript; // Read generated script from settings
+      story.detailsPrompts = settings.detailsPrompts; // Read details prompts from settings
     } catch (error) {
       console.warn('Failed to parse settings JSON:', error);
     }

@@ -24,7 +24,8 @@
 
 ```
 Vercel Frontend → https://baserow.holoanima.com (Database)
-                → https://minio.holoanima.com (Storage)
+                → https://minio-api.holoanima.com (Storage)
+                → https://minio.holoanima.com (web interface)
                 → Firebase Auth (User Management)
                           ↓
                    Cloudflare Tunnels

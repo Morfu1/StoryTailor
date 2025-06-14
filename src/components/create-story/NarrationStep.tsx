@@ -164,6 +164,36 @@ export function NarrationStep({ storyState }: NarrationStepProps) {
               <Progress value={progressPercentage} className="w-full" />
             </div>
 
+            {/* Prominent Regenerate Chunks Button */}
+            <div className="bg-amber-50 border border-amber-200 rounded p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-sm font-medium text-amber-800">Chunks Look Wrong?</h4>
+                  <p className="text-xs text-amber-700 mt-1">
+                    If your chunks contain invalid content, regenerate them to fix the issue.
+                  </p>
+                </div>
+                <Button
+                  onClick={handleRegenerateChunks}
+                  disabled={isLoading.scriptChunksUpdate || apiKeysLoading || googleKeyMissingForChunks}
+                  variant="outline"
+                  size="sm"
+                >
+                  {isLoading.scriptChunksUpdate ? (
+                    <>
+                      <Loader2 className="mr-2 h-3 w-3 animate-spin" />
+                      Regenerating...
+                    </>
+                  ) : (
+                    <>
+                      <RefreshCw className="mr-2 h-3 w-3" />
+                      Regenerate Chunks
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+
             {narrationSource === 'generate' && (
               <div className="flex gap-2">
                 {!processingAllMode ? (
@@ -228,22 +258,28 @@ export function NarrationStep({ storyState }: NarrationStepProps) {
             <p className="text-sm text-muted-foreground mb-4">
               Your script is ready to be split into narration chunks.
             </p>
-            <Button 
-              onClick={handleGenerateAllNarration} // This will first trigger chunk preparation
-              disabled={isLoading.narration || apiKeysLoading || googleKeyMissingForChunks}
-            >
-              {isLoading.narration || apiKeysLoading ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  {apiKeysLoading ? "Checking API Keys..." : "Preparing Chunks..."}
-                </>
-              ) : (
-                <>
-                  <Mic className="mr-2 h-4 w-4" />
-                  Start Narration Generation
-                </>
-              )}
-            </Button>
+            <div className="space-y-3">
+              <Button 
+                onClick={handleRegenerateChunks} // Use the dedicated chunk generation function
+                disabled={isLoading.scriptChunksUpdate || apiKeysLoading || googleKeyMissingForChunks}
+                className="w-full"
+              >
+                {isLoading.scriptChunksUpdate || apiKeysLoading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    {apiKeysLoading ? "Checking API Keys..." : "Preparing Chunks..."}
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw className="mr-2 h-4 w-4" />
+                    Generate Script Chunks
+                  </>
+                )}
+              </Button>
+              <p className="text-xs text-muted-foreground">
+                After chunks are generated, you can select a voice and generate audio.
+              </p>
+            </div>
             {googleKeyMissingForChunks && (
                <p className="text-xs text-destructive text-center mt-2">
                  Google API Key required to prepare script chunks. Please set it in <Link href="/settings" className="underline">Account Settings</Link>.

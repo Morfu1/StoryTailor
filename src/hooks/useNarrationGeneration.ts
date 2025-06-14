@@ -379,6 +379,36 @@ export const useNarrationGeneration = ({ storyState }: UseNarrationGenerationPro
       }));
       
       updateStoryData({ narrationChunks: chunksWithoutAudio });
+      
+      // Auto-save the story with the new chunks to the database
+      if (storyData.userId && storyData.id) {
+        try {
+          const updatedStoryData = {
+            ...storyData,
+            narrationChunks: chunksWithoutAudio
+          };
+          
+          const saveResult = await saveStory(updatedStoryData, storyData.userId);
+          if (saveResult.success) {
+            console.log('Successfully saved story with new chunks to database');
+          } else {
+            console.error('Failed to save story with new chunks:', saveResult.error);
+            toast({ 
+              title: 'Warning', 
+              description: 'Chunks generated but failed to save to database. Please save manually.', 
+              variant: 'destructive' 
+            });
+          }
+        } catch (error) {
+          console.error('Error saving story with new chunks:', error);
+          toast({ 
+            title: 'Warning', 
+            description: 'Chunks generated but failed to save to database. Please save manually.', 
+            variant: 'destructive' 
+          });
+        }
+      }
+      
       handleSetLoading('scriptChunksUpdate', false);
       
       if (newNarrationChunks.length > 0) {

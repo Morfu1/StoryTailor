@@ -2,6 +2,50 @@
 
 import { minioService } from '@/lib/minio';
 
+/**
+ * Convert raw PCM data to proper WAV format with headers
+ * Google TTS returns 24kHz, 16-bit, mono PCM data
+ */
+function convertPcmToWav(pcmBuffer: Buffer): Buffer {
+  const pcmBytes = pcmBuffer.byteLength;
+  const sampleRate = 24000; // Google TTS uses 24kHz
+  const numChannels = 1; // Mono
+  const bitsPerSample = 16; // 16-bit
+  const bytesPerSample = bitsPerSample / 8;
+  const blockAlign = numChannels * bytesPerSample;
+  const byteRate = sampleRate * blockAlign;
+  
+  // WAV header is 44 bytes
+  const headerSize = 44;
+  const fileSize = headerSize + pcmBytes;
+  
+  const buffer = Buffer.alloc(fileSize);
+  
+  // RIFF header
+  buffer.write('RIFF', 0, 4, 'ascii');
+  buffer.writeUInt32LE(fileSize - 8, 4); // File size - 8
+  buffer.write('WAVE', 8, 4, 'ascii');
+  
+  // fmt chunk
+  buffer.write('fmt ', 12, 4, 'ascii');
+  buffer.writeUInt32LE(16, 16); // fmt chunk size
+  buffer.writeUInt16LE(1, 20); // Audio format (1 = PCM)
+  buffer.writeUInt16LE(numChannels, 22); // Number of channels
+  buffer.writeUInt32LE(sampleRate, 24); // Sample rate
+  buffer.writeUInt32LE(byteRate, 28); // Byte rate
+  buffer.writeUInt16LE(blockAlign, 32); // Block align
+  buffer.writeUInt16LE(bitsPerSample, 34); // Bits per sample
+  
+  // data chunk
+  buffer.write('data', 36, 4, 'ascii');
+  buffer.writeUInt32LE(pcmBytes, 40); // Data size
+  
+  // Copy PCM data
+  pcmBuffer.copy(buffer, headerSize);
+  
+  return buffer;
+}
+
 export async function getStorageBucket(): Promise<string | undefined> {
   return process.env.MINIO_BUCKET_NAME;
 }
@@ -24,7 +68,12 @@ export async function uploadAudioToMinIOStorage(audioDataUri: string, userId: st
     throw new Error('Invalid audio data URI format. Supported formats: audio/mpeg, audio/wav');
   }
 
+  // Just like Firebase - save the raw base64 data directly without conversion
   const audioBuffer = Buffer.from(base64Data, 'base64');
+  console.log('🎵 Saving audio directly like Firebase (no conversion):');
+  console.log('  Buffer size:', audioBuffer.length);
+  console.log('  Content type:', contentType);
+  
   const filePath = minioService.generateFilePath(userId, storyId, filename, 'audio');
   
   // Upload file to MinIO
@@ -48,28 +97,64 @@ export async function uploadImageBufferToMinIOStorage(imageBuffer: Buffer, userI
   return await minioService.getSignedUrl(filePath, 7 * 24 * 60 * 60);
 }
 
-export async function uploadImageToMinIOStorage(imageDataUri: string, userId: string, storyId: string, filename: string): Promise<string> {
-  if (!imageDataUri || !userId || !storyId || !filename) {
+export async function uploadImageToMinIOStorage(imageDataUriOrUrl: string, userId: string, storyId: string, filename: string): Promise<string> {
+  if (!imageDataUriOrUrl || !userId || !storyId || !filename) {
     throw new Error("Missing required parameters for image upload.");
   }
 
-  let base64Data: string;
+  let imageBuffer: Buffer;
   let contentType: string;
 
-  if (imageDataUri.startsWith('data:image/jpeg;base64,')) {
-    base64Data = imageDataUri.substring('data:image/jpeg;base64,'.length);
-    contentType = 'image/jpeg';
-  } else if (imageDataUri.startsWith('data:image/png;base64,')) {
-    base64Data = imageDataUri.substring('data:image/png;base64,'.length);
-    contentType = 'image/png';
-  } else if (imageDataUri.startsWith('data:image/webp;base64,')) {
-    base64Data = imageDataUri.substring('data:image/webp;base64,'.length);
-    contentType = 'image/webp';
-  } else {
-    throw new Error('Invalid image data URI format. Supported formats: image/jpeg, image/png, image/webp');
+  // Handle data URI (base64 encoded)
+  if (imageDataUriOrUrl.startsWith('data:image/')) {
+    let base64Data: string;
+
+    if (imageDataUriOrUrl.startsWith('data:image/jpeg;base64,')) {
+      base64Data = imageDataUriOrUrl.substring('data:image/jpeg;base64,'.length);
+      contentType = 'image/jpeg';
+    } else if (imageDataUriOrUrl.startsWith('data:image/png;base64,')) {
+      base64Data = imageDataUriOrUrl.substring('data:image/png;base64,'.length);
+      contentType = 'image/png';
+    } else if (imageDataUriOrUrl.startsWith('data:image/webp;base64,')) {
+      base64Data = imageDataUriOrUrl.substring('data:image/webp;base64,'.length);
+      contentType = 'image/webp';
+    } else {
+      throw new Error('Invalid image data URI format. Supported formats: image/jpeg, image/png, image/webp');
+    }
+
+    imageBuffer = Buffer.from(base64Data, 'base64');
+  } 
+  // Handle HTTP URL - fetch and convert
+  else if (imageDataUriOrUrl.startsWith('http://') || imageDataUriOrUrl.startsWith('https://')) {
+    try {
+      const response = await fetch(imageDataUriOrUrl);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch image: ${response.status} ${response.statusText}`);
+      }
+      
+      const arrayBuffer = await response.arrayBuffer();
+      imageBuffer = Buffer.from(arrayBuffer);
+      
+      // Determine content type from response or URL extension
+      contentType = response.headers.get('content-type') || 'image/jpeg';
+      if (!contentType.startsWith('image/')) {
+        // Fallback based on URL extension or default to JPEG
+        if (imageDataUriOrUrl.toLowerCase().includes('.png')) {
+          contentType = 'image/png';
+        } else if (imageDataUriOrUrl.toLowerCase().includes('.webp')) {
+          contentType = 'image/webp';
+        } else {
+          contentType = 'image/jpeg';
+        }
+      }
+    } catch (error) {
+      throw new Error(`Failed to download image from URL: ${error}`);
+    }
+  } 
+  else {
+    throw new Error('Invalid image input. Must be a data URI (data:image/...) or HTTP URL (http/https)');
   }
 
-  const imageBuffer = Buffer.from(base64Data, 'base64');
   const filePath = minioService.generateFilePath(userId, storyId, filename, 'image');
   
   // Upload file to MinIO

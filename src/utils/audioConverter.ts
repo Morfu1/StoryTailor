@@ -173,5 +173,11 @@ export function needsAudioConversion(url: string): boolean {
   if (url.startsWith('blob:') || url.startsWith('data:')) {
     return false;
   }
-  return url.includes('.wav') && url.includes('storage.googleapis.com');
+  
+  // Both Firebase and MinIO WAV files need client-side conversion (raw PCM → proper WAV)
+  if (url.includes('.wav') && (url.includes('storage.googleapis.com') || url.includes('minio-api.holoanima.com'))) {
+    return true;
+  }
+  
+  return false;
 }

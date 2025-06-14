@@ -3,8 +3,10 @@
  * Replacement for Firebase Storage
  */
 
-import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, CreateBucketCommand, HeadBucketCommand } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import * as Minio from 'minio';
+
+// Force Node.js to prefer IPv4 to avoid IPv6 connection issues
+process.env.NODE_OPTIONS = (process.env.NODE_OPTIONS || '') + ' --dns-result-order=ipv4first';
 
 // MinIO configuration from environment
 const MINIO_ENDPOINT = process.env.MINIO_ENDPOINT || 'http://localhost:9100';
@@ -13,16 +15,54 @@ const MINIO_SECRET_KEY = process.env.MINIO_SECRET_KEY || 'Maslina12#Calda';
 const MINIO_BUCKET_NAME = process.env.MINIO_BUCKET_NAME || 'storytailor-media';
 const MINIO_REGION = process.env.MINIO_REGION || 'us-east-1';
 
-// Create S3 client configured for MinIO
-const s3Client = new S3Client({
-  endpoint: MINIO_ENDPOINT,
-  credentials: {
-    accessKeyId: MINIO_ACCESS_KEY,
-    secretAccessKey: MINIO_SECRET_KEY
-  },
-  region: MINIO_REGION,
-  forcePathStyle: true // Required for MinIO
-});
+// Debug: Log the loaded environment variables
+console.log('🔧 MinIO Configuration Debug:');
+console.log('  MINIO_ENDPOINT:', MINIO_ENDPOINT);
+console.log('  MINIO_ACCESS_KEY:', MINIO_ACCESS_KEY);
+console.log('  MINIO_SECRET_KEY:', MINIO_SECRET_KEY ? '***' + MINIO_SECRET_KEY.slice(-4) : 'undefined');
+console.log('  MINIO_BUCKET_NAME:', MINIO_BUCKET_NAME);
+console.log('  MINIO_REGION:', MINIO_REGION);
+
+// Create MinIO client lazily to ensure environment variables are loaded
+let minioClient: Minio.Client | null = null;
+
+function getMinioClient(): Minio.Client {
+  if (!minioClient) {
+    // Parse endpoint for MinIO client
+    const endpointUrl = new URL(MINIO_ENDPOINT);
+
+    // Compare with hardcoded values that worked
+    const hardcodedConfig = {
+      endPoint: 'minio-api.holoanima.com',
+      port: 443,
+      useSSL: true,
+      accessKey: 'admin',
+      secretKey: 'Maslina12#Calda',
+      region: 'us-east-1'
+    };
+
+    // MinIO client using environment variables
+    const clientConfig = {
+      endPoint: endpointUrl.hostname,          // ✅ Hostname from MINIO_ENDPOINT
+      port: endpointUrl.port ? parseInt(endpointUrl.port) : (endpointUrl.protocol === 'https:' ? 443 : 80),
+      useSSL: endpointUrl.protocol === 'https:', // ✅ SSL based on protocol
+      accessKey: MINIO_ACCESS_KEY,             // ✅ From environment
+      secretKey: MINIO_SECRET_KEY,             // ✅ From environment  
+      region: MINIO_REGION                     // ✅ From environment
+    };
+
+    console.log('🔧 Creating MinIO Client with Environment Variables:');
+    console.log('  endPoint:', JSON.stringify(clientConfig.endPoint));
+    console.log('  port:', clientConfig.port);
+    console.log('  useSSL:', clientConfig.useSSL);
+    console.log('  accessKey:', JSON.stringify(clientConfig.accessKey));
+    console.log('  secretKey:', JSON.stringify(clientConfig.secretKey));
+    console.log('  region:', JSON.stringify(clientConfig.region));
+
+    minioClient = new Minio.Client(clientConfig);
+  }
+  return minioClient;
+}
 
 export interface StorageService {
   testConnection(): Promise<boolean>;
@@ -41,10 +81,20 @@ class MinIOStorageService implements StorageService {
    */
   async testConnection(): Promise<boolean> {
     try {
-      await s3Client.send(new HeadBucketCommand({ Bucket: MINIO_BUCKET_NAME }));
+      console.log('Testing MinIO connection with endpoint:', MINIO_ENDPOINT);
+      const client = getMinioClient();
+      await client.bucketExists(MINIO_BUCKET_NAME);
       return true;
-    } catch (error) {
+    } catch (error: any) {
       console.log('MinIO connection test failed:', error);
+      console.log('Endpoint used:', MINIO_ENDPOINT);
+      console.log('Error details:', {
+        code: error.code,
+        errno: error.errno,
+        syscall: error.syscall,
+        address: error.address,
+        port: error.port
+      });
       return false;
     }
   }
@@ -54,16 +104,17 @@ class MinIOStorageService implements StorageService {
    */
   async createBucket(): Promise<void> {
     try {
-      await s3Client.send(new HeadBucketCommand({ Bucket: MINIO_BUCKET_NAME }));
-      console.log(`Bucket ${MINIO_BUCKET_NAME} already exists`);
-    } catch (error: any) {
-      if (error.name === 'NotFound' || error.$metadata?.httpStatusCode === 404) {
-        console.log(`Creating bucket ${MINIO_BUCKET_NAME}`);
-        await s3Client.send(new CreateBucketCommand({ Bucket: MINIO_BUCKET_NAME }));
-        console.log(`Bucket ${MINIO_BUCKET_NAME} created successfully`);
+      const client = getMinioClient();
+      const exists = await client.bucketExists(MINIO_BUCKET_NAME);
+      if (!exists) {
+        await client.makeBucket(MINIO_BUCKET_NAME, MINIO_REGION);
+        console.log(`Bucket '${MINIO_BUCKET_NAME}' created successfully`);
       } else {
-        throw error;
+        console.log(`Bucket '${MINIO_BUCKET_NAME}' already exists`);
       }
+    } catch (error: unknown) {
+      console.error('Error creating bucket:', error);
+      throw error;
     }
   }
 
@@ -75,15 +126,44 @@ class MinIOStorageService implements StorageService {
    * @returns The file URL
    */
   async uploadFile(key: string, buffer: Buffer, contentType = 'application/octet-stream'): Promise<string> {
-    const command = new PutObjectCommand({
-      Bucket: MINIO_BUCKET_NAME,
-      Key: key,
-      Body: buffer,
-      ContentType: contentType
-    });
-
-    await s3Client.send(command);
-    return `${MINIO_ENDPOINT}/${MINIO_BUCKET_NAME}/${key}`;
+    console.log('Uploading to MinIO with endpoint:', MINIO_ENDPOINT);
+    console.log('Bucket:', MINIO_BUCKET_NAME, 'Key:', key);
+    console.log('Buffer size:', buffer.length, 'Content-Type:', contentType);
+    
+    // Test connection first
+    const connectionTest = await this.testConnection();
+    if (!connectionTest) {
+      throw new Error('MinIO connection test failed. Please check network connectivity and endpoint configuration.');
+    }
+    console.log('MinIO connection test passed');
+    
+    try {
+      const metadata = {
+        'Content-Type': contentType
+      };
+      
+      const client = getMinioClient();
+      await client.putObject(MINIO_BUCKET_NAME, key, buffer, buffer.length, metadata);
+      console.log('MinIO upload successful');
+      return `${MINIO_ENDPOINT}/${MINIO_BUCKET_NAME}/${key}`;
+    } catch (error: any) {
+      console.error('MinIO upload failed:', error);
+      console.error('Upload error details:', {
+        code: error.code,
+        errno: error.errno,
+        syscall: error.syscall,
+        address: error.address,
+        port: error.port,
+        message: error.message
+      });
+      
+      // More descriptive error message
+      if (error.code === 'EHOSTUNREACH') {
+        throw new Error(`Cannot reach MinIO server at ${MINIO_ENDPOINT}. This may be due to network connectivity issues or IPv6 resolution problems. Please check your network configuration.`);
+      }
+      
+      throw error;
+    }
   }
 
   /**
@@ -92,26 +172,25 @@ class MinIOStorageService implements StorageService {
    * @returns File content as Buffer
    */
   async downloadFile(key: string): Promise<Buffer> {
-    const command = new GetObjectCommand({
-      Bucket: MINIO_BUCKET_NAME,
-      Key: key
+    return new Promise((resolve, reject) => {
+      const chunks: Buffer[] = [];
+      const client = getMinioClient();
+      client.getObject(MINIO_BUCKET_NAME, key, (err, dataStream) => {
+        if (err) {
+          reject(err);
+          return;
+        }
+        
+        if (!dataStream) {
+          reject(new Error(`File not found: ${key}`));
+          return;
+        }
+
+        dataStream.on('data', (chunk) => chunks.push(chunk));
+        dataStream.on('error', reject);
+        dataStream.on('end', () => resolve(Buffer.concat(chunks)));
+      });
     });
-
-    const response = await s3Client.send(command);
-    
-    if (!response.Body) {
-      throw new Error(`File not found: ${key}`);
-    }
-
-    // Convert stream to buffer
-    const chunks: Uint8Array[] = [];
-    const reader = response.Body as any;
-    
-    for await (const chunk of reader) {
-      chunks.push(chunk);
-    }
-    
-    return Buffer.concat(chunks);
   }
 
   /**
@@ -121,12 +200,13 @@ class MinIOStorageService implements StorageService {
    * @returns Presigned URL
    */
   async getSignedUrl(key: string, expiresIn = 7 * 24 * 60 * 60): Promise<string> {
-    const command = new GetObjectCommand({
-      Bucket: MINIO_BUCKET_NAME,
-      Key: key
-    });
-
-    return await getSignedUrl(s3Client, command, { expiresIn });
+    const client = getMinioClient();
+    // Add response headers for CORS and content type
+    const reqParams = {
+      'response-content-type': 'audio/wav',
+      'response-cache-control': 'no-cache'
+    };
+    return await client.presignedGetObject(MINIO_BUCKET_NAME, key, expiresIn, reqParams);
   }
 
   /**
@@ -134,12 +214,8 @@ class MinIOStorageService implements StorageService {
    * @param key File path/key in the bucket
    */
   async deleteFile(key: string): Promise<void> {
-    const command = new DeleteObjectCommand({
-      Bucket: MINIO_BUCKET_NAME,
-      Key: key
-    });
-
-    await s3Client.send(command);
+    const client = getMinioClient();
+    await client.removeObject(MINIO_BUCKET_NAME, key);
   }
 
   /**
@@ -148,15 +224,20 @@ class MinIOStorageService implements StorageService {
    * @returns Array of file keys
    */
   async listFiles(prefix?: string): Promise<string[]> {
-    const { ListObjectsV2Command } = await import('@aws-sdk/client-s3');
-    
-    const command = new ListObjectsV2Command({
-      Bucket: MINIO_BUCKET_NAME,
-      Prefix: prefix
+    return new Promise((resolve, reject) => {
+      const objects: string[] = [];
+      const client = getMinioClient();
+      const stream = client.listObjects(MINIO_BUCKET_NAME, prefix, true);
+      
+      stream.on('data', (obj) => {
+        if (obj.name) {
+          objects.push(obj.name);
+        }
+      });
+      
+      stream.on('error', reject);
+      stream.on('end', () => resolve(objects));
     });
-
-    const response = await s3Client.send(command);
-    return response.Contents?.map(obj => obj.Key || '') || [];
   }
 
   /**
@@ -176,5 +257,5 @@ class MinIOStorageService implements StorageService {
 // Export the service instance
 export const minioService = new MinIOStorageService();
 
-// Export S3 client for advanced operations
-export { s3Client };
+// Export MinIO client getter for advanced operations
+export { getMinioClient };
