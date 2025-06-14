@@ -61,6 +61,8 @@ export function DetailImageManager({ storyState, promptType, promptsString, show
         originalPrompt: individualPrompt,
         requestPrompt: result.requestPrompt,
         imageUrl: result.imageUrl,
+        width: result.width,
+        height: result.height,
         // sceneIndex is not applicable for detail images
         sceneIndex: -1, // Or some other indicator that it's not a scene image
       };
@@ -69,14 +71,31 @@ export function DetailImageManager({ storyState, promptType, promptsString, show
         ...(storyData.generatedImages || []).filter(img => img.originalPrompt !== individualPrompt),
         newImage,
       ];
+      
+      // Determine model based on provider
+      let detailImageModel = '';
+      if (imageProvider === 'picsart') {
+        detailImageModel = 'Picsart AI Image Generator';
+      } else if (imageProvider === 'imagen3') {
+        detailImageModel = 'Google Imagen 3';
+      }
+      
       setStoryData({
         ...storyData,
-        generatedImages: updatedImages
+        generatedImages: updatedImages,
+        // Track the provider and model used for detail images
+        detailImageProvider: imageProvider,
+        detailImageModel: detailImageModel
       });
       
       if (storyData.id && storyData.userId) {
         try {
-          const storyToSave = { ...storyData, generatedImages: updatedImages };
+          const storyToSave = { 
+            ...storyData, 
+            generatedImages: updatedImages,
+            detailImageProvider: imageProvider,
+            detailImageModel: detailImageModel
+          };
           console.log('Auto-saving story with generatedImages:', storyToSave.generatedImages);
           await saveStory(storyToSave, storyData.userId);
           console.log('Auto-saved story with new image');

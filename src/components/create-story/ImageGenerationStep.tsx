@@ -302,6 +302,8 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
         originalPrompt: promptTextForGeneration, 
         requestPrompt: result.requestPrompt, 
         imageUrl: result.imageUrl,
+        width: result.width,
+        height: result.height,
         chunkId: actionPrompt?.chunkId,
         chunkIndex: actionPrompt?.chunkIndex,
       };
@@ -336,19 +338,28 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
         }
       }
       
-      setStoryData({
+      // Determine model based on provider
+      let sceneImageModel = '';
+      if (imageProvider === 'picsart') {
+        sceneImageModel = 'Picsart AI Image Generator';
+      } else if (imageProvider === 'imagen3') {
+        sceneImageModel = 'Google Imagen 3';
+      }
+      
+      const updatedStoryData = {
         ...storyData,
         generatedImages: updatedGeneratedImages,
-        imagePromptsData: updatedImagePromptsData
-      });
+        imagePromptsData: updatedImagePromptsData,
+        // Track the provider and model used for scene images
+        sceneImageProvider: imageProvider,
+        sceneImageModel: sceneImageModel
+      };
+      
+      setStoryData(updatedStoryData);
       
       if (storyData.id && storyData.userId) {
         try {
-          await saveStory({ 
-            ...storyData, 
-            generatedImages: updatedGeneratedImages,
-            imagePromptsData: updatedImagePromptsData
-          }, storyData.userId);
+          await saveStory(updatedStoryData, storyData.userId);
         } catch (error) {
           console.error('Failed to auto-save story:', error);
         }
@@ -455,6 +466,8 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
           originalPrompt: promptTextForGeneration,
           requestPrompt: result.requestPrompt,
           imageUrl: result.imageUrl,
+          width: result.width,
+          height: result.height,
           chunkId: actionPrompt.chunkId,
           chunkIndex: actionPrompt.chunkIndex,
         };
@@ -498,11 +511,27 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
       );
       const finalGeneratedImages = [...existingImagesNotReplaced, ...newImagesThisBatch];
       
-      setStoryData({ ...currentStoryData, generatedImages: finalGeneratedImages });
+      // Determine model based on provider
+      let sceneImageModel = '';
+      if (imageProvider === 'picsart') {
+        sceneImageModel = 'Picsart AI Image Generator';
+      } else if (imageProvider === 'imagen3') {
+        sceneImageModel = 'Google Imagen 3';
+      }
+      
+      const updatedStoryData = {
+        ...currentStoryData, 
+        generatedImages: finalGeneratedImages,
+        // Track the provider and model used for scene images
+        sceneImageProvider: imageProvider,
+        sceneImageModel: sceneImageModel
+      };
+      
+      setStoryData(updatedStoryData);
       
       if (storyData.id && storyData.userId) {
         try {
-          await saveStory({ ...currentStoryData, generatedImages: finalGeneratedImages }, storyData.userId);
+          await saveStory(updatedStoryData, storyData.userId);
         } catch (error) {
           console.error('Failed to auto-save story after batch image generation:', error);
         }

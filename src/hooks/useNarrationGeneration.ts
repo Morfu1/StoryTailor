@@ -215,18 +215,44 @@ export const useNarrationGeneration = ({ storyState }: UseNarrationGenerationPro
       };
       
       const totalDuration = calculateTotalNarrationDuration(updatedChunks);
+      // Determine audio model based on service and user selection
+      let audioModel = '';
+      if (selectedTtsModel === 'elevenlabs') {
+        // For ElevenLabs, we could get the model from API, but for now use the standard model
+        audioModel = 'Eleven Turbo v2.5';
+      } else if (selectedTtsModel === 'google') {
+        // Use the actual selected Google TTS API model
+        audioModel = selectedGoogleApiModel || 'Gemini 2.5 Flash TTS';
+      }
+
       const updatedStoryData = {
         ...storyData,
         narrationChunks: updatedChunks,
         narrationAudioDurationSeconds: totalDuration,
-        elevenLabsVoiceId: voiceIdToUse
+        // Save to appropriate field based on service used
+        ...(selectedTtsModel === 'elevenlabs' 
+          ? { elevenLabsVoiceId: voiceIdToUse, narrationVoice: null }
+          : { narrationVoice: voiceIdToUse, elevenLabsVoiceId: null }
+        ),
+        // Track the service and model used
+        audioGenerationService: selectedTtsModel as 'elevenlabs' | 'google',
+        audioModel: audioModel
       };
       
-      updateStoryData({
+      const updateData = {
         narrationChunks: updatedChunks,
         narrationAudioDurationSeconds: totalDuration,
-        elevenLabsVoiceId: voiceIdToUse
-      });
+        // Save to appropriate field based on service used
+        ...(selectedTtsModel === 'elevenlabs' 
+          ? { elevenLabsVoiceId: voiceIdToUse, narrationVoice: null }
+          : { narrationVoice: voiceIdToUse, elevenLabsVoiceId: null }
+        ),
+        // Track the service and model used
+        audioGenerationService: selectedTtsModel as 'elevenlabs' | 'google',
+        audioModel: audioModel
+      };
+      
+      updateStoryData(updateData);
       
       // Auto-save the story with the new narration chunk (non-blocking)
       if (storyData.userId) {

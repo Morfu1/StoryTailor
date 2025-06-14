@@ -178,10 +178,10 @@ async function generateFullImagenPromptForExport(prompt: string, storyData: Stor
     }
     structuredPromptParts.push(actionPromptPart);
     
-    let basePrompt = structuredPromptParts.join('\n\n');
+    let basePrompt = structuredPromptParts.join('\n-----\n');
     
     if (style) {
-      basePrompt += `\n\nUse the following artistic style:\n${style}`;
+      basePrompt += `\n-----\nUse the following artistic style:\n${style}`;
     }
     
     return basePrompt;
@@ -246,11 +246,36 @@ export async function downloadStoryAsZip(storyData: Story) {
   
   const fetchFile = async (url: string, isAudio = false): Promise<Blob | null> => {
     try {
-      const response = await fetch(url);
-      if (!response.ok) {
-        console.warn(`Failed to fetch file from ${url}`);
+      if (!url || typeof url !== 'string') {
+        console.warn(`[ZIP] Invalid URL provided:`, url);
         return null;
       }
+      
+      // Validate URL format
+      try {
+        new URL(url);
+      } catch (urlError) {
+        console.warn(`[ZIP] Malformed URL:`, url, urlError);
+        return null;
+      }
+      
+      console.log(`[ZIP] Fetching ${isAudio ? 'audio' : 'image'} from:`, url);
+      
+      // Add headers for better compatibility
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Accept': isAudio ? 'audio/*' : 'image/*',
+        }
+      });
+      
+      if (!response.ok) {
+        console.warn(`[ZIP] Failed to fetch file from ${url} - Status: ${response.status} ${response.statusText}`);
+        return null;
+      }
+      
+      console.log(`[ZIP] Successfully fetched file, content-type: ${response.headers.get('content-type')}, size: ${response.headers.get('content-length') || 'unknown'}`);
+    
       
       if (isAudio) {
         const arrayBuffer = await response.arrayBuffer();
@@ -265,10 +290,49 @@ export async function downloadStoryAsZip(storyData: Story) {
         const wavBuffer = addWavHeadersToBuffer(arrayBuffer);
         return new Blob([wavBuffer], { type: 'audio/wav' });
       } else {
-        return await response.blob();
+        // For images, ensure proper MIME type detection
+        const contentType = response.headers.get('content-type');
+        const arrayBuffer = await response.arrayBuffer();
+        
+        // Always detect image type from file signature for better reliability
+        const view = new Uint8Array(arrayBuffer);
+        let mimeType = 'application/octet-stream';
+        
+        // Check for common image signatures
+        if (view[0] === 0xFF && view[1] === 0xD8) {
+          mimeType = 'image/jpeg';
+        } else if (view[0] === 0x89 && view[1] === 0x50 && view[2] === 0x4E && view[3] === 0x47) {
+          mimeType = 'image/png';
+        } else if (view[0] === 0x47 && view[1] === 0x49 && view[2] === 0x46) {
+          mimeType = 'image/gif';
+        } else if (view[0] === 0x57 && view[1] === 0x45 && view[2] === 0x42 && view[3] === 0x50) {
+          mimeType = 'image/webp';
+        } else if (contentType && (contentType.startsWith('image/') || contentType.includes('image'))) {
+          // Only use content-type if we can't detect from signature and it claims to be an image
+          mimeType = contentType;
+        }
+        
+        console.log(`[ZIP] Detected image type: ${mimeType} from signature (content-type was: ${contentType})`);
+        return new Blob([arrayBuffer], { type: mimeType });
       }
     } catch (error) {
-      console.warn(`Error fetching file from ${url}:`, error);
+      console.warn(`[ZIP] Error fetching file from ${url}:`, error);
+      
+      // Try a simpler fetch as fallback for images
+      if (!isAudio) {
+        try {
+          console.log(`[ZIP] Trying fallback fetch for image: ${url}`);
+          const fallbackResponse = await fetch(url, { mode: 'cors' });
+          if (fallbackResponse.ok) {
+            const blob = await fallbackResponse.blob();
+            console.log(`[ZIP] Fallback fetch successful, blob type: ${blob.type}, size: ${blob.size}`);
+            return blob;
+          }
+        } catch (fallbackError) {
+          console.warn(`[ZIP] Fallback fetch also failed:`, fallbackError);
+        }
+      }
+      
       return null;
     }
   };
@@ -327,8 +391,36 @@ export async function downloadStoryAsZip(storyData: Story) {
       }
     });
 
+    // If we have fewer mapped scenes than image prompts, try to find any unmapped images that could be scene images
+    const unmappedImages = storyData.generatedImages.filter(img => 
+      img.imageUrl && 
+      (img.sceneIndex === undefined || img.sceneIndex < 0) &&
+      !img.originalPrompt?.toLowerCase().includes('character') &&
+      !img.originalPrompt?.toLowerCase().includes('location') &&
+      !img.originalPrompt?.toLowerCase().includes('item')
+    );
+
+    console.log(`[ZIP] Found ${sceneImagesMap.size} mapped scene images and ${unmappedImages.length} unmapped images for ${storyData.imagePrompts.length} scenes`);
+
     for (let sceneIdx = 0; sceneIdx < storyData.imagePrompts.length; sceneIdx++) {
-      const imageForScene = sceneImagesMap.get(sceneIdx);
+      let imageForScene = sceneImagesMap.get(sceneIdx);
+      
+      // If no mapped image found, try to use an unmapped image
+      if (!imageForScene && unmappedImages.length > 0) {
+        // Try to find an image with matching prompt content or use the next available unmapped image
+        const targetPrompt = storyData.imagePrompts[sceneIdx].toLowerCase();
+        const matchingImage = unmappedImages.find(img => 
+          img.originalPrompt?.toLowerCase().includes(targetPrompt.substring(0, 20)) ||
+          targetPrompt.includes(img.originalPrompt?.toLowerCase().substring(0, 20) || '')
+        );
+        
+        imageForScene = matchingImage || unmappedImages[sceneIdx % unmappedImages.length];
+        
+        if (imageForScene) {
+          console.log(`[ZIP] Using unmapped image for scene ${sceneIdx + 1}: ${imageForScene.originalPrompt?.substring(0, 50)}...`);
+        }
+      }
+      
       if (imageForScene) {
         const imageBlob = await fetchFile(imageForScene.imageUrl);
         if (imageBlob) {
@@ -348,8 +440,15 @@ export async function downloadStoryAsZip(storyData: Story) {
     
     for (let index = 0; index < storyData.imagePrompts.length; index++) {
       const prompt = storyData.imagePrompts[index];
+      
+      // Find narration chunk number for this scene
+      const relatedActionPrompt = storyData.actionPrompts?.find(ap => ap.sceneIndex === index);
+      const chunkNumber = relatedActionPrompt?.chunkIndex !== undefined ? relatedActionPrompt.chunkIndex + 1 : 'N/A';
+      
       scenePromptsText += `Scene ${index + 1}:\n`;
+      scenePromptsText += `Narration Chunk ${chunkNumber}\n`;
       scenePromptsText += `Original Prompt: ${prompt}\n`;
+      scenePromptsText += `********************\n`;
       
       // Always generate the COMPLETE prompts that get sent to each AI
       try {
@@ -380,7 +479,8 @@ export async function downloadStoryAsZip(storyData: Story) {
         }
         
         scenePromptsText += `Picsart Expanded Prompt: ${picsartExpanded}\n`;
-        scenePromptsText += `Imagen 3 Expanded Prompt: ${imagenExpanded}\n`;
+        scenePromptsText += `********************\n`;
+        scenePromptsText += `Imagen 3 Expanded Prompt: \n${imagenExpanded}\n`;
       } catch (error) {
         console.warn('Failed to generate expanded prompts for export:', error);
         scenePromptsText += `Note: Could not generate expanded prompts. Original prompt preserved above.\n`;
@@ -399,7 +499,8 @@ export async function downloadStoryAsZip(storyData: Story) {
     // Sort action prompts by sceneIndex to ensure correct order in the text file
     const sortedActionPrompts = [...storyData.actionPrompts].sort((a, b) => (a.sceneIndex || 0) - (b.sceneIndex || 0));
     sortedActionPrompts.forEach((prompt) => {
-      actionPromptsText += `Scene ${prompt.sceneIndex !== undefined ? prompt.sceneIndex + 1 : 'N/A'}:\nAction: ${prompt.actionDescription}\nOriginal Prompt: ${prompt.originalPrompt}\nNarration Chunk: ${prompt.chunkText}\n\n`;
+      const chunkNumber = prompt.chunkIndex !== undefined ? prompt.chunkIndex + 1 : 'N/A';
+      actionPromptsText += `Scene ${prompt.sceneIndex !== undefined ? prompt.sceneIndex + 1 : 'N/A'}:\nAction: ${prompt.actionDescription}\nOriginal Prompt: ${prompt.originalPrompt}\nNarration Chunk ${chunkNumber}: ${prompt.chunkText}\n\n`;
     });
     actionPromptsFolder.file('action_prompts.txt', actionPromptsText);
   }
@@ -446,20 +547,111 @@ export async function downloadStoryAsZip(storyData: Story) {
   const toolsUsedFolder = zip.folder('Tools_Used');
   if (toolsUsedFolder) {
     let toolsInfo = '=== AI TOOLS USED ===\n\n';
-    if (storyData.elevenLabsVoiceId || (storyData.narrationVoice && storyData.narrationVoice.toLowerCase().includes('google'))) {
+    
+    // Audio Generation Details
+    if (storyData.narrationAudioUrl || storyData.narrationChunks) {
       toolsInfo += '=== AUDIO GENERATION ===\n';
-      toolsInfo += `Service: ${storyData.elevenLabsVoiceId ? 'ElevenLabs' : 'Google TTS'}\n`;
-      if(storyData.elevenLabsVoiceId) toolsInfo += `Voice ID: ${storyData.elevenLabsVoiceId}\n`;
-      if(storyData.narrationVoice && storyData.narrationVoice.toLowerCase().includes('google')) toolsInfo += `Voice Name: ${storyData.narrationVoice}\n`;
-      toolsInfo += 'Format: MP3 or WAV\n\n';
+      
+      // Use the tracked service (now properly saved) or fallback to detection
+      const audioService = storyData.audioGenerationService || 
+        (storyData.elevenLabsVoiceId && !storyData.narrationVoice ? 'elevenlabs' : 'google');
+      
+      if (audioService === 'elevenlabs') {
+        toolsInfo += `Service: ElevenLabs\n`;
+        toolsInfo += `Voice ID: ${storyData.elevenLabsVoiceId || storyData.narrationVoice}\n`;
+        toolsInfo += `Model: ${storyData.audioModel || 'Eleven Turbo v2.5'}\n`;
+        toolsInfo += `Output Format: MP3 (44.1kHz)\n\n`;
+      } else if (audioService === 'google') {
+        toolsInfo += `Service: Google Text-to-Speech\n`;
+        toolsInfo += `Voice: ${storyData.narrationVoice || storyData.elevenLabsVoiceId}\n`;
+        toolsInfo += `Model: ${storyData.audioModel || 'Unknown Google TTS Model'}\n`;
+        toolsInfo += `Output Format: WAV (24kHz, 16-bit)\n\n`;
+      } else {
+        toolsInfo += `Service: Unknown\n`;
+        if (storyData.narrationVoice) toolsInfo += `Voice: ${storyData.narrationVoice}\n`;
+        if (storyData.elevenLabsVoiceId) toolsInfo += `Voice ID: ${storyData.elevenLabsVoiceId}\n`;
+        toolsInfo += `Output Format: Audio file generated\n\n`;
+      }
     }
-    if (storyData.imageProvider) {
-      toolsInfo += '=== IMAGE GENERATION ===\n';
-      toolsInfo += `Service: ${storyData.imageProvider}\n`;
-      if(storyData.imageStyleId) toolsInfo += `Style ID: ${storyData.imageStyleId}\n`;
-      toolsInfo += 'Format: PNG/JPEG\n\n';
+    
+    // Image Generation Details
+    if (storyData.generatedImages && storyData.generatedImages.length > 0) {
+      // Check for character/location/item images
+      const detailImages = storyData.generatedImages.filter(image => 
+        (image.sceneIndex === undefined || image.sceneIndex < 0)
+      );
+      
+      // Check for scene images  
+      const sceneImages = storyData.generatedImages.filter(image => 
+        image.sceneIndex !== undefined && image.sceneIndex >= 0
+      );
+      
+      if (detailImages.length > 0) {
+        toolsInfo += '=== CHARACTER/LOCATION/ITEM IMAGE GENERATION ===\n';
+        
+        // Use tracked provider (now properly saved) or fallback
+        const detailService = storyData.detailImageProvider || storyData.imageProvider || 'Unknown';
+        const detailModel = storyData.detailImageModel || 
+          (detailService === 'picsart' ? 'Picsart AI Image Generator' : 
+           detailService === 'imagen3' ? 'Google Imagen 3' : 'Unknown');
+        
+        toolsInfo += `Service: ${detailService.charAt(0).toUpperCase() + detailService.slice(1)}\n`;
+        toolsInfo += `Model: ${detailModel}\n`;
+        
+        toolsInfo += `Images Generated: ${detailImages.length}\n`;
+        if(storyData.imageStyleId) toolsInfo += `Style ID: ${storyData.imageStyleId}\n`;
+        
+        // Get actual dimensions from the first image if available
+        const firstDetailImage = detailImages[0];
+        if (firstDetailImage?.width && firstDetailImage?.height) {
+          toolsInfo += `Output Format: JPEG/PNG (${firstDetailImage.width}×${firstDetailImage.height})\n\n`;
+        } else {
+          toolsInfo += `Output Format: JPEG/PNG\n\n`;
+        }
+      }
+      
+      if (sceneImages.length > 0) {
+        toolsInfo += '=== SCENE IMAGE GENERATION ===\n';
+        
+        // Use tracked provider (now properly saved) or fallback
+        const sceneService = storyData.sceneImageProvider || storyData.imageProvider || 'Unknown';
+        const sceneModel = storyData.sceneImageModel || 
+          (sceneService === 'picsart' ? 'Picsart AI Image Generator' : 
+           sceneService === 'imagen3' ? 'Google Imagen 3' : 'Unknown');
+        
+        toolsInfo += `Service: ${sceneService.charAt(0).toUpperCase() + sceneService.slice(1)}\n`;
+        toolsInfo += `Model: ${sceneModel}\n`;
+        
+        toolsInfo += `Images Generated: ${sceneImages.length}\n`;
+        if(storyData.imageStyleId) toolsInfo += `Style ID: ${storyData.imageStyleId}\n`;
+        
+        // Get actual dimensions from the first scene image if available
+        const firstSceneImage = sceneImages[0];
+        if (firstSceneImage?.width && firstSceneImage?.height) {
+          toolsInfo += `Output Format: JPEG/PNG (${firstSceneImage.width}×${firstSceneImage.height})\n\n`;
+        } else {
+          toolsInfo += `Output Format: JPEG/PNG\n\n`;
+        }
+      }
     }
-    toolsInfo += '=== STORY GENERATION ===\nService: Google Gemini (via Genkit)\nModel: gemini-2.5-flash-preview-05-20 (or equivalent based on implementation)\n\n';
+    
+    // Story Generation Details
+    toolsInfo += '=== STORY GENERATION ===\n';
+    toolsInfo += `Service: Google Gemini (via Firebase Genkit)\n`;
+    
+    if (storyData.googleScriptModel) {
+      toolsInfo += `Model: ${storyData.googleScriptModel}\n`;
+    } else {
+      toolsInfo += `Model: gemini-2.0-flash-exp\n`;
+    }
+    
+    if (storyData.aiProvider === 'perplexity' && storyData.perplexityModel) {
+      toolsInfo += `\n=== ALTERNATIVE STORY GENERATION ===\n`;
+      toolsInfo += `Service: Perplexity AI\n`;
+      toolsInfo += `Model: ${storyData.perplexityModel}\n`;
+    }
+    
+    toolsInfo += '\n';
     toolsUsedFolder.file('ai_tools_details.txt', toolsInfo);
   }
 

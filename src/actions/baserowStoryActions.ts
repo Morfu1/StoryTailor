@@ -40,7 +40,15 @@ function transformStoryToBaserow(story: Story): Record<string, any> {
       googleScriptModel: story.googleScriptModel,
       imagePromptsData: story.imagePromptsData,
       generatedScript: story.generatedScript, // Store generated script in settings JSON
-      detailsPrompts: story.detailsPrompts // Store details prompts in settings JSON
+      detailsPrompts: story.detailsPrompts, // Store details prompts in settings JSON
+      imagePrompts: story.imagePrompts, // Store image prompts in settings JSON
+      actionPrompts: story.actionPrompts, // Store action prompts in settings JSON
+      audioGenerationService: story.audioGenerationService, // Track TTS service used
+      audioModel: story.audioModel, // Track audio model used
+      detailImageProvider: story.detailImageProvider, // Track detail image provider
+      detailImageModel: story.detailImageModel, // Track detail image model
+      sceneImageProvider: story.sceneImageProvider, // Track scene image provider
+      sceneImageModel: story.sceneImageModel // Track scene image model
     })
   };
 
@@ -91,6 +99,14 @@ function transformBaserowToStory(row: any): Story {
       story.imagePromptsData = settings.imagePromptsData;
       story.generatedScript = settings.generatedScript; // Read generated script from settings
       story.detailsPrompts = settings.detailsPrompts; // Read details prompts from settings
+      story.imagePrompts = settings.imagePrompts; // Read image prompts from settings
+      story.actionPrompts = settings.actionPrompts; // Read action prompts from settings
+      story.audioGenerationService = settings.audioGenerationService; // Read TTS service used
+      story.audioModel = settings.audioModel; // Read audio model used
+      story.detailImageProvider = settings.detailImageProvider; // Read detail image provider
+      story.detailImageModel = settings.detailImageModel; // Read detail image model
+      story.sceneImageProvider = settings.sceneImageProvider; // Read scene image provider
+      story.sceneImageModel = settings.sceneImageModel; // Read scene image model
     } catch (error) {
       console.warn('Failed to parse settings JSON:', error);
     }

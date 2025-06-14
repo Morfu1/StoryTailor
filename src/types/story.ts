@@ -13,6 +13,8 @@ export interface GeneratedImage {
   originalPrompt: string; // The text of the prompt used to generate THIS image (snapshot)
   requestPrompt: string;  // The prompt after system expansions, sent to AI (useful for debugging/seeing what AI got)
   imageUrl: string;
+  width?: number; // Image width in pixels
+  height?: number; // Image height in pixels
   isChapterGenerated?: boolean; // Flag to identify images generated through chapter generation (less relevant now with sceneIndex)
   chapterNumber?: number; // The chapter number this image belongs to (less relevant now with sceneIndex)
   chunkId?: string; // The narration chunk ID this image belongs to
@@ -118,4 +120,12 @@ export interface Story {
   aiProvider?: 'google' | 'perplexity';
   perplexityModel?: string;
   googleScriptModel?: string; // Model for Google script generation
+  
+  // AI Model Tracking for each generation step
+  audioGenerationService?: 'elevenlabs' | 'google'; // Which TTS service was used
+  audioModel?: string; // Specific model used (e.g., "Eleven Turbo v2.5", "WaveNet")
+  detailImageProvider?: string; // Provider used for character/location/item images
+  detailImageModel?: string; // Model used for detail images
+  sceneImageProvider?: string; // Provider used for scene images  
+  sceneImageModel?: string; // Model used for scene images
 }

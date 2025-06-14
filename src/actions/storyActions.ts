@@ -948,7 +948,7 @@ export async function generateImageFromGemini(
   originalPrompt: string,
   userId: string,
   storyId?: string
-): Promise<{ success: boolean; imageUrl?: string; error?: string; requestPrompt?: string }> {
+): Promise<{ success: boolean; imageUrl?: string; error?: string; requestPrompt?: string; width?: number; height?: number }> {
   const userKeysResult = await getUserApiKeys(userId);
   if (!userKeysResult.success || !userKeysResult.data?.geminiApiKey) {
     return { success: false, error: "Gemini API key not configured by user. Please set it in Account Settings." };
@@ -957,6 +957,10 @@ export async function generateImageFromGemini(
 
   const styles = "3D, Cartoon, High Quality, 16:9 aspect ratio, detailed, sharp, professional photography";
   const requestPrompt = originalPrompt ? `${originalPrompt}, ${styles}` : styles;
+  
+  // Standard 16:9 dimensions
+  const width = 1024; 
+  const height = 576;
 
   try {
     console.log(`Calling Gemini API with prompt: "${requestPrompt}" using user's key.`);
@@ -1005,13 +1009,13 @@ export async function generateImageFromGemini(
         const imageName = `gemini_${Date.now()}_${safePrompt}`;
         const imageBuffer = Buffer.from(imageData, 'base64');
         const firebaseUrl = await uploadImageBufferToMinIOStorage(imageBuffer, userId, storyId, imageName, 'image/png');
-        return { success: true, imageUrl: firebaseUrl, requestPrompt };
+        return { success: true, imageUrl: firebaseUrl, requestPrompt, width, height };
       } catch (uploadError) {
         console.error("Error uploading image to MinIO Storage:", uploadError);
-        return { success: true, imageUrl: `data:image/png;base64,${imageData}`, requestPrompt };
+        return { success: true, imageUrl: `data:image/png;base64,${imageData}`, requestPrompt, width, height };
       }
     }
-    return { success: true, imageUrl: `data:image/png;base64,${imageData}`, requestPrompt };
+    return { success: true, imageUrl: `data:image/png;base64,${imageData}`, requestPrompt, width, height };
   } catch (error: unknown) {
     console.error("Error calling Gemini API:", error);
     const message = error instanceof Error ? error.message : "An unknown error occurred while generating the image.";
@@ -1024,7 +1028,7 @@ export async function generateImageFromImagen3(
   userId: string,
   storyId?: string,
   styleId?: string
-): Promise<{ success: boolean; imageUrl?: string; error?: string; requestPrompt?: string; expandedPrompt?: string }> {
+): Promise<{ success: boolean; imageUrl?: string; error?: string; requestPrompt?: string; expandedPrompt?: string; width?: number; height?: number }> {
   const userKeysResult = await getUserApiKeys(userId);
   if (!userKeysResult.success || !userKeysResult.data?.googleApiKey) {
     return { success: false, error: "Google API key for Imagen3 not configured by user. Please set it in Account Settings." };
@@ -1158,6 +1162,10 @@ export async function generateImageFromImagen3(
   
   const requestPromptWithStyle = basePrompt;
   const expandedPromptForExport = requestPromptWithStyle; // Store the full structured prompt with style
+  
+  // Standard 16:9 dimensions for Imagen3
+  const width = 1024;
+  const height = 576;
 
   try {
     console.log(`Calling Imagen 3 API with structured prompt: \n"${requestPromptWithStyle}"\nUsing user's key.`);
@@ -1204,13 +1212,13 @@ export async function generateImageFromImagen3(
         const imageName = `imagen3_${Date.now()}_${safePrompt}`;
         const imageBuffer = Buffer.from(imageData, 'base64');
         const firebaseUrl = await uploadImageBufferToMinIOStorage(imageBuffer, userId, storyId, imageName, 'image/png');
-        return { success: true, imageUrl: firebaseUrl, requestPrompt: requestPromptWithStyle, expandedPrompt: expandedPromptForExport };
+        return { success: true, imageUrl: firebaseUrl, requestPrompt: requestPromptWithStyle, expandedPrompt: expandedPromptForExport, width, height };
       } catch (uploadError) {
         console.error("Error uploading image to MinIO Storage:", uploadError);
-        return { success: true, imageUrl: `data:image/png;base64,${imageData}`, requestPrompt: requestPromptWithStyle, expandedPrompt: expandedPromptForExport };
+        return { success: true, imageUrl: `data:image/png;base64,${imageData}`, requestPrompt: requestPromptWithStyle, expandedPrompt: expandedPromptForExport, width, height };
       }
     }
-    return { success: true, imageUrl: `data:image/png;base64,${imageData}`, requestPrompt: requestPromptWithStyle, expandedPrompt: expandedPromptForExport };
+    return { success: true, imageUrl: `data:image/png;base64,${imageData}`, requestPrompt: requestPromptWithStyle, expandedPrompt: expandedPromptForExport, width, height };
   } catch (error: unknown) {
     console.error("Error calling Imagen 3 API:", error);
     const message = error instanceof Error ? error.message : "An unknown error occurred while generating the image.";
@@ -1224,7 +1232,7 @@ export async function generateImageFromPrompt(
   storyId?: string,
   provider: 'picsart' | 'gemini' | 'imagen3' = 'picsart',
   styleId?: string
-): Promise<{ success: boolean; imageUrl?: string; error?: string; requestPrompt?: string; expandedPrompt?: string }> {
+): Promise<{ success: boolean; imageUrl?: string; error?: string; requestPrompt?: string; expandedPrompt?: string; width?: number; height?: number }> {
   if (provider === 'gemini') {
     return generateImageFromGemini(originalPrompt, userId, storyId);
   }
@@ -1301,7 +1309,7 @@ export async function generateImageFromPrompt(
           const safePrompt = originalPrompt.substring(0, 30).replace(/[^a-z0-9]/gi, '_').toLowerCase();
           const imageName = `${Date.now()}_${safePrompt}`;
           const firebaseUrl = await uploadImageToMinIOStorage(pollResult.imageUrl, userId, storyId, imageName);
-          return { success: true, imageUrl: firebaseUrl, requestPrompt: pollResult.requestPrompt };
+          return { success: true, imageUrl: firebaseUrl, requestPrompt: pollResult.requestPrompt, width, height };
         } catch (uploadError) {
           console.error("Error uploading image to MinIO Storage:", uploadError);
           return { success: false, error: `Image generation succeeded but failed to save to storage: ${uploadError}`, requestPrompt: pollResult.requestPrompt };
@@ -1314,7 +1322,7 @@ export async function generateImageFromPrompt(
           const safePrompt = originalPrompt.substring(0, 30).replace(/[^a-z0-9]/gi, '_').toLowerCase();
           const imageName = `${Date.now()}_${safePrompt}`;
           const firebaseUrl = await uploadImageToMinIOStorage(result.data[0].url, userId, storyId, imageName);
-          return { success: true, imageUrl: firebaseUrl, requestPrompt, expandedPrompt: expandedPromptForExport };
+          return { success: true, imageUrl: firebaseUrl, requestPrompt, expandedPrompt: expandedPromptForExport, width, height };
         } catch (uploadError) {
           console.error("Error uploading image to MinIO Storage:", uploadError);
           return { success: false, error: `Image generation succeeded but failed to save to storage: ${uploadError}`, requestPrompt, expandedPrompt: expandedPromptForExport };
