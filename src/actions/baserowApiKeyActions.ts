@@ -18,9 +18,12 @@ export async function saveUserApiKeys(userId: string, apiKeys: UserApiKeys): Pro
 
   try {
     console.log(`[saveUserApiKeys] Attempting to save API keys for userId: ${userId}`);
+    console.log(`[saveUserApiKeys] Table ID: ${BASEROW_USER_API_KEYS_TABLE_ID}`);
+    console.log(`[saveUserApiKeys] API keys to save:`, { ...apiKeys, ...Object.keys(apiKeys).reduce((acc, key) => ({ ...acc, [key]: '***' }), {}) });
     
     // Check if user already has API keys
     const existingKeys = await getUserApiKeys(userId);
+    console.log(`[saveUserApiKeys] Existing keys result:`, existingKeys.success ? 'found' : existingKeys.error);
     
     const apiKeyData = {
       user_id: userId,
@@ -30,26 +33,23 @@ export async function saveUserApiKeys(userId: string, apiKeys: UserApiKeys): Pro
       last_used: new Date().toISOString().split('T')[0]
     };
 
-    if (existingKeys.success && existingKeys.data && Object.keys(existingKeys.data).length > 0) {
+    // Always fetch all rows to check if user exists
+    const apiKeyRows = await baserowService.apiCall(`/database/rows/table/${BASEROW_USER_API_KEYS_TABLE_ID}/?user_field_names=true`);
+    const userRow = apiKeyRows.results.find((row: any) => row.user_id === userId);
+    
+    if (userRow) {
       // Update existing record
-      const apiKeyRows = await baserowService.apiCall(`/database/rows/table/${BASEROW_USER_API_KEYS_TABLE_ID}/`);
-      const userRow = apiKeyRows.results.find((row: any) => row.user_id === userId);
-      
-      if (userRow) {
-        await baserowService.apiCall(`/database/rows/table/${BASEROW_USER_API_KEYS_TABLE_ID}/${userRow.id}/`, 'PATCH', {
-          api_key_hash: JSON.stringify(apiKeys),
-          last_used: new Date().toISOString().split('T')[0]
-        });
-        console.log(`[saveUserApiKeys] Successfully updated API keys for userId: ${userId}`);
-      } else {
-        // Create new record
-        await baserowService.apiCall(`/database/rows/table/${BASEROW_USER_API_KEYS_TABLE_ID}/`, 'POST', apiKeyData);
-        console.log(`[saveUserApiKeys] Successfully created API keys for userId: ${userId}`);
-      }
+      console.log(`[saveUserApiKeys] Updating existing record with ID: ${userRow.id}`);
+      await baserowService.apiCall(`/database/rows/table/${BASEROW_USER_API_KEYS_TABLE_ID}/${userRow.id}/?user_field_names=true`, 'PATCH', {
+        api_key_hash: JSON.stringify(apiKeys),
+        last_used: new Date().toISOString().split('T')[0]
+      });
+      console.log(`[saveUserApiKeys] Successfully updated API keys for userId: ${userId}`);
     } else {
       // Create new record
-      await baserowService.apiCall(`/database/rows/table/${BASEROW_USER_API_KEYS_TABLE_ID}/`, 'POST', apiKeyData);
-      console.log(`[saveUserApiKeys] Successfully created API keys for userId: ${userId}`);
+      console.log(`[saveUserApiKeys] Creating new record for userId: ${userId}`);
+      const result = await baserowService.apiCall(`/database/rows/table/${BASEROW_USER_API_KEYS_TABLE_ID}/?user_field_names=true`, 'POST', apiKeyData);
+      console.log(`[saveUserApiKeys] Successfully created API keys for userId: ${userId}, new record ID: ${result.id}`);
     }
     
     return { success: true };
@@ -87,7 +87,7 @@ export async function getUserApiKeys(userId: string): Promise<{ success: boolean
 
   try {
     // Get all API key rows and filter by user_id
-    const apiKeyRows = await baserowService.apiCall(`/database/rows/table/${BASEROW_USER_API_KEYS_TABLE_ID}/`);
+    const apiKeyRows = await baserowService.apiCall(`/database/rows/table/${BASEROW_USER_API_KEYS_TABLE_ID}/?user_field_names=true`);
     const userRow = apiKeyRows.results.find((row: any) => row.user_id === userId);
 
     if (userRow && userRow.api_key_hash) {
@@ -95,7 +95,7 @@ export async function getUserApiKeys(userId: string): Promise<{ success: boolean
         const apiKeys = JSON.parse(userRow.api_key_hash);
         
         // Update last_used timestamp
-        await baserowService.apiCall(`/database/rows/table/${BASEROW_USER_API_KEYS_TABLE_ID}/${userRow.id}/`, 'PATCH', {
+        await baserowService.apiCall(`/database/rows/table/${BASEROW_USER_API_KEYS_TABLE_ID}/${userRow.id}/?user_field_names=true`, 'PATCH', {
           last_used: new Date().toISOString().split('T')[0]
         });
         
@@ -139,11 +139,11 @@ export async function deleteUserApiKeys(userId: string): Promise<{ success: bool
 
   try {
     // Find the user's API key row
-    const apiKeyRows = await baserowService.apiCall(`/database/rows/table/${BASEROW_USER_API_KEYS_TABLE_ID}/`);
+    const apiKeyRows = await baserowService.apiCall(`/database/rows/table/${BASEROW_USER_API_KEYS_TABLE_ID}/?user_field_names=true`);
     const userRow = apiKeyRows.results.find((row: any) => row.user_id === userId);
 
     if (userRow) {
-      await baserowService.apiCall(`/database/rows/table/${BASEROW_USER_API_KEYS_TABLE_ID}/${userRow.id}/`, 'DELETE');
+      await baserowService.apiCall(`/database/rows/table/${BASEROW_USER_API_KEYS_TABLE_ID}/${userRow.id}/?user_field_names=true`, 'DELETE');
       console.log(`[deleteUserApiKeys] Successfully deleted API keys for userId: ${userId}`);
     } else {
       console.log(`[deleteUserApiKeys] No API keys found for userId: ${userId}`);

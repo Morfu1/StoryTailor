@@ -802,11 +802,16 @@ export async function generateImagePrompts(input: GenerateImagePromptsInput): Pr
 }
 
 export async function generateScriptChunks(input: GenerateScriptChunksInput): Promise<{ success: boolean, data?: Omit<z.infer<typeof AIScriptChunksOutputSchema>, 'error'>, error?: string }> {
+  console.log(`[generateScriptChunks] Function called with userId: ${input.userId}, aiProvider: ${input.aiProvider}`);
+  
   const userKeysResult = await getUserApiKeys(input.userId);
+  console.log(`[generateScriptChunks] User keys fetch result:`, userKeysResult.success ? 'success' : userKeysResult.error);
+  
   if (!userKeysResult.success || !userKeysResult.data) {
     return { success: false, error: "Could not fetch user API keys." };
   }
   const userApiKeys = userKeysResult.data;
+  console.log(`[generateScriptChunks] Available API keys:`, Object.keys(userApiKeys).filter(key => userApiKeys[key as keyof typeof userApiKeys]));
   const prompt = scriptChunksPromptTemplate.replace('{{{script}}}', input.script);
   const config = { temperature: 0.3, maxOutputTokens: 2048 };
 
@@ -856,21 +861,57 @@ export async function generateScriptChunks(input: GenerateScriptChunksInput): Pr
       return { success: false, error: "Google API key not configured by user. Please set it in Account Settings." };
     }
     try {
+      // Use the user-selected model or original default
       const modelName = input.googleScriptModel || 'gemini-2.5-flash-preview-05-20';
+      console.log(`[generateScriptChunks] Using Google AI with model: ${modelName}`);
+      console.log(`[generateScriptChunks] API key present: ${!!userApiKeys.googleApiKey}`);
+      console.log(`[generateScriptChunks] Script length: ${input.script.length} characters`);
+      
       const localAi = genkit({ plugins: [googleAI({ apiKey: userApiKeys.googleApiKey })], model: `googleai/${modelName}` });
-      const { output } = await localAi.generate({ prompt, output: { schema: AIScriptChunksOutputSchema, format: 'json' }, config });
-
-      if (output?.error) {
-        return { success: false, error: output.error };
+      
+      let parsedOutput: any;
+      
+      // First try with schema validation (preferred method)
+      try {
+        console.log(`[generateScriptChunks] Trying with schema validation...`);
+        const { output } = await localAi.generate({ prompt, output: { schema: AIScriptChunksOutputSchema, format: 'json' }, config });
+        console.log(`[generateScriptChunks] Schema-validated output:`, JSON.stringify(output, null, 2));
+        parsedOutput = output;
+      } catch (schemaError) {
+        console.log(`[generateScriptChunks] Schema validation failed, trying text parsing...`);
+        // Fall back to text generation and manual parsing
+        const { text } = await localAi.generate({ prompt, config });
+        console.log(`[generateScriptChunks] Raw AI response:`, text);
+        
+        try {
+          // Look for JSON in the response
+          const jsonMatch = text.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            parsedOutput = JSON.parse(jsonMatch[0]);
+          } else {
+            // If no JSON found, try to extract script chunks from the text
+            const lines = text.split('\n').filter(line => line.trim().length > 0);
+            parsedOutput = { scriptChunks: lines };
+          }
+        } catch (parseError) {
+          console.error(`[generateScriptChunks] Failed to parse AI response:`, parseError);
+          return { success: false, error: "Failed to parse AI response into script chunks." };
+        }
       }
-      if (output?.scriptChunks && Array.isArray(output.scriptChunks)) {
-        const nonEmptyChunks = output.scriptChunks.filter((chunk: string) => chunk.trim().length > 0);
+      
+      console.log(`[generateScriptChunks] Final parsed output:`, JSON.stringify(parsedOutput, null, 2));
+      
+      if (parsedOutput?.error) {
+        return { success: false, error: parsedOutput.error };
+      }
+      if (parsedOutput?.scriptChunks && Array.isArray(parsedOutput.scriptChunks)) {
+        const nonEmptyChunks = parsedOutput.scriptChunks.filter((chunk: string) => chunk.trim().length > 0);
         if (nonEmptyChunks.length === 0) {
             return { success: false, error: "Google AI returned no script chunks or only empty chunks." };
         }
         return { success: true, data: { scriptChunks: nonEmptyChunks } };
       }
-      console.error('Google AI did not return the expected scriptChunks array:', output);
+      console.error('Google AI did not return the expected scriptChunks array:', parsedOutput);
       return { success: false, error: 'Failed to parse script chunks from Google AI response.' };
     } catch (error) {
       console.error("Error in generateScriptChunks AI call (Google):", error);

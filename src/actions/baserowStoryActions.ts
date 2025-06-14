@@ -18,26 +18,28 @@ function transformStoryToBaserow(story: Story): Record<string, any> {
     user_id: story.userId,
     Title: story.title,
     content: story.userPrompt,
-    'Single select': story.status || 'draft', // Map to Baserow status field
+    'Single select': story.status && ['draft', 'generating', 'completed', 'error'].includes(story.status) ? story.status : 'draft', // Map to Baserow status field
     created_at: story.createdAt instanceof Date ? story.createdAt.toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
     updated_at: new Date().toISOString().split('T')[0],
     narration_audio_url: story.narrationAudioUrl || '',
     generated_images: story.generatedImages ? JSON.stringify(story.generatedImages) : '',
     narration_chunks: story.narrationChunks ? JSON.stringify(story.narrationChunks) : '',
     timeline_tracks: story.timelineTracks ? JSON.stringify(story.timelineTracks) : '',
-    image_prompts: story.imagePrompts ? JSON.stringify(story.imagePrompts) : '',
-    action_prompts: story.actionPrompts ? JSON.stringify(story.actionPrompts) : '',
+    // TODO: Add these fields to Baserow table
+    // image_prompts: story.imagePrompts ? JSON.stringify(story.imagePrompts) : '',
+    // action_prompts: story.actionPrompts ? JSON.stringify(story.actionPrompts) : '',
     image_style_id: story.imageStyleId || '',
     eleven_labs_voice_id: story.elevenLabsVoiceId || '',
     narration_voice: story.narrationVoice || '',
-    details_prompts: story.detailsPrompts ? JSON.stringify(story.detailsPrompts) : '',
+    // details_prompts: story.detailsPrompts ? JSON.stringify(story.detailsPrompts) : '',
     settings: JSON.stringify({
       narrationAudioDurationSeconds: story.narrationAudioDurationSeconds,
       imageProvider: story.imageProvider,
       aiProvider: story.aiProvider,
       perplexityModel: story.perplexityModel,
       googleScriptModel: story.googleScriptModel,
-      imagePromptsData: story.imagePromptsData
+      imagePromptsData: story.imagePromptsData,
+      generatedScript: story.generatedScript // Store generated script in settings JSON
     })
   };
 
@@ -67,12 +69,13 @@ function transformBaserowToStory(row: any): Story {
     generatedImages: row.generated_images ? JSON.parse(row.generated_images) : [],
     narrationChunks: row.narration_chunks ? JSON.parse(row.narration_chunks) : [],
     timelineTracks: row.timeline_tracks ? JSON.parse(row.timeline_tracks) : [],
-    imagePrompts: row.image_prompts ? JSON.parse(row.image_prompts) : [],
-    actionPrompts: row.action_prompts ? JSON.parse(row.action_prompts) : [],
+    // TODO: Add these fields to Baserow table
+    // imagePrompts: row.image_prompts ? JSON.parse(row.image_prompts) : [],
+    // actionPrompts: row.action_prompts ? JSON.parse(row.action_prompts) : [],
     imageStyleId: row.image_style_id,
     elevenLabsVoiceId: row.eleven_labs_voice_id,
     narrationVoice: row.narration_voice,
-    detailsPrompts: row.details_prompts ? JSON.parse(row.details_prompts) : undefined
+    // detailsPrompts: row.details_prompts ? JSON.parse(row.details_prompts) : undefined
   };
 
   // Parse settings JSON
@@ -85,6 +88,7 @@ function transformBaserowToStory(row: any): Story {
       story.perplexityModel = settings.perplexityModel;
       story.googleScriptModel = settings.googleScriptModel;
       story.imagePromptsData = settings.imagePromptsData;
+      story.generatedScript = settings.generatedScript; // Read generated script from settings
     } catch (error) {
       console.warn('Failed to parse settings JSON:', error);
     }
@@ -296,22 +300,45 @@ export async function saveStory(storyData: Story, userId: string): Promise<{ suc
 
   try {
     if (storyData.id) {
-      // Update existing story
-      const existingStoryResult = await getStory(storyData.id, userId);
-      if (!existingStoryResult.success) {
-        return { success: false, error: "Story not found. Cannot update." };
+      // Update existing story - need to find the Baserow row ID
+      try {
+        // First try to get by Baserow ID
+        let baserowRowId: string | null = null;
+        let existingStory: Story | null = null;
+        
+        try {
+          const row = await baserowService.getStory(storyData.id);
+          if (row) {
+            baserowRowId = storyData.id; // It's already a Baserow row ID
+            existingStory = transformBaserowToStory(row);
+          }
+        } catch (error) {
+          // If not found by Baserow ID, try by firebase_story_id
+          const stories = await baserowService.getStories();
+          const matchingRow = stories.find((row: any) => row.firebase_story_id === storyData.id);
+          if (matchingRow) {
+            baserowRowId = matchingRow.id.toString(); // Use the Baserow row ID
+            existingStory = transformBaserowToStory(matchingRow);
+          }
+        }
+        
+        if (!baserowRowId || !existingStory) {
+          return { success: false, error: "Story not found. Cannot update." };
+        }
+
+        if (existingStory.userId !== userId) {
+          return { success: false, error: "Unauthorized: You can only update your own stories." };
+        }
+
+        // Preserve original creation timestamp
+        processedStoryData.createdAt = existingStory.createdAt;
+
+        const baserowData = transformStoryToBaserow(processedStoryData);
+        await baserowService.updateStory(baserowRowId, baserowData);
+      } catch (updateError) {
+        console.error('Error updating story:', updateError);
+        return { success: false, error: `Failed to update story: ${updateError instanceof Error ? updateError.message : 'Unknown error'}` };
       }
-
-      const existingStory = existingStoryResult.data!;
-      if (existingStory.userId !== userId) {
-        return { success: false, error: "Unauthorized: You can only update your own stories." };
-      }
-
-      // Preserve original creation timestamp
-      processedStoryData.createdAt = existingStory.createdAt;
-
-      const baserowData = transformStoryToBaserow(processedStoryData);
-      await baserowService.updateStory(storyData.id, baserowData);
 
       revalidatePath('/dashboard');
       revalidatePath(`/create-story?storyId=${storyData.id}`);
@@ -362,12 +389,30 @@ export async function updateStoryTimeline(
   }
 
   try {
-    const existingStoryResult = await getStory(storyId, userId);
-    if (!existingStoryResult.success) {
+    // Find the actual Baserow row ID - same logic as in saveStory and deleteStory
+    let baserowRowId: string | null = null;
+    let existingStory: Story | null = null;
+    
+    try {
+      const row = await baserowService.getStory(storyId);
+      if (row) {
+        baserowRowId = storyId; // It's already a Baserow row ID
+        existingStory = transformBaserowToStory(row);
+      }
+    } catch (error) {
+      // If not found by Baserow ID, try by firebase_story_id
+      const stories = await baserowService.getStories();
+      const matchingRow = stories.find((row: any) => row.firebase_story_id === storyId);
+      if (matchingRow) {
+        baserowRowId = matchingRow.id.toString(); // Use the Baserow row ID
+        existingStory = transformBaserowToStory(matchingRow);
+      }
+    }
+    
+    if (!baserowRowId || !existingStory) {
       return { success: false, error: "Story not found. Cannot update timeline." };
     }
 
-    const existingStory = existingStoryResult.data!;
     if (existingStory.userId !== userId) {
       return { success: false, error: "Unauthorized: You can only update the timeline of your own stories." };
     }
@@ -377,7 +422,7 @@ export async function updateStoryTimeline(
       updated_at: new Date().toISOString().split('T')[0]
     };
 
-    await baserowService.updateStory(storyId, updates);
+    await baserowService.updateStory(baserowRowId, updates);
 
     revalidatePath(`/assemble-video?storyId=${storyId}`);
     revalidatePath('/dashboard');
@@ -409,25 +454,50 @@ export async function deleteStory(
   }
 
   try {
-    const existingStoryResult = await getStory(storyId, userId);
-    if (!existingStoryResult.success) {
+    // Find the actual Baserow row ID - same logic as in saveStory
+    let baserowRowId: string | null = null;
+    let existingStory: Story | null = null;
+    
+    try {
+      const row = await baserowService.getStory(storyId);
+      if (row) {
+        baserowRowId = storyId; // It's already a Baserow row ID
+        existingStory = transformBaserowToStory(row);
+      }
+    } catch (error) {
+      // If not found by Baserow ID, try by firebase_story_id
+      const stories = await baserowService.getStories();
+      const matchingRow = stories.find((row: any) => row.firebase_story_id === storyId);
+      if (matchingRow) {
+        baserowRowId = matchingRow.id.toString(); // Use the Baserow row ID
+        existingStory = transformBaserowToStory(matchingRow);
+      }
+    }
+    
+    if (!baserowRowId || !existingStory) {
       return { success: false, error: "Story not found." };
     }
 
-    const existingStory = existingStoryResult.data!;
     if (existingStory.userId !== userId) {
       return { success: false, error: "Unauthorized: You can only delete your own stories." };
     }
 
-    // Delete associated files from MinIO
+    // Delete associated files from MinIO (non-blocking)
     try {
+      console.log(`[deleteStory] Attempting to clean up storage files for story: ${storyId}`);
       const files = await minioService.listFiles(`users/${userId}/stories/${storyId}/`);
-      await Promise.all(files.map(filePath => minioService.deleteFile(filePath)));
+      if (files.length > 0) {
+        await Promise.all(files.map(filePath => minioService.deleteFile(filePath)));
+        console.log(`[deleteStory] Successfully deleted ${files.length} storage files`);
+      } else {
+        console.log(`[deleteStory] No storage files found to delete`);
+      }
     } catch (storageError) {
-      console.warn('Failed to delete some storage files:', storageError);
+      console.warn('[deleteStory] Failed to delete some storage files (this does not affect story deletion):', storageError);
+      // Continue with story deletion even if storage cleanup fails
     }
 
-    await baserowService.deleteStory(storyId);
+    await baserowService.deleteStory(baserowRowId);
 
     revalidatePath('/dashboard');
     revalidatePath(`/create-story?storyId=${storyId}`);
@@ -443,6 +513,27 @@ export async function deleteStory(
     }
     
     return { success: false, error: errorMessage };
+  }
+}
+
+export async function getUserStories(userId: string): Promise<{ success: boolean; data?: Story[]; error?: string }> {
+  if (!userId) {
+    return { success: false, error: "User ID is required" };
+  }
+
+  try {
+    const rows = await baserowService.getStories(userId);
+    const stories = rows.map(transformBaserowToStory).sort((a, b) => {
+      // Sort by updatedAt descending (most recent first)
+      const aTime = a.updatedAt instanceof Date ? a.updatedAt.getTime() : 0;
+      const bTime = b.updatedAt instanceof Date ? b.updatedAt.getTime() : 0;
+      return bTime - aTime;
+    });
+    
+    return { success: true, data: stories };
+  } catch (error) {
+    console.error('Error fetching user stories:', error);
+    return { success: false, error: 'Failed to fetch stories' };
   }
 }
 

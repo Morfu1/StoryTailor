@@ -9,8 +9,7 @@ import { PlusCircle, FileText, Loader2, AlertTriangle, Film, Edit, Trash2 } from
 import Link from 'next/link';
 import Image from 'next/image';
 import { useEffect, useState } from 'react';
-import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+// Removed Firebase Firestore imports - now using Baserow
 import {formatDistanceToNow} from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
 import { 
@@ -24,8 +23,8 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-// Corrected import path using alias
-import { deleteStory } from '@/actions/baserowStoryActions';
+// Import Baserow actions
+import { deleteStory, getUserStories } from '@/actions/baserowStoryActions';
 
 export default function DashboardPage() {
   const { user } = useAuth();
@@ -41,11 +40,12 @@ export default function DashboardPage() {
         setIsLoading(true);
         setError(null);
         try {
-          const storiesCol = collection(db, 'stories');
-          const q = query(storiesCol, where('userId', '==', user.uid), orderBy('updatedAt', 'desc'));
-          const querySnapshot = await getDocs(q);
-          const userStories: Story[] = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Story));
-          setStories(userStories);
+          const result = await getUserStories(user.uid);
+          if (result.success && result.data) {
+            setStories(result.data);
+          } else {
+            setError(result.error || "Failed to load your stories. Please try again later.");
+          }
         } catch (err) {
           console.error("Error fetching stories:", err);
           setError("Failed to load your stories. Please try again later.");
@@ -211,7 +211,7 @@ export default function DashboardPage() {
               </CardHeader>
               <CardContent className="flex-grow">
                 <p className="text-xs text-muted-foreground">
-                  Last updated: {story.updatedAt && typeof (story.updatedAt as { seconds: number })?.seconds === 'number' ? formatDistanceToNow(new Date( (story.updatedAt as { seconds: number }).seconds * 1000), { addSuffix: true }) : 'N/A'}
+                  Last updated: {story.updatedAt ? formatDistanceToNow(story.updatedAt instanceof Date ? story.updatedAt : new Date(story.updatedAt), { addSuffix: true }) : 'N/A'}
                 </p>
               </CardContent>
               <CardFooter className="flex flex-col gap-2">

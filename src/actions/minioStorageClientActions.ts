@@ -1,55 +1,5 @@
-"use server";
-
-import { refreshMinIOStorageUrl } from './minioStorageActions';
-
-/**
- * Client-callable wrapper for refreshing MinIO Storage URLs
- * Extracts user ID and story ID from the URL path
- */
-export async function refreshMinIOStorageUrlClient(expiredUrl: string): Promise<string | null> {
-  if (!expiredUrl || typeof expiredUrl !== 'string') {
-    return null;
-  }
-
-  try {
-    const minioEndpoint = process.env.MINIO_ENDPOINT;
-    if (!minioEndpoint || !expiredUrl.includes(minioEndpoint)) {
-      console.warn(`[refreshMinIOStorageUrlClient] URL is not a MinIO URL: ${expiredUrl}`);
-      return null;
-    }
-
-    // Extract file path from MinIO URL
-    // MinIO URL format: http://endpoint/bucket/users/userId/stories/storyId/folder/filename
-    const urlObj = new URL(expiredUrl);
-    const pathParts = urlObj.pathname.split('/').filter(part => part.length > 0);
-    
-    // Find users/{userId}/stories/{storyId} pattern
-    const usersIndex = pathParts.findIndex(part => part === 'users');
-    if (usersIndex !== -1 && usersIndex + 3 < pathParts.length) {
-      const userId = pathParts[usersIndex + 1];
-      const storyId = pathParts[usersIndex + 3];
-      
-      // Full file path after bucket name
-      const bucketName = process.env.MINIO_BUCKET_NAME || 'storytailor-media';
-      const bucketIndex = pathParts.findIndex(part => part === bucketName);
-      
-      if (bucketIndex !== -1 && bucketIndex < pathParts.length - 1) {
-        const filePath = pathParts.slice(bucketIndex + 1).join('/');
-        
-        console.log(`[refreshMinIOStorageUrlClient] Refreshing URL for user: ${userId}, story: ${storyId}, file: ${filePath}`);
-        
-        return await refreshMinIOStorageUrl(expiredUrl, userId, storyId, filePath);
-      }
-    }
-    
-    console.warn(`[refreshMinIOStorageUrlClient] Unable to extract user/story ID from MinIO URL: ${expiredUrl}`);
-    return null;
-    
-  } catch (error) {
-    console.error('[refreshMinIOStorageUrlClient] Error refreshing URL:', error);
-    return null;
-  }
-}
+// Re-export server action from separate server file
+export { refreshMinIOStorageUrlClient } from './minioStorageServerActions';
 
 /**
  * Check if a URL is a MinIO storage URL
@@ -105,5 +55,41 @@ export function parseMinIOStorageUrl(url: string): {
   } catch (error) {
     console.error('Error parsing MinIO storage URL:', error);
     return { isValid: false };
+  }
+}
+
+/**
+ * Helper function to extract file info from MinIO URLs
+ * Note: This function doesn't have access to server environment variables,
+ * so it uses a provided endpoint or falls back to checking common patterns
+ */
+export function parseMinIOUrl(url: string, minioEndpoint?: string): { 
+  bucket?: string; 
+  filePath?: string; 
+  isMinIOUrl: boolean 
+} {
+  try {
+    // If no endpoint provided, try to detect MinIO-like patterns
+    if (!minioEndpoint) {
+      // Check for common MinIO URL patterns
+      if (!url.includes('minio') && !url.includes(':9000') && !url.includes(':9100')) {
+        return { isMinIOUrl: false };
+      }
+    } else if (!url.includes(minioEndpoint)) {
+      return { isMinIOUrl: false };
+    }
+
+    const urlObj = new URL(url);
+    const pathParts = urlObj.pathname.split('/').filter(part => part.length > 0);
+    
+    if (pathParts.length >= 2) {
+      const bucket = pathParts[0];
+      const filePath = pathParts.slice(1).join('/');
+      return { bucket, filePath, isMinIOUrl: true };
+    }
+
+    return { isMinIOUrl: true };
+  } catch (error) {
+    return { isMinIOUrl: false };
   }
 }

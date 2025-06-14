@@ -235,25 +235,4 @@ export async function getStorageUsage(userId: string): Promise<{ fileCount: numb
   }
 }
 
-// Helper function to extract file info from MinIO URLs
-export function parseMinIOUrl(url: string): { bucket?: string; filePath?: string; isMinIOUrl: boolean } {
-  try {
-    const minioEndpoint = process.env.MINIO_ENDPOINT;
-    if (!minioEndpoint || !url.includes(minioEndpoint)) {
-      return { isMinIOUrl: false };
-    }
 
-    const urlObj = new URL(url);
-    const pathParts = urlObj.pathname.split('/').filter(part => part.length > 0);
-    
-    if (pathParts.length >= 2) {
-      const bucket = pathParts[0];
-      const filePath = pathParts.slice(1).join('/');
-      return { bucket, filePath, isMinIOUrl: true };
-    }
-
-    return { isMinIOUrl: true };
-  } catch (error) {
-    return { isMinIOUrl: false };
-  }
-}

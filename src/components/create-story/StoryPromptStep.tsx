@@ -192,25 +192,16 @@ export function StoryPromptStep({ storyState }: StoryPromptStepProps) {
     });
     if (scriptResult.success && scriptResult.data) {
       const scriptText = scriptResult.data.script;
-      handleSetLoading('scriptChunks', true);
-      const narrationChunks = await prepareScriptChunksAI(
-        scriptText,
-        storyData.userId,
-        aiProvider,
-        perplexityModel,
-        googleScriptModel
-      );
-      handleSetLoading('scriptChunks', false);
       
+      // In Step 1, we only generate and save the story script
+      // Narration chunks will be generated later in Step 3
       const updatedStoryData = {
         ...storyData,
-        generatedScript: scriptText,
-        narrationChunks
+        generatedScript: scriptText
       };
       
       updateStoryData({
-        generatedScript: scriptText,
-        narrationChunks
+        generatedScript: scriptText
       });
       
       if (storyData.userId) {

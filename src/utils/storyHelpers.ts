@@ -212,22 +212,31 @@ export const countDetailImages = (storyData: Story): number => {
 
 // Helper function to determine the appropriate step based on story completion
 export const determineCurrentStep = (storyData: Story): number => {
+  // Step 5: All images generated
   if (storyData.generatedImages && storyData.generatedImages.length > 0 && 
       storyData.imagePrompts && countSceneImages(storyData) === storyData.imagePrompts.length && storyData.imagePrompts.length > 0) {
     return 5; 
-  } else if (storyData.imagePrompts && storyData.imagePrompts.length > 0) {
-    return 4; // If prompts exist, user is on or past step 4 (working on generating images)
-  } else if (storyData.narrationChunks && storyData.narrationChunks.length > 0 && storyData.narrationChunks.every(c => c.audioUrl)) {
+  } 
+  // Step 4: Has image prompts or complete narration chunks
+  else if (storyData.imagePrompts && storyData.imagePrompts.length > 0) {
     return 4; 
-  } else if (storyData.narrationAudioUrl) {
+  } 
+  else if (storyData.narrationChunks && storyData.narrationChunks.length > 0 && storyData.narrationChunks.every(c => c.audioUrl)) {
     return 4; 
-  } else if (storyData.narrationChunks && storyData.narrationChunks.length > 0) {
+  } 
+  else if (storyData.narrationAudioUrl) {
+    return 4; 
+  } 
+  // Step 3: Has any narration chunks (indicating step 2 is completed and user moved to step 3)
+  else if (storyData.narrationChunks && storyData.narrationChunks.length > 0) {
     return 3; 
-  } else if (storyData.detailsPrompts && (storyData.detailsPrompts.characterPrompts || storyData.detailsPrompts.itemPrompts || storyData.detailsPrompts.locationPrompts)) {
-    return 3; 
-  } else if (storyData.generatedScript) {
+  } 
+  // Step 2: Has generated script but no narration chunks (user should edit script first)
+  else if (storyData.generatedScript) {
     return 2; 
-  } else {
+  } 
+  // Step 1: Starting point
+  else {
     return 1;
   }
 };
