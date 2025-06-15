@@ -82,12 +82,20 @@ Before writing each prompt, ask yourself: "Does this image prompt directly show 
     - "Close-up shot of @Solin gazing upward with wonder in @DawnwingValley. Brilliant blue sky above. Feeling of limitless possibility. His eyes reflect dreams of soaring."
 4.  **SIMPLICITY RULE - Maximum 4 Placeholders**: Use AT MOST 4 @placeholders per prompt (not always 4, but never exceed 4). Focus on the most essential elements from the chunk. Quality over quantity.
 
-5.  **CRITICAL: Use @Placeholders Instead of Full Names**: For ANY entity mentioned in the CHARACTER, LOCATION, and ITEM REFERENCE sections above, you MUST use @placeholder format, NOT the full entity name. Convert entity names to PascalCase for @references:
+5.  **CRITICAL: Use ONLY @Placeholders from REFERENCES**: You can ONLY use @placeholders that exist in the CHARACTER, LOCATION, and ITEM REFERENCE sections above. DO NOT create new placeholders or use entities not listed in the references.
+    
+    **MANDATORY PLACEHOLDER VALIDATION:**
+    Before using any @placeholder, verify it exists in the reference sections. If an entity mentioned in the chunk is NOT in the references, you have two options:
+    1. Use a generic description without @placeholders (e.g., "ancient creatures" instead of "@ElderGriffins")
+    2. Focus on entities that DO exist in the references
+    
+    **Convert reference names to PascalCase @placeholders:**
     *   "Zara" → @Zara
     *   "ALEX" → @ALEX  
     *   "Zara's Backyard" → @ZarasBackyard
     *   "Old Man Grumbles" → @OldManGrumbles
     *   "Magic Sword" → @MagicSword
+    
     Do NOT write the full entity name or description in the prompt; use ONLY the @placeholder. The descriptions will be expanded automatically during image generation.
 
 6.  **Professional Visual Quality Guidelines**:
@@ -122,8 +130,10 @@ For each scene, generate one image prompt and one corresponding action prompt, f
 
 **Example:**
 Chunk 3: "High overhead, elder griffins traced lazy spirals while recounting centuries-old legends"
-✅ CORRECT: "Wide shot of @ElderGriffins flying in lazy spirals overhead in @DawnwingValley. Ancient creatures soaring majestically."
+✅ CORRECT (if @ElderGriffins exists): "Wide shot of @ElderGriffins flying in lazy spirals overhead in @DawnwingValley. Ancient creatures soaring majestically."
+✅ CORRECT (if @ElderGriffins missing): "Wide shot of ancient griffins flying in lazy spirals overhead in @DawnwingValley. Majestic creatures soaring through legends."
 ❌ WRONG: "Medium shot of @Vivi and @Bramble gripping @PatchworkKite in @DawnwingValley" (this is from a different chunk!)
+❌ WRONG: "Wide shot of @ElderGriffins..." (if @ElderGriffins doesn't exist in references)
 
 **EXAMPLES OF CORRECT @PLACEHOLDER USAGE:**
 ✅ CORRECT: "Wide shot of @Zara rushing to help @ALEX in @ZarasBackyard. Sunny afternoon."

@@ -63,6 +63,7 @@ export function StoryDetailsStep({ storyState }: StoryDetailsStepProps) {
     
     const result = await generateCharacterPrompts({
       script: storyData.generatedScript,
+      chunks: storyData.narrationChunks?.map(chunk => chunk.text) || [],
       imageStyleId: storyData.imageStyleId,
       imageProvider: imageProvider,
       userId: storyData.userId,
@@ -111,6 +112,7 @@ export function StoryDetailsStep({ storyState }: StoryDetailsStepProps) {
     
     const result = await generateCharacterPrompts({
       script: storyData.generatedScript,
+      chunks: storyData.narrationChunks?.map(chunk => chunk.text) || [],
       imageStyleId: storyData.imageStyleId,
       imageProvider: imageProvider,
       userId: storyData.userId,

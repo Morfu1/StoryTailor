@@ -40,6 +40,12 @@ const nextConfig = {
         hostname: 'placehold.co',
         port: '',
         pathname: '/**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'minio-api.holoanima.com',
+        port: '',
+        pathname: '/**',
       }
     ],
   },

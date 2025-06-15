@@ -2,6 +2,7 @@ import {z} from 'genkit';
 
 export const GenerateCharacterPromptsInputSchema = z.object({
   script: z.string().describe('The main script of the story.'),
+  chunks: z.array(z.string()).optional().describe('Array of narration chunks from the story for comprehensive entity extraction.'),
   imageStyleId: z.string().optional().describe('The image style ID to apply to the visual descriptions.'),
   imageProvider: z.enum(['picsart', 'gemini', 'imagen3']).default('picsart').describe('The AI provider for image generation to tailor style prompts.'),
 });
