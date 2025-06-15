@@ -42,29 +42,64 @@ You MUST generate prompts that DIRECTLY VISUALIZE the content of EACH narration 
 For each chunk, you need to generate a specific number of image prompts as indicated.
 
 {{#each chunksData}}
-**Narration Chunk {{@index}} (Duration: {{duration}}s, Required prompts: {{promptCount}}):**
+**Narration Chunk {{@index}} (Duration: {{duration}}s):**
 "{{text}}"
 
 **FOCUS EXCLUSIVELY ON THIS CHUNK:**
 **IGNORE ALL OTHER CHUNKS WHILE PROCESSING THIS ONE.**
 
+**CONTENT-BASED IMAGE ANALYSIS:**
+Analyze THIS chunk and determine how many distinct visual moments it contains:
+- 1 image: Single scene, moment, or action (e.g., contemplation, one continuous action)
+- 2 images: Two clear visual moments or scene transitions (e.g., approach + arrival, before + after)
+- 3 images: Multiple distinct actions or significant scene changes (e.g., action sequence with clear steps)
+
 **MANDATORY CONTENT CHECK:**
 Before writing each prompt, ask yourself: "Does this image prompt directly show what happens in THIS specific chunk text?" If no, rewrite it.
 
-**For THIS CHUNK, generate {{promptCount}} image prompt(s). Each prompt MUST:**
+**For THIS CHUNK, generate 1-3 image prompt(s) based on your analysis above. Each prompt MUST:**
 1.  **Visualize ONLY THIS CHUNK's content**: The image must depict ONLY what happens in the text above. Do NOT include actions, characters, or elements from other chunks. If this chunk mentions "elder griffins tracing spirals", your prompt must show griffins flying. If this chunk mentions "Solin gazing at blue sky", show Solin looking up. The image should depict characters, actions, and settings explicitly mentioned or clearly implied in THIS narration chunk ONLY.
 2.  **Include a SPECIFIC Location**: Use an @LocationName from the LOCATION REFERENCE. If no location is directly mentioned in the chunk, infer the most logical @LocationName based on the chunk's content, the overall story script, and available location references. DO NOT invent new locations; use only those in the LOCATION REFERENCE.
-3.  **Follow Prompt Structure**: "[Camera shot, e.g., Wide shot, Close-up] of @CharacterName [action/emotion/pose, e.g., looking thoughtful, running quickly] in @LocationName. [Interaction with @ItemName if relevant, e.g., holding @MagicWand]. [Lighting/mood, e.g., Sunny morning, Dark and stormy night]. [Key visual details from THIS narration chunk]."
-    *   Example: "Eye-level medium shot of @Rusty trotting through @ForestPath in @WhisperingWoods. He is sniffing the ground curiously. Morning light filters through the canopy."
-4.  **CRITICAL: Use @Placeholders Instead of Full Names**: For ANY entity mentioned in the CHARACTER, LOCATION, and ITEM REFERENCE sections above, you MUST use @placeholder format, NOT the full entity name. Convert entity names to PascalCase for @references:
+3.  **Follow Enhanced Prompt Structure**: Create professional, cinematic prompts using this structure:
+    "[CAMERA COMPOSITION] of @CharacterName [SPECIFIC ACTION/EMOTION] in @LocationName. [ATMOSPHERIC CONDITIONS]. [EMOTIONAL UNDERTONE from chunk]. [KEY VISUAL DETAIL from chunk]."
+    
+    **CAMERA COMPOSITION OPTIONS:**
+    - Wide establishing shot (shows full scene context and character relationships)
+    - Medium shot (focuses on character interaction and dialogue)
+    - Close-up shot (captures emotional moments and character focus)
+    - Over-the-shoulder shot (creates intimacy and perspective)
+    - Low angle shot (shows power dynamics, makes subject appear strong)
+    - High angle shot (shows vulnerability, makes subject appear small)
+    - Eye-level shot (neutral, natural perspective)
+    
+    **ATMOSPHERIC CONDITIONS (choose based on chunk mood):**
+    - Lighting: "Golden hour light", "Soft morning light", "Dramatic shadows", "Moonlit night"
+    - Weather: "Gentle breeze", "Storm approaching", "Clear skies", "Misty atmosphere"
+    - Time: "Dawn breaking", "Sunset glow", "Midday brightness", "Twilight hour"
+    
+    **ENHANCED EXAMPLES:**
+    - "Wide establishing shot of @Rusty exploring cautiously in @WhisperingWoods. Morning mist filters through ancient trees. Sense of mystery and discovery. His nose twitches as he follows an intriguing scent trail."
+    - "Close-up shot of @Solin gazing upward with wonder in @DawnwingValley. Brilliant blue sky above. Feeling of limitless possibility. His eyes reflect dreams of soaring."
+4.  **SIMPLICITY RULE - Maximum 4 Placeholders**: Use AT MOST 4 @placeholders per prompt (not always 4, but never exceed 4). Focus on the most essential elements from the chunk. Quality over quantity.
+
+5.  **CRITICAL: Use @Placeholders Instead of Full Names**: For ANY entity mentioned in the CHARACTER, LOCATION, and ITEM REFERENCE sections above, you MUST use @placeholder format, NOT the full entity name. Convert entity names to PascalCase for @references:
     *   "Zara" → @Zara
     *   "ALEX" → @ALEX  
     *   "Zara's Backyard" → @ZarasBackyard
     *   "Old Man Grumbles" → @OldManGrumbles
     *   "Magic Sword" → @MagicSword
     Do NOT write the full entity name or description in the prompt; use ONLY the @placeholder. The descriptions will be expanded automatically during image generation.
-5.  **No Style Descriptors**: ABSOLUTELY DO NOT include artistic style descriptors (like "3D rendered", "cartoon style", "photorealistic", "watercolor"). Style is handled separately.
-6.  **Natural Language**: Write prompts as if describing a scene to a human. Use present tense.
+
+6.  **Professional Visual Quality Guidelines**:
+    - Extract emotional undertones directly from the chunk text (joy, tension, mystery, wonder, etc.)
+    - Choose atmospheric conditions that enhance the chunk's mood
+    - Select camera angles that best serve the narrative moment
+    - Focus on ONE primary action or moment per prompt
+    - Avoid overcomplicated scenes - clarity beats complexity
+
+7.  **No Style Descriptors**: ABSOLUTELY DO NOT include artistic style descriptors (like "3D rendered", "cartoon style", "photorealistic", "watercolor"). Style is handled separately.
+
+8.  **Natural Language**: Write prompts as if describing a scene to a human director. Use present tense and active voice.
 ---
 {{/each}}
 
@@ -103,21 +138,26 @@ Chunk 3: "High overhead, elder griffins traced lazy spirals while recounting cen
 ✅ CORRECT: "Medium shot of @Zara examining @ALEX in @ZarasBackyard." (use lowercase "in")
 ❌ WRONG: "Medium shot of @Zara examining @ALEX IN @ZarasBackyard." (avoid uppercase "IN")
 
+**CONTENT-BASED EXAMPLES:**
+✅ SINGLE MOMENT: "Solin gazed upward, dreaming of flight" → 1 image (one contemplative scene)
+✅ TWO MOMENTS: "Solin climbed the cliff, then gasped at the view" → 2 images (climbing + arriving)  
+✅ THREE MOMENTS: "Solin ran to the edge, leaped boldly, then soared through clouds" → 3 images (run + leap + soar)
+
 **OUTPUT FORMAT (Strict JSON - NO COMMENTS ALLOWED):**
 Return ONLY valid JSON with NO comments, explanations, or additional text.
 Your response must be EXACTLY this format:
 
 {
-  "imagePrompts": ["prompt1", "prompt2", "prompt3"],
-  "actionPrompts": ["action1", "action2", "action3"]
+  "imagePrompts": ["prompt1", "prompt2", "..."],
+  "actionPrompts": ["action1", "action2", "..."]
 }
 
 CRITICAL REQUIREMENTS:
 - NO comments like "// Chunk 8" or "/* explanation */"
 - NO extra text before or after the JSON
-- NO explanations inside the JSON
-- The total number of image prompts must be exactly {{numImages}}
-- The total number of action prompts must also be exactly {{numImages}}
+- NO explanations inside the JSON  
+- Generate exactly as many prompts as your content analysis determined (1-3 per chunk)
+- Each imagePrompts array entry must have a corresponding actionPrompts entry
 - Each prompt must be a single string with no line breaks
 `,
   config: {
