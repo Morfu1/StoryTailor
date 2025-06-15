@@ -73,7 +73,7 @@ export function NarrationStep({ storyState }: NarrationStepProps) {
           Step 3: Narration Generation
         </CardTitle>
         <CardDescription>
-          Generate audio narration for your story using AI voices or upload your own audio.
+          Generate audio narration for your story using AI voices or upload your own audio. Your story has been automatically split into chunks for optimal narration.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -144,11 +144,11 @@ export function NarrationStep({ storyState }: NarrationStepProps) {
                       <AlertDialogHeader>
                         <AlertDialogTitle>Regenerate Story Chunks?</AlertDialogTitle>
                         <AlertDialogDescription>
-                          This will regenerate the story chunks using improved visual scene logic. 
-                          <strong className="block mt-2 text-destructive">
-                            Warning: All existing voice generations will be cleared and need to be regenerated.
-                          </strong>
-                           {googleKeyMissingForChunks && <span className="block mt-2 text-destructive">Google API Key is required for this.</span>}
+                        This will regenerate the story chunks using the AI model you selected in Step 1. 
+                        <strong className="block mt-2 text-destructive">
+                        Warning: All existing voice generations will be cleared and need to be regenerated.
+                        </strong>
+                        {googleKeyMissingForChunks && <span className="block mt-2 text-destructive">Google API Key is required for this.</span>}
                         </AlertDialogDescription>
                       </AlertDialogHeader>
                       <AlertDialogFooter>
@@ -164,13 +164,13 @@ export function NarrationStep({ storyState }: NarrationStepProps) {
               <Progress value={progressPercentage} className="w-full" />
             </div>
 
-            {/* Prominent Regenerate Chunks Button */}
-            <div className="bg-amber-50 border border-amber-200 rounded p-4">
+            {/* Optional Regenerate Chunks Button */}
+            <div className="bg-blue-50 border border-blue-200 rounded p-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <h4 className="text-sm font-medium text-amber-800">Chunks Look Wrong?</h4>
-                  <p className="text-xs text-amber-700 mt-1">
-                    If your chunks contain invalid content, regenerate them to fix the issue.
+                  <h4 className="text-sm font-medium text-blue-800">Need to Adjust Chunks?</h4>
+                  <p className="text-xs text-blue-700 mt-1">
+                    Your story was automatically split into chunks in Step 1. You can regenerate them if needed.
                   </p>
                 </div>
                 <Button
@@ -255,9 +255,12 @@ export function NarrationStep({ storyState }: NarrationStepProps) {
 
         {(!storyData.narrationChunks || storyData.narrationChunks.length === 0) && storyData.generatedScript && (
           <div className="text-center py-6">
-            <p className="text-sm text-muted-foreground mb-4">
-              Your script is ready to be split into narration chunks.
-            </p>
+            <div className="bg-yellow-50 border border-yellow-200 rounded p-4 mb-4">
+              <h4 className="text-sm font-medium text-yellow-800">Missing Script Chunks</h4>
+              <p className="text-xs text-yellow-700 mt-1">
+                It looks like chunks weren't generated in Step 1. This might happen with older stories or if there was an error during processing.
+              </p>
+            </div>
             <div className="space-y-3">
               <Button 
                 onClick={handleRegenerateChunks} // Use the dedicated chunk generation function
@@ -267,12 +270,12 @@ export function NarrationStep({ storyState }: NarrationStepProps) {
                 {isLoading.scriptChunksUpdate || apiKeysLoading ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    {apiKeysLoading ? "Checking API Keys..." : "Preparing Chunks..."}
+                    {apiKeysLoading ? "Checking API Keys..." : "Generating Chunks..."}
                   </>
                 ) : (
                   <>
                     <RefreshCw className="mr-2 h-4 w-4" />
-                    Generate Script Chunks
+                    Generate Script Chunks Now
                   </>
                 )}
               </Button>

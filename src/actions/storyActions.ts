@@ -864,42 +864,65 @@ export async function generateScriptChunks(input: GenerateScriptChunksInput): Pr
       return { success: false, error: "Google API key not configured by user. Please set it in Account Settings." };
     }
     try {
-      // Use the user-selected model or a reliable default for chunking
-      const modelName = input.googleScriptModel || 'gemini-1.5-flash';
+      // Use model fallback chain: user-selected -> gemini-1.5-pro -> gemini-1.5-flash
+      const fallbackModels = ['gemini-1.5-pro', 'gemini-1.5-flash'];
+      const modelName = input.googleScriptModel || fallbackModels[0];
       console.log(`[generateScriptChunks] Using Google AI with model: ${modelName}`);
       console.log(`[generateScriptChunks] API key present: ${!!userApiKeys.googleApiKey}`);
       console.log(`[generateScriptChunks] Script length: ${input.script.length} characters`);
       
-      const localAi = genkit({ plugins: [googleAI({ apiKey: userApiKeys.googleApiKey })], model: `googleai/${modelName}` });
-      
+      // Try models in order: user-selected -> fallback models
+      const modelsToTry = input.googleScriptModel ? [input.googleScriptModel, ...fallbackModels] : fallbackModels;
       let parsedOutput: unknown;
+      let lastError: string = "";
       
-      // First try with schema validation (preferred method)
-      try {
-        console.log(`[generateScriptChunks] Trying with schema validation...`);
-        const { output } = await localAi.generate({ prompt, output: { schema: AIScriptChunksOutputSchema, format: 'json' }, config });
-        console.log(`[generateScriptChunks] Schema-validated output:`, JSON.stringify(output, null, 2));
-        parsedOutput = output;
-      } catch {
-        console.log(`[generateScriptChunks] Schema validation failed, trying text parsing...`);
-        // Fall back to text generation and manual parsing
-        const { text } = await localAi.generate({ prompt, config });
-        console.log(`[generateScriptChunks] Raw AI response:`, text);
-        
+      for (const currentModel of modelsToTry) {
         try {
-          // Look for JSON in the response
-          const jsonMatch = text.match(/\{[\s\S]*\}/);
-          if (jsonMatch) {
-            parsedOutput = JSON.parse(jsonMatch[0]);
-          } else {
-            // If no JSON found, try to extract script chunks from the text
-            const lines = text.split('\n').filter(line => line.trim().length > 0);
-            parsedOutput = { scriptChunks: lines };
+          console.log(`[generateScriptChunks] Trying model: ${currentModel}`);
+          const localAi = genkit({ plugins: [googleAI({ apiKey: userApiKeys.googleApiKey })], model: `googleai/${currentModel}` });
+          
+          // First try with schema validation (preferred method)
+          try {
+            console.log(`[generateScriptChunks] Trying schema validation with ${currentModel}...`);
+            const { output } = await localAi.generate({ prompt, output: { schema: AIScriptChunksOutputSchema, format: 'json' }, config });
+            console.log(`[generateScriptChunks] Schema-validated output with ${currentModel}:`, JSON.stringify(output, null, 2));
+            parsedOutput = output;
+            break; // Success, exit the loop
+          } catch {
+            console.log(`[generateScriptChunks] Schema validation failed with ${currentModel}, trying text parsing...`);
+            // Fall back to text generation and manual parsing
+            const { text } = await localAi.generate({ prompt, config });
+            console.log(`[generateScriptChunks] Raw AI response from ${currentModel}:`, text);
+            
+            try {
+              // Look for JSON in the response
+              const jsonMatch = text.match(/\{[\s\S]*\}/);
+              if (jsonMatch) {
+                parsedOutput = JSON.parse(jsonMatch[0]);
+                break; // Success, exit the loop
+              } else {
+                // If no JSON found, try to extract script chunks from the text
+                const lines = text.split('\n').filter(line => line.trim().length > 0);
+                parsedOutput = { scriptChunks: lines };
+                break; // Success, exit the loop
+              }
+            } catch (parseError) {
+              console.error(`[generateScriptChunks] Failed to parse AI response from ${currentModel}:`, parseError);
+              lastError = `Failed to parse AI response from ${currentModel}`;
+              continue; // Try next model
+            }
           }
-        } catch (parseError) {
-          console.error(`[generateScriptChunks] Failed to parse AI response:`, parseError);
-          return { success: false, error: "Failed to parse AI response into script chunks." };
+        } catch (modelError) {
+          console.error(`[generateScriptChunks] Model ${currentModel} failed:`, modelError);
+          lastError = `Model ${currentModel} failed: ${modelError instanceof Error ? modelError.message : 'Unknown error'}`;
+          continue; // Try next model
         }
+      }
+      
+      // If all models failed
+      if (!parsedOutput) {
+        console.error(`[generateScriptChunks] All models failed. Last error: ${lastError}`);
+        return { success: false, error: `Failed to generate script chunks with any available model. ${lastError}` };
       }
       
       console.log(`[generateScriptChunks] Final parsed output:`, JSON.stringify(parsedOutput, null, 2));

@@ -116,13 +116,20 @@ export interface Story {
     index: number;
   }[]; // Audio narration for each script chunk
 
-  // AI Provider and Model Selection
+  // AI Provider and Model Selection (Step 1)
   aiProvider?: 'google' | 'perplexity';
   perplexityModel?: string;
   googleScriptModel?: string; // Model for Google script generation
   
-  // AI Model Tracking for each generation step
-  audioGenerationService?: 'elevenlabs' | 'google'; // Which TTS service was used
+  // TTS Model Selection (Step 3)
+  selectedTtsModel?: 'elevenlabs' | 'google'; // User's TTS provider choice
+  selectedGoogleTtsModel?: string; // Specific Google TTS model (e.g., "gemini-2.5-flash-preview-tts")
+  
+  // Image Generation Model Selection (Step 4)  
+  imageProvider?: string; // e.g., "picsart", "gemini", "imagen3"
+  
+  // AI Model Tracking for each generation step (for analytics/debugging)
+  audioGenerationService?: 'elevenlabs' | 'google'; // Which TTS service was actually used
   audioModel?: string; // Specific model used (e.g., "Eleven Turbo v2.5", "WaveNet")
   detailImageProvider?: string; // Provider used for character/location/item images
   detailImageModel?: string; // Model used for detail images

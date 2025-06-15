@@ -22,9 +22,9 @@ export function VoiceSelector({ storyState }: VoiceSelectorProps) {
     narrationSource,
     setNarrationSource,
     selectedTtsModel,
-    setSelectedTtsModel,
+    setSelectedTtsModelWithPersist,
     selectedGoogleApiModel,
-    setSelectedGoogleApiModel,
+    setSelectedGoogleApiModelWithPersist,
     selectedGoogleLanguage,
     setSelectedGoogleLanguage,
     selectedGoogleVoiceId,
@@ -177,7 +177,7 @@ export function VoiceSelector({ storyState }: VoiceSelectorProps) {
               <Label className="text-sm font-medium">TTS Model</Label>
               <RadioGroup 
                 value={selectedTtsModel} 
-                onValueChange={(value: 'elevenlabs' | 'google') => setSelectedTtsModel(value)}
+                onValueChange={(value: 'elevenlabs' | 'google') => setSelectedTtsModelWithPersist(value)}
                 className="flex flex-col space-y-2"
               >
                 <div className="flex items-center space-x-2">
@@ -241,7 +241,7 @@ export function VoiceSelector({ storyState }: VoiceSelectorProps) {
               <div className="space-y-4">
                 <div className="space-y-2">
                   <Label className="text-sm font-medium">Google API Model</Label>
-                  <Select value={selectedGoogleApiModel} onValueChange={setSelectedGoogleApiModel}>
+                  <Select value={selectedGoogleApiModel} onValueChange={setSelectedGoogleApiModelWithPersist}>
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>

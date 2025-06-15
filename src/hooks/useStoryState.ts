@@ -96,7 +96,14 @@ export interface UseStoryStateReturn {
   setAvailableGoogleScriptModels: (models: Array<{ id: string; name: string }> | null) => void;
   isLoadingGoogleScriptModels: boolean;
   setIsLoadingGoogleScriptModels: (loading: boolean) => void;
-  // Removed Perplexity dynamic model states
+  
+  // Enhanced model setters that persist to story data
+  setSelectedTtsModelWithPersist: (model: 'elevenlabs' | 'google') => void;
+  setSelectedGoogleApiModelWithPersist: (model: string) => void;
+  setImageProviderWithPersist: (provider: 'picsart' | 'gemini' | 'imagen3') => void;
+  
+  // State restoration function
+  restoreStateFromStoryData: (loadedStory: Story) => void;
 }
 
 export const useStoryState = (passedUserId?: string): UseStoryStateReturn => {
@@ -113,8 +120,8 @@ export const useStoryState = (passedUserId?: string): UseStoryStateReturn => {
   const [elevenLabsVoices, setElevenLabsVoices] = useState<ElevenLabsVoice[]>([]);
   const [selectedVoiceId, setSelectedVoiceId] = useState<string | undefined>(undefined);
   const [narrationSource, setNarrationSource] = useState<'generate' | 'upload'>('generate');
-  const [selectedTtsModel, setSelectedTtsModel] = useState<'elevenlabs' | 'google'>('elevenlabs');
-  const [selectedGoogleApiModel, setSelectedGoogleApiModel] = useState<string>('gemini-2.5-flash-preview-tts');
+  const [selectedTtsModel, setSelectedTtsModel] = useState<'elevenlabs' | 'google'>(initialStoryState.selectedTtsModel || 'google');
+  const [selectedGoogleApiModel, setSelectedGoogleApiModel] = useState<string>(initialStoryState.selectedGoogleTtsModel || 'gemini-2.5-flash-preview-tts');
   const [selectedGoogleLanguage, setSelectedGoogleLanguage] = useState<string>('en-US');
   const [selectedGoogleVoiceId, setSelectedGoogleVoiceId] = useState<string>('Zephyr');
   const [uploadedAudioFileName, setUploadedAudioFileName] = useState<string | null>(null);
@@ -127,7 +134,7 @@ export const useStoryState = (passedUserId?: string): UseStoryStateReturn => {
   const [firebaseError, setFirebaseError] = useState<string | null>(null);
   const [currentNarrationChunkIndex, setCurrentNarrationChunkIndex] = useState<number>(-1);
   const [processingAllMode, setProcessingAllMode] = useState<boolean>(false);
-  const [imageProvider, setImageProvider] = useState<'picsart' | 'gemini' | 'imagen3'>('picsart');
+  const [imageProvider, setImageProvider] = useState<'picsart' | 'gemini' | 'imagen3'>(initialStoryState.imageProvider as 'picsart' | 'gemini' | 'imagen3' || 'picsart');
   const [imageGenerationProgress, setImageGenerationProgress] = useState<{
     total: number;
     completed: number;
@@ -181,21 +188,18 @@ export const useStoryState = (passedUserId?: string): UseStoryStateReturn => {
 
   const setAiProvider = useCallback((provider: 'google' | 'perplexity') => {
     setAiProviderState(provider);
-    // Optionally, update storyData as well if you want this persisted with the story doc
-    // updateStoryData({ aiProvider: provider });
-  }, []);
+    updateStoryData({ aiProvider: provider });
+  }, [updateStoryData]);
 
   const setPerplexityModel = useCallback((model: string | undefined) => {
     setPerplexityModelState(model);
-    // Optionally, update storyData as well
-    // updateStoryData({ perplexityModel: model });
-  }, []);
+    updateStoryData({ perplexityModel: model });
+  }, [updateStoryData]);
 
   const setGoogleScriptModel = useCallback((model: string | undefined) => {
     setGoogleScriptModelState(model);
-    // Optionally, update storyData as well
-    // updateStoryData({ googleScriptModel: model });
-  }, []);
+    updateStoryData({ googleScriptModel: model });
+  }, [updateStoryData]);
 
   const setAvailableGoogleScriptModels = useCallback((models: Array<{ id: string; name: string }> | null) => {
     setAvailableGoogleScriptModelsState(models);
@@ -203,6 +207,53 @@ export const useStoryState = (passedUserId?: string): UseStoryStateReturn => {
 
   const setIsLoadingGoogleScriptModels = useCallback((loading: boolean) => {
     setIsLoadingGoogleScriptModelsState(loading);
+  }, []);
+
+  // Enhanced TTS model setters that also update story data
+  const setSelectedTtsModelWithPersist = useCallback((model: 'elevenlabs' | 'google') => {
+    setSelectedTtsModel(model);
+    updateStoryData({ selectedTtsModel: model });
+  }, [updateStoryData]);
+
+  const setSelectedGoogleApiModelWithPersist = useCallback((model: string) => {
+    setSelectedGoogleApiModel(model);
+    updateStoryData({ selectedGoogleTtsModel: model });
+  }, [updateStoryData]);
+
+  // Enhanced image provider setter that also updates story data
+  const setImageProviderWithPersist = useCallback((provider: 'picsart' | 'gemini' | 'imagen3') => {
+    setImageProvider(provider);
+    updateStoryData({ imageProvider: provider });
+  }, [updateStoryData]);
+
+  // Function to restore UI state from loaded story data
+  const restoreStateFromStoryData = useCallback((loadedStory: Story) => {
+    // Restore Step 1 model selections
+    if (loadedStory.aiProvider) {
+      setAiProviderState(loadedStory.aiProvider);
+    }
+    if (loadedStory.perplexityModel) {
+      setPerplexityModelState(loadedStory.perplexityModel);
+    }
+    if (loadedStory.googleScriptModel) {
+      setGoogleScriptModelState(loadedStory.googleScriptModel);
+    }
+    
+    // Restore Step 3 TTS model selections
+    if (loadedStory.selectedTtsModel) {
+      setSelectedTtsModel(loadedStory.selectedTtsModel);
+    }
+    if (loadedStory.selectedGoogleTtsModel) {
+      setSelectedGoogleApiModel(loadedStory.selectedGoogleTtsModel);
+    }
+    if (loadedStory.elevenLabsVoiceId) {
+      setSelectedVoiceId(loadedStory.elevenLabsVoiceId);
+    }
+    
+    // Restore Step 4 image model selections
+    if (loadedStory.imageProvider) {
+      setImageProvider(loadedStory.imageProvider as 'picsart' | 'gemini' | 'imagen3');
+    }
   }, []);
 
   // Removed Perplexity dynamic model setters
@@ -282,7 +333,14 @@ export const useStoryState = (passedUserId?: string): UseStoryStateReturn => {
     setAvailableGoogleScriptModels,
     isLoadingGoogleScriptModels,
     setIsLoadingGoogleScriptModels,
-    // Removed Perplexity dynamic model states from return
+    
+    // Enhanced model setters that persist to story data
+    setSelectedTtsModelWithPersist,
+    setSelectedGoogleApiModelWithPersist,
+    setImageProviderWithPersist,
+    
+    // State restoration function
+    restoreStateFromStoryData,
   };
 };
 

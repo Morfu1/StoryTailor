@@ -72,7 +72,7 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
     isImagePromptEditing,
     setIsImagePromptEditing,
     imageProvider,
-    setImageProvider,
+    setImageProviderWithPersist,
     imageGenerationProgress,
     setImageGenerationProgress,
     userApiKeys,
@@ -657,7 +657,7 @@ export function ImageGenerationStep({ storyState }: ImageGenerationStepProps) {
         <div className="space-y-2">
           <Label htmlFor="image-provider-select">Image Generation Provider</Label>
           <div className="flex items-center gap-2">
-            <Select value={imageProvider} onValueChange={(value) => setImageProvider(value as 'picsart' | 'gemini' | 'imagen3')}>
+            <Select value={imageProvider} onValueChange={(value) => setImageProviderWithPersist(value as 'picsart' | 'gemini' | 'imagen3')}>
               <SelectTrigger id="image-provider-select" className="w-[200px]">
                 <SelectValue placeholder="Select Provider" />
               </SelectTrigger>

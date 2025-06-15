@@ -180,6 +180,9 @@ export default function CreateStoryPage() {
             }
             
             setStoryData(loadedStory);
+            
+            // Restore all model selections from loaded story
+            storyState.restoreStateFromStoryData(loadedStory);
 
             if (loadedStory.elevenLabsVoiceId) {
               setSelectedVoiceId(loadedStory.elevenLabsVoiceId);
