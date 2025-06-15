@@ -45,8 +45,14 @@ For each chunk, you need to generate a specific number of image prompts as indic
 **Narration Chunk {{@index}} (Duration: {{duration}}s, Required prompts: {{promptCount}}):**
 "{{text}}"
 
+**FOCUS EXCLUSIVELY ON THIS CHUNK:**
+**IGNORE ALL OTHER CHUNKS WHILE PROCESSING THIS ONE.**
+
+**MANDATORY CONTENT CHECK:**
+Before writing each prompt, ask yourself: "Does this image prompt directly show what happens in THIS specific chunk text?" If no, rewrite it.
+
 **For THIS CHUNK, generate {{promptCount}} image prompt(s). Each prompt MUST:**
-1.  **Visualize THIS CHUNK's content**: The image should depict characters, actions, and settings explicitly mentioned or clearly implied in THIS narration chunk.
+1.  **Visualize ONLY THIS CHUNK's content**: The image must depict ONLY what happens in the text above. Do NOT include actions, characters, or elements from other chunks. If this chunk mentions "elder griffins tracing spirals", your prompt must show griffins flying. If this chunk mentions "Solin gazing at blue sky", show Solin looking up. The image should depict characters, actions, and settings explicitly mentioned or clearly implied in THIS narration chunk ONLY.
 2.  **Include a SPECIFIC Location**: Use an @LocationName from the LOCATION REFERENCE. If no location is directly mentioned in the chunk, infer the most logical @LocationName based on the chunk's content, the overall story script, and available location references. DO NOT invent new locations; use only those in the LOCATION REFERENCE.
 3.  **Follow Prompt Structure**: "[Camera shot, e.g., Wide shot, Close-up] of @CharacterName [action/emotion/pose, e.g., looking thoughtful, running quickly] in @LocationName. [Interaction with @ItemName if relevant, e.g., holding @MagicWand]. [Lighting/mood, e.g., Sunny morning, Dark and stormy night]. [Key visual details from THIS narration chunk]."
     *   Example: "Eye-level medium shot of @Rusty trotting through @ForestPath in @WhisperingWoods. He is sniffing the ground curiously. Morning light filters through the canopy."
@@ -75,6 +81,15 @@ Analyze the full STORY SCRIPT and identify {{numImages}} key scenes that need vi
 For each scene, generate one image prompt and one corresponding action prompt, following all the rules above (especially including a @LocationName and adhering to the prompt structure).
 {{/if}}
 
+**CHUNK-CONTENT SYNCHRONIZATION EXAMPLES:**
+❌ WRONG APPROACH: Creating prompts based on overall story knowledge
+✅ CORRECT APPROACH: Creating prompts based ONLY on this chunk's text
+
+**Example:**
+Chunk 3: "High overhead, elder griffins traced lazy spirals while recounting centuries-old legends"
+✅ CORRECT: "Wide shot of @ElderGriffins flying in lazy spirals overhead in @DawnwingValley. Ancient creatures soaring majestically."
+❌ WRONG: "Medium shot of @Vivi and @Bramble gripping @PatchworkKite in @DawnwingValley" (this is from a different chunk!)
+
 **EXAMPLES OF CORRECT @PLACEHOLDER USAGE:**
 ✅ CORRECT: "Wide shot of @Zara rushing to help @ALEX in @ZarasBackyard. Sunny afternoon."
 ❌ WRONG: "Wide shot of Zara rushing to help ALEX in Zara's Backyard. Sunny afternoon."
@@ -88,10 +103,22 @@ For each scene, generate one image prompt and one corresponding action prompt, f
 ✅ CORRECT: "Medium shot of @Zara examining @ALEX in @ZarasBackyard." (use lowercase "in")
 ❌ WRONG: "Medium shot of @Zara examining @ALEX IN @ZarasBackyard." (avoid uppercase "IN")
 
-**OUTPUT FORMAT (Strict JSON):**
-Return your response as a JSON object with two keys:
-1.  "imagePrompts": An array of strings, where each string is an image prompt. The total number of image prompts must be exactly {{numImages}}.
-2.  "actionPrompts": An array of strings, where each string is an action prompt corresponding to the image prompt at the same index. The total number of action prompts must also be exactly {{numImages}}.
+**OUTPUT FORMAT (Strict JSON - NO COMMENTS ALLOWED):**
+Return ONLY valid JSON with NO comments, explanations, or additional text.
+Your response must be EXACTLY this format:
+
+{
+  "imagePrompts": ["prompt1", "prompt2", "prompt3"],
+  "actionPrompts": ["action1", "action2", "action3"]
+}
+
+CRITICAL REQUIREMENTS:
+- NO comments like "// Chunk 8" or "/* explanation */"
+- NO extra text before or after the JSON
+- NO explanations inside the JSON
+- The total number of image prompts must be exactly {{numImages}}
+- The total number of action prompts must also be exactly {{numImages}}
+- Each prompt must be a single string with no line breaks
 `,
   config: {
     temperature: 0.7,
