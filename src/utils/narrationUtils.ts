@@ -46,12 +46,21 @@ export async function prepareScriptChunksAI(
       if (result.error && result.error.toLowerCase().includes("api key not configured")) {
         throw new Error(result.error);
       }
-      return [];
+      // Note: AI provider fallback is handled in storyActions.ts
+      // If we reach here, both primary and fallback AI providers failed
+      console.warn("AI chunk generation failed (including fallbacks), falling back to simple chunking");
+      return prepareScriptChunksSimple(script);
     }
   } catch (error) {
     console.error("Error calling AI for script chunking:", error);
-    // Re-throw the error so the calling function can handle it (e.g., show a specific toast)
-    throw error;
+    // If it's an API key error, re-throw it
+    if (error instanceof Error && error.message.toLowerCase().includes("api key not configured")) {
+      throw error;
+    }
+    // For other errors, fallback to simple chunking
+    // Note: AI provider fallback is handled in storyActions.ts  
+    console.warn("AI script chunking failed (including fallbacks), falling back to simple chunking");
+    return prepareScriptChunksSimple(script);
   }
 }
 

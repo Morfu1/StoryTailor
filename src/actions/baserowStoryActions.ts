@@ -294,7 +294,7 @@ export async function saveStory(storyData: Story, userId: string): Promise<{ suc
     return { success: false, error: "User not authenticated or user ID is invalid." };
   }
 
-  const storyIdForPath = storyData.id || Date.now().toString();
+  const storyIdForPath = storyData.id || `story_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   const processedStoryData = { ...storyData };
   let newNarrationUrl: string | undefined = undefined;
 
@@ -373,7 +373,24 @@ export async function saveStory(storyData: Story, userId: string): Promise<{ suc
         data: { narrationAudioUrl: newNarrationUrl || storyData.narrationAudioUrl } 
       };
     } else {
-      // Create new story
+      // Create new story - first check for duplicates
+      try {
+        const existingStories = await baserowService.getStories(userId);
+        const isDuplicate = existingStories.some((story: Record<string, unknown>) => 
+          story.user_id === userId && 
+          story.Title === processedStoryData.title?.trim() &&
+          story.content === processedStoryData.userPrompt?.trim()
+        );
+        
+        if (isDuplicate) {
+          console.warn(`[saveStory] Duplicate story detected for user ${userId}: "${processedStoryData.title}"`);
+          return { success: false, error: "A story with this title and content already exists." };
+        }
+      } catch (duplicateCheckError) {
+        console.warn('[saveStory] Failed to check for duplicates, proceeding with creation:', duplicateCheckError);
+        // Continue with creation if duplicate check fails
+      }
+      
       const baserowData = transformStoryToBaserow(processedStoryData);
       baserowData.firebase_story_id = storyIdForPath; // Set the ID for new stories
       

@@ -46,6 +46,7 @@ export function StoryPromptStep({ storyState }: StoryPromptStepProps) {
   const [activeTab, setActiveTab] = useState('ai-generate');
   const [manualScript, setManualScript] = useState(storyData.generatedScript || '');
   const [isAutoSaving, setIsAutoSaving] = useState(false);
+  const [lastSavedContent, setLastSavedContent] = useState<{title: string, script: string} | null>(null);
 
   const googleKeyMissing = !apiKeysLoading && !userApiKeys?.googleApiKey;
   const perplexityKeyMissing = aiProvider === 'perplexity' && !userApiKeys?.perplexityApiKey;
@@ -56,6 +57,22 @@ export function StoryPromptStep({ storyState }: StoryPromptStepProps) {
     debouncedSaveFnRef.current = debounce(async (title: string, script: string) => {
       if (!title.trim() || !script.trim() || !storyData.userId) return;
       if (googleKeyMissing && activeTab === 'ai-generate') return;
+      if (storyData.id && storyData.title === title.trim() && storyData.generatedScript === script) {
+        // No changes to save
+        return;
+      }
+      
+      // Prevent multiple simultaneous saves of the same content
+      if (lastSavedContent && lastSavedContent.title === title.trim() && lastSavedContent.script === script) {
+        console.log('Skipping save - content already saved');
+        return;
+      }
+      
+      // Prevent save if already saving
+      if (isAutoSaving) {
+        console.log('Skipping save - already in progress');
+        return;
+      }
 
       setIsAutoSaving(true);
       try {
@@ -77,6 +94,9 @@ export function StoryPromptStep({ storyState }: StoryPromptStepProps) {
         const saveResult = await saveStory(updatedStoryDataInternal, storyData.userId);
         
         if (saveResult.success) {
+          // Update last saved content to prevent duplicate saves
+          setLastSavedContent({ title: title.trim(), script });
+          
           if (saveResult.storyId && !storyData.id) {
             updateStoryData({
               id: saveResult.storyId,
@@ -116,14 +136,14 @@ export function StoryPromptStep({ storyState }: StoryPromptStepProps) {
       } finally {
         setIsAutoSaving(false);
       }
-    }, 1000);
+    }, 3000); // Increased debounce time to prevent rapid saves
 
     return () => {
       if (debouncedSaveFnRef.current) {
         debouncedSaveFnRef.current.cancel();
       }
     };
-  }, [storyData, googleKeyMissing, activeTab, updateStoryData, toast, setIsAutoSaving, aiProvider, googleScriptModel, perplexityModel]); // Removed prepareScriptChunksAI, saveStory
+  }, [storyData, googleKeyMissing, activeTab, updateStoryData, toast, setIsAutoSaving, aiProvider, googleScriptModel, perplexityModel, lastSavedContent, isAutoSaving]); // Removed prepareScriptChunksAI, saveStory
 
   const autoSaveStory = useCallback((title: string, script: string) => {
     if (debouncedSaveFnRef.current) {

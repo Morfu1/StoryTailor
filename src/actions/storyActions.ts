@@ -47,12 +47,17 @@ const titlePromptTemplate = 'You are an expert at creating catchy and concise ti
 'User Prompt: "{{userPrompt}}"\n' +
 'Generated Title:';
 
-const scriptPromptTemplate = 'You are a script writer for animated videos. Your task is to generate a script based on the user\'s prompt.\n' +
-'The script should be engaging for both children and adults, and should follow the themes, character descriptions, and story twists provided in the prompt.\n' +
-'Importantly, the entire script must be written from the perspective of a single narrator. Do not include character dialogues unless the narrator is quoting them. The narrative should flow as if one person is telling the entire story.\n' +
-'Ensure the script maintains a specific word count for optimal engagement.\n' +
-'User Prompt: {{{prompt}}}\n' +
-'Generated Script (for single narrator):';
+const scriptPromptTemplate = 'Write a complete story based on the user\'s prompt. This story will be narrated as an animated video.\n' +
+'Requirements:\n' +
+'- Write ONLY the story content itself, no production instructions, camera directions, or narrator cues\n' +
+'- Write in third person narrative style, as if telling a story to someone\n' +
+'- Make it engaging for both children and adults\n' +
+'- Follow the themes, characters, and story elements from the prompt\n' +
+'- Length: approximately 300-500 words\n' +
+'- Do not include any stage directions, narrator instructions, or formatting like "Scene 1:", "Camera:", etc.\n' +
+'- Write it as pure storytelling prose that flows naturally\n\n' +
+'User Prompt: {{{prompt}}}\n\n' +
+'Story:';
 
 const characterPromptsPromptTemplate = 'You are an expert prompt engineer specializing in creating descriptions for text-to-image AI models (like DALL-E, Midjourney, or Flux Dex model).\n' +
 'Based on the following story script, generate detailed visual descriptions for the main characters, key items, and important locations.\n' +
@@ -239,6 +244,8 @@ export async function generateTitle(input: GenerateTitleInput): Promise<{ succes
         modelName: input.perplexityModel || 'sonar-reasoning-pro', // Default model
         messages: messages,
         userId: input.userId,
+        contentType: 'title',
+        useStructuredOutput: true,
       });
 
       return { success: true, data: { title: titleText } }; // Wrapped to match AITitleOutputSchema
@@ -255,7 +262,7 @@ export async function generateTitle(input: GenerateTitleInput): Promise<{ succes
     const userGoogleKey = userKeysResult.data.googleApiKey;
 
     try {
-      const modelName = input.googleScriptModel || 'gemini-2.5-flash-preview-05-20'; // Default if not provided
+      const modelName = input.googleScriptModel || 'gemini-2.0-flash'; // Default if not provided
       const localAi = genkit({ plugins: [googleAI({ apiKey: userGoogleKey })], model: `googleai/${modelName}` });
       const prompt = titlePromptTemplate.replace('{{userPrompt}}', input.userPrompt);
       const { output } = await localAi.generate({ prompt, output: { schema: AITitleOutputSchema, format: 'json' } });
@@ -285,7 +292,7 @@ export async function generateScript(input: GenerateScriptInput): Promise<{ succ
       const promptText = scriptPromptTemplate.replace('{{{prompt}}}', input.prompt);
 
       const messages = [
-        { role: 'system' as const, content: 'You are a script writer for animated videos. Your task is to generate a script based on the user prompt. The script should be engaging for both children and adults. The entire script must be written from the perspective of a single narrator.' },
+        { role: 'system' as const, content: 'You are a story writer. Write engaging stories for animated videos. Write only the story content itself - no production instructions, stage directions, or narrator cues. Write in pure narrative prose that flows naturally.' },
         { role: 'user' as const, content: promptText }
       ];
 
@@ -293,6 +300,8 @@ export async function generateScript(input: GenerateScriptInput): Promise<{ succ
         modelName: input.perplexityModel || 'sonar-reasoning-pro', // Default model
         messages: messages,
         userId: input.userId,
+        contentType: 'script',
+        useStructuredOutput: true,
       });
 
       return { success: true, data: { script: scriptText } }; // Wrapped to match AIScriptOutputSchema
@@ -309,7 +318,7 @@ export async function generateScript(input: GenerateScriptInput): Promise<{ succ
     const userGoogleKey = userKeysResult.data.googleApiKey;
 
     try {
-      const modelName = input.googleScriptModel || 'gemini-2.5-flash-preview-05-20'; // Default if not provided
+      const modelName = input.googleScriptModel || 'gemini-2.0-flash'; // Default if not provided
       const localAi = genkit({ plugins: [googleAI({ apiKey: userGoogleKey })], model: `googleai/${modelName}` });
       const prompt = scriptPromptTemplate.replace('{{{prompt}}}', input.prompt);
       const { output } = await localAi.generate({ prompt, output: { schema: AIScriptOutputSchema, format: 'json' } });
@@ -395,7 +404,7 @@ export async function generateCharacterPrompts(input: GenerateCharacterPromptsIn
       return { success: false, error: "Google API key not configured by user. Please set it in Account Settings." };
     }
     try {
-      const modelName = input.googleScriptModel || 'gemini-2.5-flash-preview-05-20';
+      const modelName = input.googleScriptModel || 'gemini-2.0-flash';
       const localAi = genkit({ plugins: [googleAI({ apiKey: userApiKeys.googleApiKey })], model: `googleai/${modelName}` });
       const { output } = await localAi.generate({ prompt: finalPrompt, output: { schema: AICharacterPromptsOutputSchema, format: 'json' } });
       return { success: true, data: output! };
@@ -788,7 +797,7 @@ export async function generateImagePrompts(input: GenerateImagePromptsInput): Pr
       return { success: false, error: "Google API key for prompt generation not configured by user. Please set it in Account Settings." };
     }
     try {
-      const modelName = input.googleScriptModel || 'gemini-2.5-flash-preview-05-20';
+      const modelName = input.googleScriptModel || 'gemini-2.0-flash';
       const localAi = genkit({ plugins: [googleAI({ apiKey: userApiKeys.googleApiKey })], model: `googleai/${modelName}` });
       const { output } = await localAi.generate({ prompt: finalPrompt, output: { schema: AIImagePromptsOutputSchema, format: 'json' }, config });
       
@@ -818,6 +827,59 @@ export async function generateScriptChunks(input: GenerateScriptChunksInput): Pr
   const prompt = scriptChunksPromptTemplate.replace('{{{script}}}', input.script) + '\n\nREMEMBER: Every word from the original script must appear in your chunks. No content should be lost!';
   const config = { temperature: 0.3, maxOutputTokens: 2048 };
 
+  // Helper function to try Google AI as fallback
+  const tryGoogleFallback = async (): Promise<{ success: boolean, data?: Omit<z.infer<typeof AIScriptChunksOutputSchema>, 'error'>, error?: string }> => {
+    if (!userApiKeys.googleApiKey) {
+      return { success: false, error: "Google API key not available for fallback." };
+    }
+    
+    console.log(`[generateScriptChunks] Trying Google AI fallback...`);
+    try {
+      const fallbackModels = ['gemini-2.0-flash', 'gemini-1.5-pro', 'gemini-1.5-flash'];
+      let parsedOutput: unknown;
+      let lastError: string = "";
+      
+      for (const currentModel of fallbackModels) {
+        try {
+          console.log(`[generateScriptChunks] Fallback trying model: ${currentModel}`);
+          const localAi = genkit({ plugins: [googleAI({ apiKey: userApiKeys.googleApiKey })], model: `googleai/${currentModel}` });
+          
+          try {
+            const { output } = await localAi.generate({ prompt, output: { schema: AIScriptChunksOutputSchema, format: 'json' }, config });
+            parsedOutput = output;
+            break;
+          } catch {
+            const { text } = await localAi.generate({ prompt, config });
+            const jsonMatch = text.match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+              parsedOutput = JSON.parse(jsonMatch[0]);
+              break;
+            }
+          }
+        } catch (modelError) {
+          lastError = `Model ${currentModel} failed: ${modelError instanceof Error ? modelError.message : 'Unknown error'}`;
+          continue;
+        }
+      }
+      
+      if (!parsedOutput) {
+        return { success: false, error: `Google fallback failed: ${lastError}` };
+      }
+      
+      if ((parsedOutput as { scriptChunks?: unknown[] })?.scriptChunks && Array.isArray((parsedOutput as { scriptChunks: unknown[] }).scriptChunks)) {
+        const nonEmptyChunks = (parsedOutput as { scriptChunks: string[] }).scriptChunks.filter((chunk: string) => chunk.trim().length > 0);
+        if (nonEmptyChunks.length === 0) {
+          return { success: false, error: "Google fallback returned no script chunks or only empty chunks." };
+        }
+        return { success: true, data: { scriptChunks: nonEmptyChunks } };
+      }
+      
+      return { success: false, error: 'Google fallback did not return valid scriptChunks array.' };
+    } catch (error) {
+      return { success: false, error: `Google fallback error: ${error instanceof Error ? error.message : 'Unknown error'}` };
+    }
+  };
+
   if (input.aiProvider === 'perplexity') {
     if (!userApiKeys.perplexityApiKey) {
       return { success: false, error: "Perplexity API key not configured by user. Please set it in Account Settings." };
@@ -843,19 +905,51 @@ export async function generateScriptChunks(input: GenerateScriptChunksInput): Pr
         if (parsedOutput?.scriptChunks && Array.isArray(parsedOutput.scriptChunks)) {
           const nonEmptyChunks = parsedOutput.scriptChunks.filter((chunk: string) => chunk.trim().length > 0);
           if (nonEmptyChunks.length === 0) {
-            return { success: false, error: "Perplexity AI returned no script chunks or only empty chunks." };
-          }
-          return { success: true, data: { scriptChunks: nonEmptyChunks } };
+          console.log(`[generateScriptChunks] Perplexity returned empty chunks, attempting Google fallback...`);
+            const fallbackResult = await tryGoogleFallback();
+            if (fallbackResult.success) {
+                console.log(`[generateScriptChunks] Google fallback succeeded after Perplexity returned empty chunks`);
+                return fallbackResult;
+              }
+          return { success: false, error: "Perplexity AI returned no script chunks or only empty chunks." };
         }
-        console.error('Perplexity AI did not return the expected scriptChunks array:', parsedOutput);
-        return { success: false, error: 'Failed to parse script chunks from Perplexity AI response.' };
+        return { success: true, data: { scriptChunks: nonEmptyChunks } };
+      }
+      console.error('Perplexity AI did not return the expected scriptChunks array:', parsedOutput);
+      console.log(`[generateScriptChunks] Perplexity parsing failed, attempting Google fallback...`);
+      
+      const fallbackResult = await tryGoogleFallback();
+      if (fallbackResult.success) {
+        console.log(`[generateScriptChunks] Google fallback succeeded after Perplexity parsing failure`);
+        return fallbackResult;
+      }
+      
+      return { success: false, error: 'Failed to parse script chunks from Perplexity AI response.' };
       } catch (e) {
         console.error("Failed to parse JSON from Perplexity for script chunks:", resultText, e);
+        console.log(`[generateScriptChunks] Perplexity JSON parsing failed, attempting Google fallback...`);
+        
+        const fallbackResult = await tryGoogleFallback();
+        if (fallbackResult.success) {
+          console.log(`[generateScriptChunks] Google fallback succeeded after Perplexity JSON parsing failure`);
+          return fallbackResult;
+        }
+        
         return { success: false, error: "Failed to parse script chunks from Perplexity. Output was not valid JSON." };
       }
 
     } catch (error) {
       console.error("Error in generateScriptChunks with Perplexity AI call:", error);
+      console.log(`[generateScriptChunks] Perplexity failed, attempting Google fallback...`);
+      
+      // Try Google AI as fallback
+      const fallbackResult = await tryGoogleFallback();
+      if (fallbackResult.success) {
+        console.log(`[generateScriptChunks] Google fallback succeeded after Perplexity failure`);
+        return fallbackResult;
+      }
+      
+      console.log(`[generateScriptChunks] Both Perplexity and Google fallback failed`);
       const errorMessage = error instanceof Error ? error.message : "Failed to generate script chunks with Perplexity.";
       return { success: false, error: errorMessage };
     }
@@ -864,8 +958,8 @@ export async function generateScriptChunks(input: GenerateScriptChunksInput): Pr
       return { success: false, error: "Google API key not configured by user. Please set it in Account Settings." };
     }
     try {
-      // Use model fallback chain: user-selected -> gemini-1.5-pro -> gemini-1.5-flash
-      const fallbackModels = ['gemini-1.5-pro', 'gemini-1.5-flash'];
+      // Use model fallback chain: user-selected -> gemini-2.0-flash -> gemini-1.5-pro -> gemini-1.5-flash
+      const fallbackModels = ['gemini-2.0-flash', 'gemini-1.5-pro', 'gemini-1.5-flash'];
       const modelName = input.googleScriptModel || fallbackModels[0];
       console.log(`[generateScriptChunks] Using Google AI with model: ${modelName}`);
       console.log(`[generateScriptChunks] API key present: ${!!userApiKeys.googleApiKey}`);
@@ -886,25 +980,58 @@ export async function generateScriptChunks(input: GenerateScriptChunksInput): Pr
             console.log(`[generateScriptChunks] Trying schema validation with ${currentModel}...`);
             const { output } = await localAi.generate({ prompt, output: { schema: AIScriptChunksOutputSchema, format: 'json' }, config });
             console.log(`[generateScriptChunks] Schema-validated output with ${currentModel}:`, JSON.stringify(output, null, 2));
-            parsedOutput = output;
-            break; // Success, exit the loop
+            
+            // Check if output has valid scriptChunks before accepting it
+            if (output?.scriptChunks && Array.isArray(output.scriptChunks) && output.scriptChunks.length > 0) {
+              const nonEmptyChunks = output.scriptChunks.filter((chunk: string) => chunk.trim().length > 0);
+              if (nonEmptyChunks.length > 0) {
+                parsedOutput = { scriptChunks: nonEmptyChunks };
+                break; // Success, exit the loop
+              } else {
+                console.log(`[generateScriptChunks] ${currentModel} returned empty chunks, trying next model...`);
+                lastError = `Model ${currentModel} returned empty chunks`;
+                continue; // Try next model
+              }
+            } else {
+              console.log(`[generateScriptChunks] ${currentModel} returned invalid schema, trying text parsing...`);
+              throw new Error("Invalid schema output");
+            }
           } catch {
             console.log(`[generateScriptChunks] Schema validation failed with ${currentModel}, trying text parsing...`);
             // Fall back to text generation and manual parsing
             const { text } = await localAi.generate({ prompt, config });
             console.log(`[generateScriptChunks] Raw AI response from ${currentModel}:`, text);
             
+            // Check if response is empty or too short
+            if (!text || text.trim().length < 10) {
+              console.log(`[generateScriptChunks] ${currentModel} returned empty/invalid response, trying next model...`);
+              lastError = `Model ${currentModel} returned empty response`;
+              continue; // Try next model
+            }
+            
             try {
               // Look for JSON in the response
               const jsonMatch = text.match(/\{[\s\S]*\}/);
               if (jsonMatch) {
-                parsedOutput = JSON.parse(jsonMatch[0]);
-                break; // Success, exit the loop
-              } else {
-                // If no JSON found, try to extract script chunks from the text
-                const lines = text.split('\n').filter(line => line.trim().length > 0);
+                const jsonOutput = JSON.parse(jsonMatch[0]);
+                if (jsonOutput?.scriptChunks && Array.isArray(jsonOutput.scriptChunks) && jsonOutput.scriptChunks.length > 0) {
+                  const nonEmptyChunks = jsonOutput.scriptChunks.filter((chunk: string) => chunk.trim().length > 0);
+                  if (nonEmptyChunks.length > 0) {
+                    parsedOutput = { scriptChunks: nonEmptyChunks };
+                    break; // Success, exit the loop
+                  }
+                }
+              }
+              
+              // If no JSON found or invalid, try to extract script chunks from the text lines
+              const lines = text.split('\n').filter(line => line.trim().length > 10); // Only meaningful lines
+              if (lines.length > 0) {
                 parsedOutput = { scriptChunks: lines };
                 break; // Success, exit the loop
+              } else {
+                console.log(`[generateScriptChunks] ${currentModel} generated no meaningful content, trying next model...`);
+                lastError = `Model ${currentModel} generated no meaningful content`;
+                continue; // Try next model
               }
             } catch (parseError) {
               console.error(`[generateScriptChunks] Failed to parse AI response from ${currentModel}:`, parseError);
