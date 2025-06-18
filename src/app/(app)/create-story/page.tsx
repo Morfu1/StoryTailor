@@ -224,7 +224,7 @@ export default function CreateStoryPage() {
       setCurrentStep(initialStep);
       setActiveAccordionItem(`step-${initialStep}`);
     }
-  }, [storyId, user, router, toast, authLoading, setPageLoading, setFirebaseError, setStoryData, setSelectedVoiceId, setNarrationSource, setUploadedAudioFileName, setCurrentStep, setActiveAccordionItem, setIsImagePromptEditing, storyState]);
+  }, [storyId, user, router, toast, authLoading, setPageLoading, setFirebaseError, setStoryData, setSelectedVoiceId, setNarrationSource, setUploadedAudioFileName, setCurrentStep, setActiveAccordionItem, setIsImagePromptEditing]);
 
 
   const lastAutoExpandedStep = useRef(currentStep);
