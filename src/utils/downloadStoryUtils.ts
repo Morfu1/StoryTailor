@@ -568,6 +568,8 @@ export async function downloadStoryAsZip(storyData: Story) {
   }
 
   const sceneAudioFolder = zip.folder('Scene_Audio');
+  
+  // Add English audio chunks
   if (sceneAudioFolder && storyData.narrationChunks) {
     for (let i = 0; i < storyData.narrationChunks.length; i++) {
       const chunk = storyData.narrationChunks[i];
@@ -577,12 +579,33 @@ export async function downloadStoryAsZip(storyData: Story) {
           if (audioBlob && audioBlob.size > 0) {
             const extension = audioBlob.type === 'audio/mpeg' ? 'mp3' : 'wav';
             sceneAudioFolder.file(`chunk_${chunk.index !== undefined ? chunk.index + 1 : i + 1}.${extension}`, audioBlob);
-            console.log(`[ZIP] Successfully added audio chunk ${i + 1} (${audioBlob.size} bytes)`);
+            console.log(`[ZIP] Successfully added English audio chunk ${i + 1} (${audioBlob.size} bytes)`);
           } else {
-            console.warn(`[ZIP] Failed to fetch or empty audio chunk ${i + 1}`);
+            console.warn(`[ZIP] Failed to fetch or empty English audio chunk ${i + 1}`);
           }
         } catch (error) {
-          console.error(`[ZIP] Error processing audio chunk ${i + 1}:`, error);
+          console.error(`[ZIP] Error processing English audio chunk ${i + 1}:`, error);
+        }
+      }
+    }
+  }
+
+  // Add Spanish audio chunks
+  if (sceneAudioFolder && storyData.spanishNarrationChunks) {
+    for (let i = 0; i < storyData.spanishNarrationChunks.length; i++) {
+      const chunk = storyData.spanishNarrationChunks[i];
+      if (chunk.audioUrl) {
+        try {
+          const audioBlob = await fetchFile(chunk.audioUrl, true);
+          if (audioBlob && audioBlob.size > 0) {
+            const extension = audioBlob.type === 'audio/mpeg' ? 'mp3' : 'wav';
+            sceneAudioFolder.file(`es_chunk_${chunk.index !== undefined ? chunk.index + 1 : i + 1}.${extension}`, audioBlob);
+            console.log(`[ZIP] Successfully added Spanish audio chunk ${i + 1} (${audioBlob.size} bytes)`);
+          } else {
+            console.warn(`[ZIP] Failed to fetch or empty Spanish audio chunk ${i + 1}`);
+          }
+        } catch (error) {
+          console.error(`[ZIP] Error processing Spanish audio chunk ${i + 1}:`, error);
         }
       }
     }
@@ -609,11 +632,18 @@ export async function downloadStoryAsZip(storyData: Story) {
       storyTextFolder.file('story_script.txt', storyData.generatedScript);
     }
     if (storyData.narrationChunks && storyData.narrationChunks.length > 0) {
-      let chunksText = '=== AUDIO CHUNKS ===\n\n';
+      let chunksText = '=== ENGLISH AUDIO CHUNKS ===\n\n';
       storyData.narrationChunks.forEach((chunk, index) => {
         chunksText += `Chunk ${chunk.index !== undefined ? chunk.index + 1 : index + 1}:\n${chunk.text}\n\n`;
       });
       storyTextFolder.file('audio_chunks.txt', chunksText);
+    }
+    if (storyData.spanishNarrationChunks && storyData.spanishNarrationChunks.length > 0) {
+      let spanishChunksText = '=== SPANISH AUDIO CHUNKS ===\n\n';
+      storyData.spanishNarrationChunks.forEach((chunk, index) => {
+        spanishChunksText += `Chunk ${chunk.index !== undefined ? chunk.index + 1 : index + 1} (Spanish):\n${chunk.text}\n\n`;
+      });
+      storyTextFolder.file('spanish_audio_chunks.txt', spanishChunksText);
     }
     if (storyData.userPrompt) {
       storyTextFolder.file('initial_prompt.txt', storyData.userPrompt);

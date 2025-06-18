@@ -117,3 +117,27 @@ export const GenerateScriptChunksInputServerSchema = AIScriptChunksInputSchema.e
   googleScriptModel: z.string().optional(),
 });
 export type GenerateScriptChunksInput = z.infer<typeof GenerateScriptChunksInputServerSchema>;
+
+// Spanish Translation Schemas
+export const AISpanishTranslationInputSchema = z.object({
+  userId: z.string().describe('User ID for API key access'),
+  chunks: z.array(z.object({
+    id: z.string(),
+    text: z.string(),
+    index: z.number()
+  })).describe('Array of English narration chunks to translate'),
+  aiProvider: z.enum(['google', 'perplexity']).default('google').describe('AI provider to use for translation'),
+  googleScriptModel: z.string().optional().describe('Google model for translation'),
+  perplexityModel: z.string().optional().describe('Perplexity model for translation')
+});
+
+export const AISpanishTranslationOutputSchema = z.object({
+  spanishChunks: z.array(z.object({
+    id: z.string(),
+    text: z.string(),
+    index: z.number()
+  })).describe('Array of Spanish translated chunks'),
+  error: z.string().optional().describe('Error message if translation failed')
+});
+
+export type GenerateSpanishTranslationInput = z.infer<typeof AISpanishTranslationInputSchema>;

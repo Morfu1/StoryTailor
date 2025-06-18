@@ -48,7 +48,8 @@ function transformStoryToBaserow(story: Story): Record<string, unknown> {
       detailImageProvider: story.detailImageProvider, // Track detail image provider
       detailImageModel: story.detailImageModel, // Track detail image model
       sceneImageProvider: story.sceneImageProvider, // Track scene image provider
-      sceneImageModel: story.sceneImageModel // Track scene image model
+      sceneImageModel: story.sceneImageModel, // Track scene image model
+      spanishNarrationChunks: story.spanishNarrationChunks // Store Spanish narration chunks in settings JSON
     })
   };
 
@@ -107,6 +108,7 @@ function transformBaserowToStory(row: Record<string, unknown>): Story {
       story.detailImageModel = settings.detailImageModel; // Read detail image model
       story.sceneImageProvider = settings.sceneImageProvider; // Read scene image provider
       story.sceneImageModel = settings.sceneImageModel; // Read scene image model
+      story.spanishNarrationChunks = settings.spanishNarrationChunks; // Read Spanish narration chunks from settings
     } catch (error) {
       console.warn('Failed to parse settings JSON:', error);
     }
@@ -257,6 +259,30 @@ export async function getStory(storyId: string, userId: string): Promise<{ succe
       if (hasUpdatedImages) {
         story.generatedImages = refreshedImages;
         updates.generated_images = JSON.stringify(refreshedImages);
+        needsUpdate = true;
+      }
+    }
+
+    // Refresh signed URLs for Spanish narration chunks
+    if (story.spanishNarrationChunks && Array.isArray(story.spanishNarrationChunks) && story.spanishNarrationChunks.length > 0) {
+      let hasUpdatedSpanishChunks = false;
+      const refreshedSpanishChunks = await Promise.all(story.spanishNarrationChunks.map(async (chunk) => {
+        if (chunk && chunk.audioUrl) {
+          const refreshedUrl = await refreshMinIOUrl(chunk.audioUrl);
+          if (refreshedUrl && refreshedUrl !== chunk.audioUrl) {
+            hasUpdatedSpanishChunks = true;
+            return { ...chunk, audioUrl: refreshedUrl };
+          }
+        }
+        return chunk;
+      }));
+
+      if (hasUpdatedSpanishChunks) {
+        story.spanishNarrationChunks = refreshedSpanishChunks;
+        // Update the settings JSON with the refreshed Spanish chunks
+        const currentSettings = updates.settings ? JSON.parse(updates.settings as string) : {};
+        const newSettings = { ...currentSettings, spanishNarrationChunks: refreshedSpanishChunks };
+        updates.settings = JSON.stringify(newSettings);
         needsUpdate = true;
       }
     }

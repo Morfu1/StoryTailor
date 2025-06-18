@@ -25,7 +25,9 @@ import {
   AIImagePromptsOutputSchema,
   type GenerateImagePromptsInput,
   AIScriptChunksOutputSchema,
-  type GenerateScriptChunksInput
+  type GenerateScriptChunksInput,
+  AISpanishTranslationOutputSchema,
+  type GenerateSpanishTranslationInput
 } from './storyActionSchemas';
 
 
@@ -457,6 +459,7 @@ export interface GenerateNarrationAudioActionInput extends AINarrationAudioInput
   userId?: string;
   storyId?: string;
   chunkId?: string;
+  isSpanish?: boolean; // Flag to indicate Spanish narration
 }
 
 export async function generateNarrationAudio(actionInput: GenerateNarrationAudioActionInput): Promise<{ success: boolean; data?: { audioStorageUrl?: string; voices?: ElevenLabsVoice[]; duration?: number }; error?: string }> {
@@ -508,12 +511,13 @@ export async function generateNarrationAudio(actionInput: GenerateNarrationAudio
       if (actionInput.userId && actionInput.storyId && actionInput.chunkId) {
         try {
           const fileExtension = result.audioDataUri.startsWith('data:audio/wav;base64,') ? 'wav' : 'mp3';
-          const filename = `narration_chunk_${actionInput.chunkId}.${fileExtension}`;
+          const prefix = actionInput.isSpanish ? 'es_' : '';
+          const filename = `${prefix}narration_chunk_${actionInput.chunkId}.${fileExtension}`;
           const storageUrl = await uploadAudioToMinIOStorage(result.audioDataUri, actionInput.userId, actionInput.storyId, filename);
-          console.log(`Uploaded narration chunk ${actionInput.chunkId} to: ${storageUrl}`);
+          console.log(`Uploaded ${actionInput.isSpanish ? 'Spanish ' : ''}narration chunk ${actionInput.chunkId} to: ${storageUrl}`);
           return { success: true, data: { audioStorageUrl: storageUrl, duration } };
         } catch (uploadError) {
-          console.error(`Failed to upload narration chunk ${actionInput.chunkId} to MinIO Storage:`, uploadError);
+          console.error(`Failed to upload ${actionInput.isSpanish ? 'Spanish ' : ''}narration chunk ${actionInput.chunkId} to MinIO Storage:`, uploadError);
           return { success: false, error: `Failed to upload audio for chunk ${actionInput.chunkId}: ${(uploadError as Error).message}` };
         }
       } else {
@@ -1612,5 +1616,118 @@ export async function listPerplexityModels(userId: string): Promise<{ success: b
     console.error("Error listing Perplexity script models:", error);
     const errorMessage = error instanceof Error ? error.message : "An unexpected error occurred while fetching Perplexity models.";
     return { success: false, error: errorMessage };
+  }
+}
+
+// Spanish Translation Template
+const spanishTranslationPromptTemplate = `You are a professional translator specializing in English to Spanish translation for children's stories and animated content.
+
+Your task is to translate the following English text chunks into Spanish while maintaining:
+- Natural, flowing Spanish that is appropriate for children and families
+- The same emotional tone and storytelling style
+- Cultural appropriateness for Spanish-speaking audiences
+- The same narrative structure and meaning
+
+IMPORTANT INSTRUCTIONS:
+1. Translate each chunk individually, maintaining the same order
+2. Keep the same narrative structure and emotional tone
+3. Use natural, conversational Spanish appropriate for children's stories
+4. Maintain the same level of detail and description
+5. Do not add, remove, or significantly change the meaning
+6. Return ONLY the translated text chunks in the same JSON format
+
+English chunks to translate:
+{{chunks}}
+
+Return your response as a JSON object with a single key "spanishChunks" containing an array of objects with "id", "text", and "index" fields, where "text" contains the Spanish translation.`;
+
+export async function generateSpanishTranslation(input: GenerateSpanishTranslationInput): Promise<{ success: boolean, data?: z.infer<typeof AISpanishTranslationOutputSchema>, error?: string }> {
+  console.log(`[generateSpanishTranslation] Function called with userId: ${input.userId}, ${input.chunks.length} chunks`);
+  
+  const userKeysResult = await getUserApiKeys(input.userId);
+  if (!userKeysResult.success || !userKeysResult.data) {
+    return { success: false, error: "Could not fetch user API keys." };
+  }
+  const userApiKeys = userKeysResult.data;
+
+  // Format chunks for the prompt
+  const chunksText = JSON.stringify(input.chunks, null, 2);
+  const prompt = spanishTranslationPromptTemplate.replace('{{chunks}}', chunksText);
+  const config = { temperature: 0.3, maxOutputTokens: 4096 };
+
+  if (input.aiProvider === 'perplexity') {
+    if (!userApiKeys.perplexityApiKey) {
+      return { success: false, error: "Perplexity API key not configured by user. Please set it in Account Settings." };
+    }
+    try {
+      const { generateWithPerplexity } = await import('../ai/genkit');
+      const messages = [
+        { role: 'system' as const, content: 'You are a professional English to Spanish translator specializing in children\'s stories. Translate accurately while maintaining natural, child-friendly Spanish.' },
+        { role: 'user' as const, content: prompt }
+      ];
+      
+      const resultText = await runFlow(generateWithPerplexity, {
+        modelName: input.perplexityModel || 'sonar-reasoning-pro',
+        messages: messages,
+        userId: input.userId,
+      });
+      
+      try {
+        const extractedJson = extractJsonFromPerplexityResponse(resultText);
+        const parsedOutput = JSON.parse(extractedJson) as z.infer<typeof AISpanishTranslationOutputSchema>;
+        
+        if (parsedOutput?.error) {
+          return { success: false, error: parsedOutput.error };
+        }
+        if (parsedOutput?.spanishChunks && Array.isArray(parsedOutput.spanishChunks)) {
+          return { success: true, data: { spanishChunks: parsedOutput.spanishChunks } };
+        }
+        
+        console.error('Perplexity AI did not return the expected spanishChunks array:', parsedOutput);
+        return { success: false, error: 'Failed to parse Spanish translation from Perplexity AI response.' };
+        
+      } catch (e) {
+        console.error("Failed to parse JSON from Perplexity for Spanish translation:", resultText, e);
+        return { success: false, error: "Failed to parse Spanish translation from Perplexity. Output was not valid JSON." };
+      }
+
+    } catch (error) {
+      console.error("Error in generateSpanishTranslation with Perplexity AI call:", error);
+      const errorMessage = error instanceof Error ? error.message : "Failed to generate Spanish translation with Perplexity.";
+      return { success: false, error: errorMessage };
+    }
+  } else { // Default to Google AI
+    if (!userApiKeys.googleApiKey) {
+      return { success: false, error: "Google API key not configured by user. Please set it in Account Settings." };
+    }
+    try {
+      const modelName = input.googleScriptModel || 'gemini-2.0-flash';
+      const localAi = genkit({ plugins: [googleAI({ apiKey: userApiKeys.googleApiKey })], model: `googleai/${modelName}` });
+      
+      // Try with schema validation first
+      try {
+        const { output } = await localAi.generate({ prompt, output: { schema: AISpanishTranslationOutputSchema, format: 'json' }, config });
+        
+        if (output?.spanishChunks && Array.isArray(output.spanishChunks) && output.spanishChunks.length > 0) {
+          return { success: true, data: { spanishChunks: output.spanishChunks } };
+        } else {
+          throw new Error("Invalid schema output");
+        }
+      } catch {
+        // Fallback to text parsing
+        const { text } = await localAi.generate({ prompt, config });
+        const jsonMatch = text.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          const parsedOutput = JSON.parse(jsonMatch[0]) as z.infer<typeof AISpanishTranslationOutputSchema>;
+          if (parsedOutput?.spanishChunks && Array.isArray(parsedOutput.spanishChunks)) {
+            return { success: true, data: { spanishChunks: parsedOutput.spanishChunks } };
+          }
+        }
+        throw new Error("Could not parse Spanish translation output");
+      }
+    } catch (error) {
+      console.error("Error in generateSpanishTranslation AI call (Google):", error);
+      return { success: false, error: "Failed to generate Spanish translation with Google." };
+    }
   }
 }

@@ -115,6 +115,15 @@ export interface Story {
     index: number;
   }[]; // Audio narration for each script chunk
 
+  // Spanish translation chunks
+  spanishNarrationChunks?: {
+    id: string;
+    text: string;
+    audioUrl?: string;
+    duration?: number;
+    index: number;
+  }[]; // Spanish translated audio narration for each script chunk
+
   // AI Provider and Model Selection (Step 1)
   aiProvider?: 'google' | 'perplexity';
   perplexityModel?: string;
