@@ -124,6 +124,15 @@ export interface Story {
     index: number;
   }[]; // Spanish translated audio narration for each script chunk
 
+  // Romanian translation chunks
+  romanianNarrationChunks?: {
+    id: string;
+    text: string;
+    audioUrl?: string;
+    duration?: number;
+    index: number;
+  }[]; // Romanian translated audio narration for each script chunk
+
   // AI Provider and Model Selection (Step 1)
   aiProvider?: 'google' | 'perplexity';
   perplexityModel?: string;

@@ -141,3 +141,27 @@ export const AISpanishTranslationOutputSchema = z.object({
 });
 
 export type GenerateSpanishTranslationInput = z.infer<typeof AISpanishTranslationInputSchema>;
+
+// Romanian Translation Schemas
+export const AIRomanianTranslationInputSchema = z.object({
+  userId: z.string().describe('User ID for API key access'),
+  chunks: z.array(z.object({
+    id: z.string(),
+    text: z.string(),
+    index: z.number()
+  })).describe('Array of English narration chunks to translate'),
+  aiProvider: z.enum(['google', 'perplexity']).default('google').describe('AI provider to use for translation'),
+  googleScriptModel: z.string().optional().describe('Google model for translation'),
+  perplexityModel: z.string().optional().describe('Perplexity model for translation')
+});
+
+export const AIRomanianTranslationOutputSchema = z.object({
+  romanianChunks: z.array(z.object({
+    id: z.string(),
+    text: z.string(),
+    index: z.number()
+  })).describe('Array of Romanian translated chunks'),
+  error: z.string().optional().describe('Error message if translation failed')
+});
+
+export type GenerateRomanianTranslationInput = z.infer<typeof AIRomanianTranslationInputSchema>;

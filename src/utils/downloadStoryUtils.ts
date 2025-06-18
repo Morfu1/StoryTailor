@@ -611,6 +611,27 @@ export async function downloadStoryAsZip(storyData: Story) {
     }
   }
 
+  // Add Romanian audio chunks
+  if (sceneAudioFolder && storyData.romanianNarrationChunks) {
+    for (let i = 0; i < storyData.romanianNarrationChunks.length; i++) {
+      const chunk = storyData.romanianNarrationChunks[i];
+      if (chunk.audioUrl) {
+        try {
+          const audioBlob = await fetchFile(chunk.audioUrl, true);
+          if (audioBlob && audioBlob.size > 0) {
+            const extension = audioBlob.type === 'audio/mpeg' ? 'mp3' : 'wav';
+            sceneAudioFolder.file(`ro_chunk_${chunk.index !== undefined ? chunk.index + 1 : i + 1}.${extension}`, audioBlob);
+            console.log(`[ZIP] Successfully added Romanian audio chunk ${i + 1} (${audioBlob.size} bytes)`);
+          } else {
+            console.warn(`[ZIP] Failed to fetch or empty Romanian audio chunk ${i + 1}`);
+          }
+        } catch (error) {
+          console.error(`[ZIP] Error processing Romanian audio chunk ${i + 1}:`, error);
+        }
+      }
+    }
+  }
+
   if (sceneAudioFolder && storyData.narrationAudioUrl) {
     try {
       const mainAudioBlob = await fetchFile(storyData.narrationAudioUrl, true);
@@ -644,6 +665,13 @@ export async function downloadStoryAsZip(storyData: Story) {
         spanishChunksText += `Chunk ${chunk.index !== undefined ? chunk.index + 1 : index + 1} (Spanish):\n${chunk.text}\n\n`;
       });
       storyTextFolder.file('spanish_audio_chunks.txt', spanishChunksText);
+    }
+    if (storyData.romanianNarrationChunks && storyData.romanianNarrationChunks.length > 0) {
+      let romanianChunksText = '=== ROMANIAN AUDIO CHUNKS ===\n\n';
+      storyData.romanianNarrationChunks.forEach((chunk, index) => {
+        romanianChunksText += `Chunk ${chunk.index !== undefined ? chunk.index + 1 : index + 1} (Romanian):\n${chunk.text}\n\n`;
+      });
+      storyTextFolder.file('romanian_audio_chunks.txt', romanianChunksText);
     }
     if (storyData.userPrompt) {
       storyTextFolder.file('initial_prompt.txt', storyData.userPrompt);

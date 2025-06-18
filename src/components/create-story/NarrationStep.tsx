@@ -9,6 +9,7 @@ import Link from 'next/link'; // Added Link
 import { VoiceSelector } from './VoiceSelector';
 import { NarrationChunkPlayer } from './NarrationChunkPlayer';
 import { SpanishNarrationSection } from './SpanishNarrationSection';
+import { RomanianNarrationSection } from './RomanianNarrationSection';
 import { useNarrationGeneration } from '@/hooks/useNarrationGeneration';
 // import { useToast } from '@/hooks/use-toast'; // Unused
 import type { UseStoryStateReturn } from '@/hooks/useStoryState';
@@ -295,6 +296,11 @@ export function NarrationStep({ storyState }: NarrationStepProps) {
         {/* Spanish Translation Section */}
         {storyData.narrationChunks && storyData.narrationChunks.length > 0 && (
           <SpanishNarrationSection storyState={storyState} />
+        )}
+
+        {/* Romanian Translation Section */}
+        {storyData.narrationChunks && storyData.narrationChunks.length > 0 && (
+          <RomanianNarrationSection storyState={storyState} />
         )}
       </CardContent>
     </Card>

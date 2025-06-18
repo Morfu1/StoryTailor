@@ -24,6 +24,8 @@ function transformStoryToBaserow(story: Story): Record<string, unknown> {
     narration_audio_url: story.narrationAudioUrl || '',
     generated_images: story.generatedImages ? JSON.stringify(story.generatedImages) : '',
     narration_chunks: story.narrationChunks ? JSON.stringify(story.narrationChunks) : '',
+    spanish_narration_chunks: story.spanishNarrationChunks ? JSON.stringify(story.spanishNarrationChunks) : '',
+    romanian_narration_chunks: story.romanianNarrationChunks ? JSON.stringify(story.romanianNarrationChunks) : '',
     timeline_tracks: story.timelineTracks ? JSON.stringify(story.timelineTracks) : '',
     // TODO: Add these fields to Baserow table
     // image_prompts: story.imagePrompts ? JSON.stringify(story.imagePrompts) : '',
@@ -48,8 +50,7 @@ function transformStoryToBaserow(story: Story): Record<string, unknown> {
       detailImageProvider: story.detailImageProvider, // Track detail image provider
       detailImageModel: story.detailImageModel, // Track detail image model
       sceneImageProvider: story.sceneImageProvider, // Track scene image provider
-      sceneImageModel: story.sceneImageModel, // Track scene image model
-      spanishNarrationChunks: story.spanishNarrationChunks // Store Spanish narration chunks in settings JSON
+      sceneImageModel: story.sceneImageModel // Track scene image model
     })
   };
 
@@ -78,6 +79,8 @@ function transformBaserowToStory(row: Record<string, unknown>): Story {
     narrationAudioUrl: row.narration_audio_url as string,
     generatedImages: row.generated_images ? JSON.parse(row.generated_images as string) : [],
     narrationChunks: row.narration_chunks ? JSON.parse(row.narration_chunks as string) : [],
+    spanishNarrationChunks: row.spanish_narration_chunks ? JSON.parse(row.spanish_narration_chunks as string) : [],
+    romanianNarrationChunks: row.romanian_narration_chunks ? JSON.parse(row.romanian_narration_chunks as string) : [],
     timelineTracks: row.timeline_tracks ? JSON.parse(row.timeline_tracks as string) : [],
     // TODO: Add these fields to Baserow table
     // imagePrompts: row.image_prompts ? JSON.parse(row.image_prompts) : [],
@@ -108,7 +111,6 @@ function transformBaserowToStory(row: Record<string, unknown>): Story {
       story.detailImageModel = settings.detailImageModel; // Read detail image model
       story.sceneImageProvider = settings.sceneImageProvider; // Read scene image provider
       story.sceneImageModel = settings.sceneImageModel; // Read scene image model
-      story.spanishNarrationChunks = settings.spanishNarrationChunks; // Read Spanish narration chunks from settings
     } catch (error) {
       console.warn('Failed to parse settings JSON:', error);
     }
@@ -279,10 +281,28 @@ export async function getStory(storyId: string, userId: string): Promise<{ succe
 
       if (hasUpdatedSpanishChunks) {
         story.spanishNarrationChunks = refreshedSpanishChunks;
-        // Update the settings JSON with the refreshed Spanish chunks
-        const currentSettings = updates.settings ? JSON.parse(updates.settings as string) : {};
-        const newSettings = { ...currentSettings, spanishNarrationChunks: refreshedSpanishChunks };
-        updates.settings = JSON.stringify(newSettings);
+        updates.spanish_narration_chunks = JSON.stringify(refreshedSpanishChunks);
+        needsUpdate = true;
+      }
+    }
+
+    // Refresh signed URLs for Romanian narration chunks
+    if (story.romanianNarrationChunks && Array.isArray(story.romanianNarrationChunks) && story.romanianNarrationChunks.length > 0) {
+      let hasUpdatedRomanianChunks = false;
+      const refreshedRomanianChunks = await Promise.all(story.romanianNarrationChunks.map(async (chunk) => {
+        if (chunk && chunk.audioUrl) {
+          const refreshedUrl = await refreshMinIOUrl(chunk.audioUrl);
+          if (refreshedUrl && refreshedUrl !== chunk.audioUrl) {
+            hasUpdatedRomanianChunks = true;
+            return { ...chunk, audioUrl: refreshedUrl };
+          }
+        }
+        return chunk;
+      }));
+
+      if (hasUpdatedRomanianChunks) {
+        story.romanianNarrationChunks = refreshedRomanianChunks;
+        updates.romanian_narration_chunks = JSON.stringify(refreshedRomanianChunks);
         needsUpdate = true;
       }
     }

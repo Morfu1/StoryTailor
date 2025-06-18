@@ -27,7 +27,9 @@ import {
   AIScriptChunksOutputSchema,
   type GenerateScriptChunksInput,
   AISpanishTranslationOutputSchema,
-  type GenerateSpanishTranslationInput
+  type GenerateSpanishTranslationInput,
+  AIRomanianTranslationOutputSchema,
+  type GenerateRomanianTranslationInput
 } from './storyActionSchemas';
 
 
@@ -460,6 +462,7 @@ export interface GenerateNarrationAudioActionInput extends AINarrationAudioInput
   storyId?: string;
   chunkId?: string;
   isSpanish?: boolean; // Flag to indicate Spanish narration
+  isRomanian?: boolean; // Flag to indicate Romanian narration
 }
 
 export async function generateNarrationAudio(actionInput: GenerateNarrationAudioActionInput): Promise<{ success: boolean; data?: { audioStorageUrl?: string; voices?: ElevenLabsVoice[]; duration?: number }; error?: string }> {
@@ -509,15 +512,16 @@ export async function generateNarrationAudio(actionInput: GenerateNarrationAudio
     if (result.audioDataUri) {
       const duration = getMp3DurationFromDataUri(result.audioDataUri);
       if (actionInput.userId && actionInput.storyId && actionInput.chunkId) {
+        const languageLabel = actionInput.isSpanish ? 'Spanish ' : actionInput.isRomanian ? 'Romanian ' : '';
         try {
           const fileExtension = result.audioDataUri.startsWith('data:audio/wav;base64,') ? 'wav' : 'mp3';
-          const prefix = actionInput.isSpanish ? 'es_' : '';
+          const prefix = actionInput.isSpanish ? 'es_' : actionInput.isRomanian ? 'ro_' : '';
           const filename = `${prefix}narration_chunk_${actionInput.chunkId}.${fileExtension}`;
           const storageUrl = await uploadAudioToMinIOStorage(result.audioDataUri, actionInput.userId, actionInput.storyId, filename);
-          console.log(`Uploaded ${actionInput.isSpanish ? 'Spanish ' : ''}narration chunk ${actionInput.chunkId} to: ${storageUrl}`);
+          console.log(`Uploaded ${languageLabel}narration chunk ${actionInput.chunkId} to: ${storageUrl}`);
           return { success: true, data: { audioStorageUrl: storageUrl, duration } };
         } catch (uploadError) {
-          console.error(`Failed to upload ${actionInput.isSpanish ? 'Spanish ' : ''}narration chunk ${actionInput.chunkId} to MinIO Storage:`, uploadError);
+          console.error(`Failed to upload ${languageLabel}narration chunk ${actionInput.chunkId} to MinIO Storage:`, uploadError);
           return { success: false, error: `Failed to upload audio for chunk ${actionInput.chunkId}: ${(uploadError as Error).message}` };
         }
       } else {
@@ -1641,6 +1645,27 @@ English chunks to translate:
 
 Return your response as a JSON object with a single key "spanishChunks" containing an array of objects with "id", "text", and "index" fields, where "text" contains the Spanish translation.`;
 
+const romanianTranslationPromptTemplate = `You are a professional translator specializing in English to Romanian translation for children's stories and animated content.
+
+Your task is to translate the following English text chunks into Romanian while maintaining:
+- Natural, flowing Romanian that is appropriate for children and families
+- The same emotional tone and storytelling style
+- Cultural appropriateness for Romanian-speaking audiences
+- The same narrative structure and meaning
+
+IMPORTANT INSTRUCTIONS:
+1. Translate each chunk individually, maintaining the same order
+2. Keep the same narrative structure and emotional tone
+3. Use natural, conversational Romanian appropriate for children's stories
+4. Maintain the same level of detail and description
+5. Do not add, remove, or significantly change the meaning
+6. Return ONLY the translated text chunks in the same JSON format
+
+English chunks to translate:
+{{chunks}}
+
+Return your response as a JSON object with a single key "romanianChunks" containing an array of objects with "id", "text", and "index" fields, where "text" contains the Romanian translation.`;
+
 export async function generateSpanishTranslation(input: GenerateSpanishTranslationInput): Promise<{ success: boolean, data?: z.infer<typeof AISpanishTranslationOutputSchema>, error?: string }> {
   console.log(`[generateSpanishTranslation] Function called with userId: ${input.userId}, ${input.chunks.length} chunks`);
   
@@ -1728,6 +1753,97 @@ export async function generateSpanishTranslation(input: GenerateSpanishTranslati
     } catch (error) {
       console.error("Error in generateSpanishTranslation AI call (Google):", error);
       return { success: false, error: "Failed to generate Spanish translation with Google." };
+    }
+  }
+}
+
+export async function generateRomanianTranslation(input: GenerateRomanianTranslationInput): Promise<{ success: boolean, data?: z.infer<typeof AIRomanianTranslationOutputSchema>, error?: string }> {
+  console.log(`[generateRomanianTranslation] Function called with userId: ${input.userId}, ${input.chunks.length} chunks`);
+  
+  const userKeysResult = await getUserApiKeys(input.userId);
+  if (!userKeysResult.success || !userKeysResult.data) {
+    return { success: false, error: "Could not fetch user API keys." };
+  }
+  const userApiKeys = userKeysResult.data;
+
+  // Format chunks for the prompt
+  const chunksText = JSON.stringify(input.chunks, null, 2);
+  const prompt = romanianTranslationPromptTemplate.replace('{{chunks}}', chunksText);
+  const config = { temperature: 0.3, maxOutputTokens: 4096 };
+
+  if (input.aiProvider === 'perplexity') {
+    if (!userApiKeys.perplexityApiKey) {
+      return { success: false, error: "Perplexity API key not configured by user. Please set it in Account Settings." };
+    }
+    try {
+      const { generateWithPerplexity } = await import('../ai/genkit');
+      const messages = [
+        { role: 'system' as const, content: 'You are a professional English to Romanian translator specializing in children\'s stories. Translate accurately while maintaining natural, child-friendly Romanian.' },
+        { role: 'user' as const, content: prompt }
+      ];
+      
+      const resultText = await runFlow(generateWithPerplexity, {
+        modelName: input.perplexityModel || 'sonar-reasoning-pro',
+        messages: messages,
+        userId: input.userId,
+      });
+      
+      try {
+        const extractedJson = extractJsonFromPerplexityResponse(resultText);
+        const parsedOutput = JSON.parse(extractedJson) as z.infer<typeof AIRomanianTranslationOutputSchema>;
+        
+        if (parsedOutput?.error) {
+          return { success: false, error: parsedOutput.error };
+        }
+        if (parsedOutput?.romanianChunks && Array.isArray(parsedOutput.romanianChunks)) {
+          return { success: true, data: { romanianChunks: parsedOutput.romanianChunks } };
+        }
+        
+        console.error('Perplexity AI did not return the expected romanianChunks array:', parsedOutput);
+        return { success: false, error: 'Failed to parse Romanian translation from Perplexity AI response.' };
+        
+      } catch (e) {
+        console.error("Failed to parse JSON from Perplexity for Romanian translation:", resultText, e);
+        return { success: false, error: "Failed to parse Romanian translation from Perplexity. Output was not valid JSON." };
+      }
+
+    } catch (error) {
+      console.error("Error in generateRomanianTranslation with Perplexity AI call:", error);
+      const errorMessage = error instanceof Error ? error.message : "Failed to generate Romanian translation with Perplexity.";
+      return { success: false, error: errorMessage };
+    }
+  } else { // Default to Google AI
+    if (!userApiKeys.googleApiKey) {
+      return { success: false, error: "Google API key not configured by user. Please set it in Account Settings." };
+    }
+    try {
+      const modelName = input.googleScriptModel || 'gemini-2.0-flash';
+      const localAi = genkit({ plugins: [googleAI({ apiKey: userApiKeys.googleApiKey })], model: `googleai/${modelName}` });
+      
+      // Try with schema validation first
+      try {
+        const { output } = await localAi.generate({ prompt, output: { schema: AIRomanianTranslationOutputSchema, format: 'json' }, config });
+        
+        if (output?.romanianChunks && Array.isArray(output.romanianChunks) && output.romanianChunks.length > 0) {
+          return { success: true, data: { romanianChunks: output.romanianChunks } };
+        } else {
+          throw new Error("Invalid schema output");
+        }
+      } catch {
+        // Fallback to text parsing
+        const { text } = await localAi.generate({ prompt, config });
+        const jsonMatch = text.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          const parsedOutput = JSON.parse(jsonMatch[0]) as z.infer<typeof AIRomanianTranslationOutputSchema>;
+          if (parsedOutput?.romanianChunks && Array.isArray(parsedOutput.romanianChunks)) {
+            return { success: true, data: { romanianChunks: parsedOutput.romanianChunks } };
+          }
+        }
+        throw new Error("Could not parse Romanian translation output");
+      }
+    } catch (error) {
+      console.error("Error in generateRomanianTranslation AI call (Google):", error);
+      return { success: false, error: "Failed to generate Romanian translation with Google." };
     }
   }
 }
