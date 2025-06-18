@@ -113,10 +113,30 @@ Before writing each prompt, ask yourself: "Does this image prompt directly show 
 
 **ALSO GENERATE CORRESPONDING ACTION PROMPTS:**
 For EACH image prompt you create above, also generate a simple action description for animation purposes.
+Action prompts MUST ONLY reference characters that are actually visible in the corresponding image prompt.
+
+**CRITICAL SYNCHRONIZATION RULE:**
+Analyze each image prompt and identify WHICH CHARACTERS (with @placeholders) are visible in that specific scene.
+Your action prompt MUST ONLY animate the characters that appear in that same image prompt.
+
 Action prompts should be:
-- Simple, clear descriptions of character movements/actions in that specific scene.
-- Focus on physical actions (e.g., "@Rusty is walking", "@Owl blinks slowly", "@Squirrel scurries up a tree").
-- Keep them concise and animation-focused.
+- Simple, clear descriptions of character movements/actions for ONLY the characters visible in that specific image prompt
+- Focus on physical actions (e.g., "@Rusty is walking", "@Owl blinks slowly", "@Squirrel scurries up a tree")
+- Keep them concise and animation-focused
+- NEVER reference characters that are not in the corresponding image prompt
+
+**EXAMPLES:**
+✅ CORRECT:
+Image Prompt: "Close-up of @MayaMouse's paws in @SunnyMeadow. She holds weathered @BridgePlans..."
+Action Prompt: "@MayaMouse's whiskers twitch as she examines plans"
+
+❌ WRONG:
+Image Prompt: "Close-up of @MayaMouse's paws in @SunnyMeadow. She holds weathered @BridgePlans..."
+Action Prompt: "@BorisBear's nose wrinkles at storm clouds" (BorisBear is NOT in this image!)
+
+**SYNCHRONIZATION CHECK:**
+Before writing each action prompt, ask: "Which @characters are actually visible in this specific image prompt?" 
+Only animate those characters.
 
 {{else}}
 **FALLBACK MODE (No narration chunks provided):**
@@ -162,13 +182,29 @@ Your response must be EXACTLY this format:
   "actionPrompts": ["action1", "action2", "..."]
 }
 
-CRITICAL REQUIREMENTS:
+CRITICAL JSON FORMATTING REQUIREMENTS:
 - NO comments like "// Chunk 8" or "/* explanation */"
 - NO extra text before or after the JSON
 - NO explanations inside the JSON  
 - Generate exactly as many prompts as your content analysis determined (1-3 per chunk)
 - Each imagePrompts array entry must have a corresponding actionPrompts entry
 - Each prompt must be a single string with no line breaks
+- ESCAPE ALL SPECIAL CHARACTERS: Use \" for quotes, \\ for backslashes, \n for newlines
+- DO NOT use single quotes (') inside strings - use double quotes (\") if needed
+- NO unescaped quotation marks within prompt strings
+- Ensure all strings are properly terminated with closing quotes
+
+**VALID JSON EXAMPLES:**
+✅ CORRECT: "Wide shot of @Maya examining @BridgePlans in @SunnyMeadow"
+✅ CORRECT: "Close-up of @Boris scratching his head thoughtfully"
+❌ WRONG: "Close-up of @Boris saying \"I don't know about construction\"" (NO DIALOG!)
+❌ WRONG: "Wide shot of @Maya examining @BridgePlans 
+           in @SunnyMeadow" (line break not allowed)
+
+**IMPORTANT: NO DIALOG OR SPEECH:**
+- Image prompts and action prompts are for VISUAL animation only
+- DO NOT include dialog, speech, or words being spoken
+- Focus on physical actions, expressions, and visual elements only
 `,
   config: {
     temperature: 0.7,
