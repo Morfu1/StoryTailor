@@ -60,23 +60,23 @@ class BaserowService {
     }
     const url = `${endpoint}?${params.toString()}`;
     
-    const response = await this.apiCall(url);
+    const response = await this.apiCall(url) as { results?: Record<string, unknown>[] };
     return response.results || [];
   }
 
   async getStory(storyId: string): Promise<Record<string, unknown>> {
     const endpoint = `/database/rows/table/${BASEROW_STORIES_TABLE_ID}/${storyId}/?user_field_names=true`;
-    return this.apiCall(endpoint);
+    return this.apiCall(endpoint) as Promise<Record<string, unknown>>;
   }
 
   async createStory(storyData: Record<string, unknown>): Promise<Record<string, unknown>> {
     const endpoint = `/database/rows/table/${BASEROW_STORIES_TABLE_ID}/?user_field_names=true`;
-    return this.apiCall(endpoint, 'POST', storyData);
+    return this.apiCall(endpoint, 'POST', storyData) as Promise<Record<string, unknown>>;
   }
 
   async updateStory(storyId: string, updates: Record<string, unknown>): Promise<Record<string, unknown>> {
     const endpoint = `/database/rows/table/${BASEROW_STORIES_TABLE_ID}/${storyId}/?user_field_names=true`;
-    return this.apiCall(endpoint, 'PATCH', updates);
+    return this.apiCall(endpoint, 'PATCH', updates) as Promise<Record<string, unknown>>;
   }
 
   async deleteStory(storyId: string): Promise<void> {
@@ -87,7 +87,7 @@ class BaserowService {
   // Field information
   async getTableFields(): Promise<Record<string, unknown>[]> {
     const endpoint = `/database/fields/table/${BASEROW_STORIES_TABLE_ID}/`;
-    const response = await this.apiCall(endpoint);
+    const response = await this.apiCall(endpoint) as Record<string, unknown>[];
     return response || [];
   }
 

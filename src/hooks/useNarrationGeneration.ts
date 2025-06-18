@@ -231,8 +231,8 @@ export const useNarrationGeneration = ({ storyState }: UseNarrationGenerationPro
         narrationAudioDurationSeconds: totalDuration,
         // Save to appropriate field based on service used
         ...(selectedTtsModel === 'elevenlabs' 
-          ? { elevenLabsVoiceId: voiceIdToUse, narrationVoice: null }
-          : { narrationVoice: voiceIdToUse, elevenLabsVoiceId: null }
+          ? { elevenLabsVoiceId: voiceIdToUse, narrationVoice: undefined }
+          : { narrationVoice: voiceIdToUse, elevenLabsVoiceId: undefined }
         ),
         // Track the service and model used
         audioGenerationService: selectedTtsModel as 'elevenlabs' | 'google',
@@ -244,8 +244,8 @@ export const useNarrationGeneration = ({ storyState }: UseNarrationGenerationPro
         narrationAudioDurationSeconds: totalDuration,
         // Save to appropriate field based on service used
         ...(selectedTtsModel === 'elevenlabs' 
-          ? { elevenLabsVoiceId: voiceIdToUse, narrationVoice: null }
-          : { narrationVoice: voiceIdToUse, elevenLabsVoiceId: null }
+          ? { elevenLabsVoiceId: voiceIdToUse, narrationVoice: undefined }
+          : { narrationVoice: voiceIdToUse, elevenLabsVoiceId: undefined }
         ),
         // Track the service and model used
         audioGenerationService: selectedTtsModel as 'elevenlabs' | 'google',

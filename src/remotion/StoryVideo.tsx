@@ -310,6 +310,7 @@ const SceneComponent = ({ image: imagePathProp, index }: { image: string; index:
         opacity,
       }}
     >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src={imageToRenderSource}
         style={{

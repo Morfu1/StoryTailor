@@ -172,25 +172,20 @@ class MinIOStorageService implements StorageService {
    * @returns File content as Buffer
    */
   async downloadFile(key: string): Promise<Buffer> {
-    return new Promise((resolve, reject) => {
-      const chunks: Buffer[] = [];
-      const client = getMinioClient();
-      client.getObject(MINIO_BUCKET_NAME, key, (err, dataStream) => {
-        if (err) {
-          reject(err);
-          return;
-        }
-        
-        if (!dataStream) {
-          reject(new Error(`File not found: ${key}`));
-          return;
-        }
-
-        dataStream.on('data', (chunk) => chunks.push(chunk));
+    const client = getMinioClient();
+    const chunks: Buffer[] = [];
+    
+    try {
+      const dataStream = await client.getObject(MINIO_BUCKET_NAME, key);
+      
+      return new Promise((resolve, reject) => {
+        dataStream.on('data', (chunk: Buffer) => chunks.push(chunk));
         dataStream.on('error', reject);
         dataStream.on('end', () => resolve(Buffer.concat(chunks)));
       });
-    });
+    } catch (error) {
+      throw new Error(`Failed to download file: ${key}. Error: ${error}`);
+    }
   }
 
   /**

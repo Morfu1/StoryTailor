@@ -11,6 +11,7 @@ import Link from 'next/link';
 import { generateTitle, generateScript } from '@/actions/storyActions'; // Kept these
 import { saveStory } from '@/actions/baserowStoryActions'; // Changed for saveStory
 import { prepareScriptChunksAI } from '@/utils/narrationUtils';
+import type { NarrationChunk } from '@/types/narration';
 import { useToast } from '@/hooks/use-toast';
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { debounce, type DebouncedFunction } from '@/utils/debounce';
@@ -219,7 +220,7 @@ export function StoryPromptStep({ storyState }: StoryPromptStepProps) {
       
       // Generate chunks immediately after script generation
       console.log('Generating chunks for AI-generated script...');
-      let narrationChunks = [];
+      let narrationChunks: NarrationChunk[] = [];
       try {
         narrationChunks = await prepareScriptChunksAI(
           scriptText,

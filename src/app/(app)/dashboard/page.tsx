@@ -211,7 +211,7 @@ export default function DashboardPage() {
               </CardHeader>
               <CardContent className="flex-grow">
                 <p className="text-xs text-muted-foreground">
-                  Last updated: {story.updatedAt ? formatDistanceToNow(story.updatedAt instanceof Date ? story.updatedAt : new Date(story.updatedAt), { addSuffix: true }) : 'N/A'}
+                  Last updated: {story.updatedAt ? formatDistanceToNow(story.updatedAt instanceof Date ? story.updatedAt : (story.updatedAt as { toDate?: () => Date }).toDate ? (story.updatedAt as { toDate: () => Date }).toDate() : new Date(story.updatedAt as unknown as string), { addSuffix: true }) : 'N/A'}
                 </p>
               </CardContent>
               <CardFooter className="flex flex-col gap-2">

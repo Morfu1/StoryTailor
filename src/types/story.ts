@@ -101,7 +101,6 @@ export interface Story {
   actionPrompts?: ActionPrompt[]; // Action prompts for future use, linked by sceneIndex
   imageStyleId?: ImageStyleId; // Selected image generation style
   timelineTracks?: PageTimelineTrack[]; // To store the state of the timeline
-  imageProvider?: string; // e.g., "picsart", "stability"
   // videoUrl?: string; // For future video assembly
   createdAt?: Timestamp | Date | FieldValue; // Stored as Firestore Timestamp or FieldValue, hydrated as Date
   updatedAt?: Timestamp | Date | FieldValue; // Stored as Firestore Timestamp or FieldValue, hydrated as Date

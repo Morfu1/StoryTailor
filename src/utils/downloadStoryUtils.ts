@@ -545,13 +545,26 @@ export async function downloadStoryAsZip(storyData: Story) {
   const actionPromptsFolder = zip.folder('Action_prompts');
   if (actionPromptsFolder && storyData.actionPrompts && storyData.actionPrompts.length > 0) {
     let actionPromptsText = '=== ACTION PROMPTS ===\n\n';
+    let actionPromptsOnlyText = '=== ACTION PROMPTS  ONLY===\n\n';
+    
     // Sort action prompts by sceneIndex to ensure correct order in the text file
     const sortedActionPrompts = [...storyData.actionPrompts].sort((a, b) => (a.sceneIndex || 0) - (b.sceneIndex || 0));
+    
     sortedActionPrompts.forEach((prompt) => {
       const chunkNumber = prompt.chunkIndex !== undefined ? prompt.chunkIndex + 1 : 'N/A';
-      actionPromptsText += `Scene ${prompt.sceneIndex !== undefined ? prompt.sceneIndex + 1 : 'N/A'}:\nAction: ${prompt.actionDescription}\nOriginal Prompt: ${prompt.originalPrompt}\nNarration Chunk ${chunkNumber}: ${prompt.chunkText}\n\n`;
+      const sceneNumber = prompt.sceneIndex !== undefined ? prompt.sceneIndex + 1 : 'N/A';
+      
+      // Original format for action_prompts.txt
+      actionPromptsText += `Scene ${sceneNumber}:\nAction: ${prompt.actionDescription}\nOriginal Prompt: ${prompt.originalPrompt}\nNarration Chunk ${chunkNumber}: ${prompt.chunkText}\n\n`;
+      
+      // New format for action_prompt_only.txt - just scene number and action description
+      actionPromptsOnlyText += `Scene ${sceneNumber}:\n${prompt.actionDescription}\n\n`;
     });
+    
     actionPromptsFolder.file('action_prompts.txt', actionPromptsText);
+    actionPromptsFolder.file('action_prompt_only.txt', actionPromptsOnlyText);
+    
+    console.log('[ZIP] Added both action_prompts.txt and action_prompt_only.txt files');
   }
 
   const sceneAudioFolder = zip.folder('Scene_Audio');

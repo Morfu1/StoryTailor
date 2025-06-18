@@ -258,7 +258,7 @@ export function NarrationStep({ storyState }: NarrationStepProps) {
             <div className="bg-yellow-50 border border-yellow-200 rounded p-4 mb-4">
               <h4 className="text-sm font-medium text-yellow-800">Missing Script Chunks</h4>
               <p className="text-xs text-yellow-700 mt-1">
-                It looks like chunks weren't generated in Step 1. This might happen with older stories or if there was an error during processing.
+                It looks like chunks weren&apos;t generated in Step 1. This might happen with older stories or if there was an error during processing.
               </p>
             </div>
             <div className="space-y-3">

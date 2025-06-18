@@ -42,7 +42,7 @@ async function renderVideoInBackground(
     console.log('Downloading assets for rendering to temp directory:', jobTempInputDir);
     updateJobStatus(jobId, { progress: 20 });
     
-    const { localImages, localAudioChunks, imageDimensions, placeholderAssetPath } = await downloadAssetsForRendering(images, audioChunks, jobTempInputDir);
+    const { localImages, localAudioChunks, imageDimensions, placeholderAssetPath } = await downloadAssetsForRendering(images, audioChunks);
 
     let videoWidth = defaultWidth;
     let videoHeight = defaultHeight;

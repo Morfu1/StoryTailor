@@ -67,30 +67,30 @@ function transformStoryToBaserow(story: Story): Record<string, unknown> {
  */
 function transformBaserowToStory(row: Record<string, unknown>): Story {
   const story: Story = {
-    id: row.firebase_story_id || row.id?.toString(),
-    userId: row.user_id,
-    title: row.Title,
-    userPrompt: row.content,
-    status: row['Single select'],
-    createdAt: row.created_at ? new Date(row.created_at) : new Date(),
-    updatedAt: row.updated_at ? new Date(row.updated_at) : new Date(),
-    narrationAudioUrl: row.narration_audio_url,
-    generatedImages: row.generated_images ? JSON.parse(row.generated_images) : [],
-    narrationChunks: row.narration_chunks ? JSON.parse(row.narration_chunks) : [],
-    timelineTracks: row.timeline_tracks ? JSON.parse(row.timeline_tracks) : [],
+    id: (row.firebase_story_id as string) || (row.id as number)?.toString(),
+    userId: row.user_id as string,
+    title: row.Title as string,
+    userPrompt: row.content as string,
+    status: row['Single select'] as string,
+    createdAt: row.created_at ? new Date(row.created_at as string) : new Date(),
+    updatedAt: row.updated_at ? new Date(row.updated_at as string) : new Date(),
+    narrationAudioUrl: row.narration_audio_url as string,
+    generatedImages: row.generated_images ? JSON.parse(row.generated_images as string) : [],
+    narrationChunks: row.narration_chunks ? JSON.parse(row.narration_chunks as string) : [],
+    timelineTracks: row.timeline_tracks ? JSON.parse(row.timeline_tracks as string) : [],
     // TODO: Add these fields to Baserow table
     // imagePrompts: row.image_prompts ? JSON.parse(row.image_prompts) : [],
     // actionPrompts: row.action_prompts ? JSON.parse(row.action_prompts) : [],
-    imageStyleId: row.image_style_id,
-    elevenLabsVoiceId: row.eleven_labs_voice_id,
-    narrationVoice: row.narration_voice,
+    imageStyleId: row.image_style_id as string,
+    elevenLabsVoiceId: row.eleven_labs_voice_id as string,
+    narrationVoice: row.narration_voice as string,
     // detailsPrompts: row.details_prompts ? JSON.parse(row.details_prompts) : undefined
   };
 
   // Parse settings JSON
   if (row.settings) {
     try {
-      const settings = JSON.parse(row.settings);
+      const settings = JSON.parse(row.settings as string);
       story.narrationAudioDurationSeconds = settings.narrationAudioDurationSeconds;
       story.imageProvider = settings.imageProvider;
       story.aiProvider = settings.aiProvider;
@@ -183,7 +183,7 @@ export async function getStory(storyId: string, userId: string): Promise<{ succe
     
     if (matchingRow) {
       story = transformBaserowToStory(matchingRow);
-      baserowRowId = matchingRow.id.toString(); // Store the actual Baserow row ID for updates
+      baserowRowId = (matchingRow.id as number).toString(); // Store the actual Baserow row ID for updates
     } else {
       // Fallback: try as Baserow row ID (for legacy compatibility)
       try {
@@ -342,7 +342,7 @@ export async function saveStory(storyData: Story, userId: string): Promise<{ suc
           const stories = await baserowService.getStories();
           const matchingRow = stories.find((row: Record<string, unknown>) => row.firebase_story_id === storyData.id);
           if (matchingRow) {
-            baserowRowId = matchingRow.id.toString(); // Use the Baserow row ID
+            baserowRowId = (matchingRow.id as number).toString(); // Use the Baserow row ID
             existingStory = transformBaserowToStory(matchingRow);
           }
         }
@@ -446,7 +446,7 @@ export async function updateStoryTimeline(
       const stories = await baserowService.getStories();
       const matchingRow = stories.find((row: Record<string, unknown>) => row.firebase_story_id === storyId);
       if (matchingRow) {
-        baserowRowId = matchingRow.id.toString(); // Use the Baserow row ID
+        baserowRowId = (matchingRow.id as number).toString(); // Use the Baserow row ID
         existingStory = transformBaserowToStory(matchingRow);
       }
     }
@@ -511,7 +511,7 @@ export async function deleteStory(
       const stories = await baserowService.getStories();
       const matchingRow = stories.find((row: Record<string, unknown>) => row.firebase_story_id === storyId);
       if (matchingRow) {
-        baserowRowId = matchingRow.id.toString(); // Use the Baserow row ID
+        baserowRowId = (matchingRow.id as number).toString(); // Use the Baserow row ID
         existingStory = transformBaserowToStory(matchingRow);
       }
     }
@@ -592,7 +592,7 @@ export async function cleanupBrokenImages(storyId: string): Promise<{ success: b
     // Parse and clean generated images
     if (story.generated_images) {
       try {
-        const generatedImages = JSON.parse(story.generated_images);
+        const generatedImages = JSON.parse(story.generated_images as string);
         if (Array.isArray(generatedImages)) {
           const cleanGeneratedImages = generatedImages.filter((img: { imageUrl?: string }) => {
             if (img && img.imageUrl && typeof img.imageUrl === 'string') {
