@@ -21,6 +21,7 @@ export const initialStoryState: Story = {
   // Step 3: TTS model selections
   selectedTtsModel: 'google', // Default to Google TTS
   selectedGoogleTtsModel: 'gemini-2.5-flash-preview-tts', // Default Google TTS model
+  selectedGoogleVoiceId: 'Zephyr', // Default Google voice
   
   // Step 4: Image generation model selections
   imageProvider: 'picsart', // Default image provider

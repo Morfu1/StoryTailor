@@ -13,6 +13,12 @@ interface BaserowErrorWithCode extends Error {
  * Transform Firebase Story structure to Baserow row format
  */
 function transformStoryToBaserow(story: Story): Record<string, unknown> {
+  console.log('[transformStoryToBaserow] Saving voice settings:', {
+    selectedTtsModel: story.selectedTtsModel,
+    selectedGoogleTtsModel: story.selectedGoogleTtsModel,
+    selectedGoogleVoiceId: story.selectedGoogleVoiceId,
+    narrationVoice: story.narrationVoice
+  });
   const baserowRow: Record<string, unknown> = {
     firebase_story_id: story.id || '',
     user_id: story.userId,
@@ -50,7 +56,10 @@ function transformStoryToBaserow(story: Story): Record<string, unknown> {
       detailImageProvider: story.detailImageProvider, // Track detail image provider
       detailImageModel: story.detailImageModel, // Track detail image model
       sceneImageProvider: story.sceneImageProvider, // Track scene image provider
-      sceneImageModel: story.sceneImageModel // Track scene image model
+      sceneImageModel: story.sceneImageModel, // Track scene image model
+      selectedTtsModel: story.selectedTtsModel, // TTS model choice (elevenlabs/google)
+      selectedGoogleTtsModel: story.selectedGoogleTtsModel, // Google TTS model
+      selectedGoogleVoiceId: story.selectedGoogleVoiceId // Google voice ID
     })
   };
 
@@ -95,6 +104,11 @@ function transformBaserowToStory(row: Record<string, unknown>): Story {
   if (row.settings) {
     try {
       const settings = JSON.parse(row.settings as string);
+      console.log('[transformBaserowToStory] Parsed settings:', {
+        selectedTtsModel: settings.selectedTtsModel,
+        selectedGoogleTtsModel: settings.selectedGoogleTtsModel,
+        selectedGoogleVoiceId: settings.selectedGoogleVoiceId
+      });
       story.narrationAudioDurationSeconds = settings.narrationAudioDurationSeconds;
       story.imageProvider = settings.imageProvider;
       story.aiProvider = settings.aiProvider;
@@ -111,6 +125,14 @@ function transformBaserowToStory(row: Record<string, unknown>): Story {
       story.detailImageModel = settings.detailImageModel; // Read detail image model
       story.sceneImageProvider = settings.sceneImageProvider; // Read scene image provider
       story.sceneImageModel = settings.sceneImageModel; // Read scene image model
+      story.selectedTtsModel = settings.selectedTtsModel; // Read TTS model choice
+      story.selectedGoogleTtsModel = settings.selectedGoogleTtsModel; // Read Google TTS model
+      story.selectedGoogleVoiceId = settings.selectedGoogleVoiceId; // Read Google voice ID
+      console.log('[transformBaserowToStory] Assigned to story:', {
+        selectedTtsModel: story.selectedTtsModel,
+        selectedGoogleTtsModel: story.selectedGoogleTtsModel,
+        selectedGoogleVoiceId: story.selectedGoogleVoiceId
+      });
     } catch (error) {
       console.warn('Failed to parse settings JSON:', error);
     }

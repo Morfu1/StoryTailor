@@ -2,6 +2,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import type { Story, ElevenLabsVoice } from '@/types/story';
 import { initialStoryState } from '@/constants/storyDefaults';
+import { googleTtsVoices } from '@/constants/voices';
 import type { UserApiKeys } from '@/types/apiKeys';
 
 export interface UseStoryStateReturn {
@@ -32,6 +33,7 @@ export interface UseStoryStateReturn {
   setElevenLabsVoices: (voices: ElevenLabsVoice[]) => void;
   selectedVoiceId: string | undefined;
   setSelectedVoiceId: (id: string | undefined) => void;
+  setSelectedVoiceIdWithPersist: (id: string | undefined) => Promise<void>;
   narrationSource: 'generate' | 'upload';
   setNarrationSource: (source: 'generate' | 'upload') => void;
   selectedTtsModel: 'elevenlabs' | 'google';
@@ -42,6 +44,7 @@ export interface UseStoryStateReturn {
   setSelectedGoogleLanguage: (language: string) => void;
   selectedGoogleVoiceId: string;
   setSelectedGoogleVoiceId: (voiceId: string) => void;
+  setSelectedGoogleVoiceIdWithPersist: (voiceId: string) => Promise<void>;
   uploadedAudioFileName: string | null;
   setUploadedAudioFileName: (fileName: string | null) => void;
   
@@ -123,7 +126,7 @@ export const useStoryState = (passedUserId?: string): UseStoryStateReturn => {
   const [selectedTtsModel, setSelectedTtsModel] = useState<'elevenlabs' | 'google'>(initialStoryState.selectedTtsModel || 'google');
   const [selectedGoogleApiModel, setSelectedGoogleApiModel] = useState<string>(initialStoryState.selectedGoogleTtsModel || 'gemini-2.5-flash-preview-tts');
   const [selectedGoogleLanguage, setSelectedGoogleLanguage] = useState<string>('en-US');
-  const [selectedGoogleVoiceId, setSelectedGoogleVoiceId] = useState<string>('Zephyr');
+  const [selectedGoogleVoiceId, setSelectedGoogleVoiceId] = useState<string>(initialStoryState.selectedGoogleVoiceId || 'Zephyr');
   const [uploadedAudioFileName, setUploadedAudioFileName] = useState<string | null>(null);
   const [isScriptManuallyEditing, setIsScriptManuallyEditing] = useState(false);
   const [isCharacterPromptsEditing, setIsCharacterPromptsEditing] = useState(false);
@@ -210,15 +213,89 @@ export const useStoryState = (passedUserId?: string): UseStoryStateReturn => {
   }, []);
 
   // Enhanced TTS model setters that also update story data
-  const setSelectedTtsModelWithPersist = useCallback((model: 'elevenlabs' | 'google') => {
+  const setSelectedTtsModelWithPersist = useCallback(async (model: 'elevenlabs' | 'google') => {
     setSelectedTtsModel(model);
+    const updatedStoryData = { ...storyData, selectedTtsModel: model };
     updateStoryData({ selectedTtsModel: model });
-  }, [updateStoryData]);
+    
+    // Auto-save to Baserow if story has ID and user ID
+    if (storyData.id && storyData.userId) {
+      try {
+        const { saveStory } = await import('@/actions/baserowStoryActions');
+        await saveStory(updatedStoryData, storyData.userId);
+        console.log('[setSelectedTtsModelWithPersist] Auto-saved TTS model to Baserow');
+      } catch (error) {
+        console.error('[setSelectedTtsModelWithPersist] Failed to auto-save:', error);
+      }
+    }
+  }, [updateStoryData, storyData]);
 
-  const setSelectedGoogleApiModelWithPersist = useCallback((model: string) => {
+  const setSelectedGoogleApiModelWithPersist = useCallback(async (model: string) => {
     setSelectedGoogleApiModel(model);
+    const updatedStoryData = { ...storyData, selectedGoogleTtsModel: model };
     updateStoryData({ selectedGoogleTtsModel: model });
-  }, [updateStoryData]);
+    
+    // Auto-save to Baserow if story has ID and user ID
+    if (storyData.id && storyData.userId) {
+      try {
+        const { saveStory } = await import('@/actions/baserowStoryActions');
+        await saveStory(updatedStoryData, storyData.userId);
+        console.log('[setSelectedGoogleApiModelWithPersist] Auto-saved Google API model to Baserow');
+      } catch (error) {
+        console.error('[setSelectedGoogleApiModelWithPersist] Failed to auto-save:', error);
+      }
+    }
+  }, [updateStoryData, storyData]);
+
+  const setSelectedVoiceIdWithPersist = useCallback(async (id: string | undefined) => {
+    console.log('[setSelectedVoiceIdWithPersist] Setting ElevenLabs voice:', id);
+    setSelectedVoiceId(id);
+    const updatedStoryData = { 
+      ...storyData, 
+      elevenLabsVoiceId: id,
+      narrationVoice: id // Also save to narrationVoice for compatibility
+    };
+    updateStoryData({ 
+      elevenLabsVoiceId: id,
+      narrationVoice: id 
+    });
+    
+    // Auto-save to Baserow if story has ID and user ID
+    if (storyData.id && storyData.userId) {
+      try {
+        const { saveStory } = await import('@/actions/baserowStoryActions');
+        await saveStory(updatedStoryData, storyData.userId);
+        console.log('[setSelectedVoiceIdWithPersist] Auto-saved ElevenLabs voice to Baserow');
+      } catch (error) {
+        console.error('[setSelectedVoiceIdWithPersist] Failed to auto-save:', error);
+      }
+    }
+  }, [updateStoryData, storyData]);
+
+  const setSelectedGoogleVoiceIdWithPersist = useCallback(async (voiceId: string) => {
+    console.log('[setSelectedGoogleVoiceIdWithPersist] Setting Google voice:', voiceId);
+    setSelectedGoogleVoiceId(voiceId);
+    const updatedStoryData = { 
+      ...storyData, 
+      selectedGoogleVoiceId: voiceId,
+      narrationVoice: voiceId // Save Google voice to narrationVoice too
+    };
+    updateStoryData({ 
+      selectedGoogleVoiceId: voiceId,
+      narrationVoice: voiceId 
+    });
+    
+    // Auto-save to Baserow if story has ID and user ID
+    if (storyData.id && storyData.userId) {
+      try {
+        const { saveStory } = await import('@/actions/baserowStoryActions');
+        await saveStory(updatedStoryData, storyData.userId);
+        console.log('[setSelectedGoogleVoiceIdWithPersist] Auto-saved Google voice to Baserow');
+      } catch (error) {
+        console.error('[setSelectedGoogleVoiceIdWithPersist] Failed to auto-save:', error);
+      }
+    }
+  }, [updateStoryData, storyData]);
 
   // Enhanced image provider setter that also updates story data
   const setImageProviderWithPersist = useCallback((provider: 'picsart' | 'gemini' | 'imagen3') => {
@@ -228,6 +305,13 @@ export const useStoryState = (passedUserId?: string): UseStoryStateReturn => {
 
   // Function to restore UI state from loaded story data
   const restoreStateFromStoryData = useCallback((loadedStory: Story) => {
+    console.log('[restoreStateFromStoryData] Restoring state from loaded story:', {
+      selectedTtsModel: loadedStory.selectedTtsModel,
+      elevenLabsVoiceId: loadedStory.elevenLabsVoiceId,
+      selectedGoogleVoiceId: loadedStory.selectedGoogleVoiceId,
+      narrationVoice: loadedStory.narrationVoice
+    });
+    
     // Restore Step 1 model selections
     if (loadedStory.aiProvider) {
       setAiProviderState(loadedStory.aiProvider);
@@ -241,13 +325,43 @@ export const useStoryState = (passedUserId?: string): UseStoryStateReturn => {
     
     // Restore Step 3 TTS model selections
     if (loadedStory.selectedTtsModel) {
+      console.log('[restoreStateFromStoryData] Restoring TTS model:', loadedStory.selectedTtsModel);
       setSelectedTtsModel(loadedStory.selectedTtsModel);
     }
     if (loadedStory.selectedGoogleTtsModel) {
+      console.log('[restoreStateFromStoryData] Restoring Google TTS model:', loadedStory.selectedGoogleTtsModel);
       setSelectedGoogleApiModel(loadedStory.selectedGoogleTtsModel);
     }
+    
+    // Restore voice selections based on TTS model
     if (loadedStory.elevenLabsVoiceId) {
+      console.log('[restoreStateFromStoryData] Restoring ElevenLabs voice:', loadedStory.elevenLabsVoiceId);
       setSelectedVoiceId(loadedStory.elevenLabsVoiceId);
+    }
+    if (loadedStory.selectedGoogleVoiceId) {
+      console.log('[restoreStateFromStoryData] Restoring Google voice:', loadedStory.selectedGoogleVoiceId);
+      setSelectedGoogleVoiceId(loadedStory.selectedGoogleVoiceId);
+    }
+    
+    // Fallback: if narrationVoice is set but specific voice IDs aren't, try to restore from narrationVoice
+    if (loadedStory.narrationVoice && !loadedStory.elevenLabsVoiceId && !loadedStory.selectedGoogleVoiceId) {
+      console.log('[restoreStateFromStoryData] Using fallback narrationVoice:', loadedStory.narrationVoice, 'for TTS model:', loadedStory.selectedTtsModel);
+      
+      // Smart fallback: check if the voice name matches known Google voices
+      const googleVoiceIds = googleTtsVoices.map(voice => voice.id);
+      const isGoogleVoice = googleVoiceIds.includes(loadedStory.narrationVoice);
+      
+      if (loadedStory.selectedTtsModel === 'google' || isGoogleVoice) {
+        console.log('[restoreStateFromStoryData] Setting as Google voice:', loadedStory.narrationVoice);
+        setSelectedGoogleVoiceId(loadedStory.narrationVoice);
+        // Also ensure TTS model is set to google if it wasn't already
+        if (!loadedStory.selectedTtsModel) {
+          setSelectedTtsModel('google');
+        }
+      } else {
+        console.log('[restoreStateFromStoryData] Setting as ElevenLabs voice:', loadedStory.narrationVoice);
+        setSelectedVoiceId(loadedStory.narrationVoice);
+      }
     }
     
     // Restore Step 4 image model selections
@@ -337,6 +451,8 @@ export const useStoryState = (passedUserId?: string): UseStoryStateReturn => {
     // Enhanced model setters that persist to story data
     setSelectedTtsModelWithPersist,
     setSelectedGoogleApiModelWithPersist,
+    setSelectedVoiceIdWithPersist,
+    setSelectedGoogleVoiceIdWithPersist,
     setImageProviderWithPersist,
     
     // State restoration function

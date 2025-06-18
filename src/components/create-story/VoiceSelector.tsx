@@ -28,9 +28,10 @@ export function VoiceSelector({ storyState }: VoiceSelectorProps) {
     selectedGoogleLanguage,
     setSelectedGoogleLanguage,
     selectedGoogleVoiceId,
-    setSelectedGoogleVoiceId,
+    setSelectedGoogleVoiceIdWithPersist,
     selectedVoiceId,
     setSelectedVoiceId,
+    setSelectedVoiceIdWithPersist,
     elevenLabsVoices,
     setElevenLabsVoices,
     uploadedAudioFileName,
@@ -201,7 +202,7 @@ export function VoiceSelector({ storyState }: VoiceSelectorProps) {
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    <Select value={selectedVoiceId} onValueChange={setSelectedVoiceId}>
+                    <Select value={selectedVoiceId} onValueChange={setSelectedVoiceIdWithPersist}>
                       <SelectTrigger>
                         <SelectValue placeholder="Select a voice" />
                       </SelectTrigger>
@@ -274,7 +275,7 @@ export function VoiceSelector({ storyState }: VoiceSelectorProps) {
                 <div className="space-y-2">
                   <Label className="text-sm font-medium">Google Voice</Label>
                   <div className="space-y-3">
-                    <Select value={selectedGoogleVoiceId} onValueChange={setSelectedGoogleVoiceId}>
+                    <Select value={selectedGoogleVoiceId} onValueChange={setSelectedGoogleVoiceIdWithPersist}>
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>

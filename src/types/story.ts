@@ -141,6 +141,7 @@ export interface Story {
   // TTS Model Selection (Step 3)
   selectedTtsModel?: 'elevenlabs' | 'google'; // User's TTS provider choice
   selectedGoogleTtsModel?: string; // Specific Google TTS model (e.g., "gemini-2.5-flash-preview-tts")
+  selectedGoogleVoiceId?: string; // Google TTS voice ID (e.g., "Zephyr", "Laura")
   
   // Image Generation Model Selection (Step 4)  
   imageProvider?: string; // e.g., "picsart", "gemini", "imagen3"
