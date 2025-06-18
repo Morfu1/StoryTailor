@@ -167,30 +167,7 @@ async function uploadAudioToMinIO(audioDataUri: string, userId: string, storyId:
   return await minioService.getSignedUrl(filePath, 7 * 24 * 60 * 60);
 }
 
-/**
- * Refresh MinIO signed URLs (similar to Firebase refresh logic)
- */
-async function refreshMinIOUrl(url: string): Promise<string | null> {
-  if (!url || typeof url !== 'string') return null;
-  
-  try {
-    // Extract file path from MinIO URL
-    const urlObj = new URL(url);
-    const pathParts = urlObj.pathname.split('/');
-    
-    // Skip if it's not a MinIO URL or already a valid signed URL
-    if (!url.includes(process.env.MINIO_ENDPOINT || 'localhost:9100')) {
-      return null;
-    }
-    
-    // Generate new signed URL for the same file path
-    const filePath = pathParts.slice(2).join('/'); // Remove bucket name
-    return await minioService.getSignedUrl(filePath, 7 * 24 * 60 * 60);
-  } catch (error) {
-    console.warn('Failed to refresh MinIO URL:', error);
-    return null;
-  }
-}
+// NOTE: refreshMinIOUrl function removed as URL refresh logic is temporarily disabled to prevent infinite loops
 
 export async function getStory(storyId: string, userId: string): Promise<{ success: boolean; data?: Story; error?: string }> {
   if (!userId) {
@@ -232,9 +209,13 @@ export async function getStory(storyId: string, userId: string): Promise<{ succe
       return { success: false, error: "Unauthorized: You can only access your own stories." };
     }
 
-    let needsUpdate = false;
+    const needsUpdate = false;
     const updates: Record<string, unknown> = {};
 
+    // TODO: Temporarily disabled URL refresh logic to prevent infinite loop
+    // The URL refresh logic needs to be fixed to only update when URLs are actually expired
+    
+    /* DISABLED - CAUSING INFINITE LOOP
     // Refresh signed URLs for narration audio
     if (story.narrationAudioUrl) {
       const refreshedUrl = await refreshMinIOUrl(story.narrationAudioUrl);
@@ -328,6 +309,7 @@ export async function getStory(storyId: string, userId: string): Promise<{ succe
         needsUpdate = true;
       }
     }
+    */
 
     // Update story in Baserow if URLs were refreshed (use the correct Baserow row ID)
     if (needsUpdate && baserowRowId) {
@@ -634,7 +616,7 @@ export async function getUserStories(userId: string): Promise<{ success: boolean
   try {
     const rows = await baserowService.getStories(userId);
     const stories = rows.map(transformBaserowToStory).sort((a, b) => {
-      // Sort by updatedAt descending (most recent first)
+      // Sort by updatedAt descending (most recent first) so that newly opened/edited stories appear at the top
       const aTime = a.updatedAt instanceof Date ? a.updatedAt.getTime() : 0;
       const bTime = b.updatedAt instanceof Date ? b.updatedAt.getTime() : 0;
       return bTime - aTime;

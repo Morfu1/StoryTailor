@@ -354,10 +354,8 @@ export const useStoryState = (passedUserId?: string): UseStoryStateReturn => {
       if (loadedStory.selectedTtsModel === 'google' || isGoogleVoice) {
         console.log('[restoreStateFromStoryData] Setting as Google voice:', loadedStory.narrationVoice);
         setSelectedGoogleVoiceId(loadedStory.narrationVoice);
-        // Also ensure TTS model is set to google if it wasn't already
-        if (!loadedStory.selectedTtsModel) {
-          setSelectedTtsModel('google');
-        }
+        // NOTE: Removed automatic TTS model setting to prevent infinite loops
+        // If selectedTtsModel is undefined but we have a Google voice, let user manually select
       } else {
         console.log('[restoreStateFromStoryData] Setting as ElevenLabs voice:', loadedStory.narrationVoice);
         setSelectedVoiceId(loadedStory.narrationVoice);

@@ -224,7 +224,7 @@ export default function CreateStoryPage() {
       setCurrentStep(initialStep);
       setActiveAccordionItem(`step-${initialStep}`);
     }
-  }, [storyId, user, router, toast, authLoading, setPageLoading, setFirebaseError, setStoryData, setSelectedVoiceId, setNarrationSource, setUploadedAudioFileName, setCurrentStep, setActiveAccordionItem, setIsImagePromptEditing, storyState]);
+  }, [storyId, user, router, toast, authLoading, setPageLoading, setFirebaseError, setStoryData, setSelectedVoiceId, setNarrationSource, setUploadedAudioFileName, setCurrentStep, setActiveAccordionItem, setIsImagePromptEditing, storyState.restoreStateFromStoryData]); // eslint-disable-line react-hooks/exhaustive-deps
 
 
   const lastAutoExpandedStep = useRef(currentStep);
