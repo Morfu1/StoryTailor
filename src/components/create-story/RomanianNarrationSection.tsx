@@ -48,7 +48,7 @@ export function RomanianNarrationSection({ storyState }: RomanianNarrationSectio
   const [isAutoSaving, setIsAutoSaving] = useState(false);
   const [lastSavedRomanianChunks, setLastSavedRomanianChunks] = useState<RomanianChunk[] | null>(null);
 
-  const debouncedSaveFnRef = useRef<DebouncedFunction<[RomanianChunk[]]> | null>(null);
+  const debouncedSaveFnRef = useRef<DebouncedFunction<[RomanianChunk[], typeof storyData]> | null>(null);
 
   const romanianChunks = storyData.romanianNarrationChunks || [];
   const englishChunks = storyData.narrationChunks || [];
@@ -58,8 +58,8 @@ export function RomanianNarrationSection({ storyState }: RomanianNarrationSectio
 
   // Autosave effect for Romanian narration chunks
   useEffect(() => {
-    debouncedSaveFnRef.current = debounce(async (chunksToSave: RomanianChunk[]) => {
-      if (!storyData.userId || !storyData.id || chunksToSave.length === 0) return;
+    debouncedSaveFnRef.current = debounce(async (chunksToSave: RomanianChunk[], currentStoryData: typeof storyData) => {
+      if (!currentStoryData.userId || !currentStoryData.id || chunksToSave.length === 0) return;
       
       // Prevent multiple simultaneous saves of the same content
       if (lastSavedRomanianChunks && JSON.stringify(lastSavedRomanianChunks) === JSON.stringify(chunksToSave)) {
@@ -76,11 +76,11 @@ export function RomanianNarrationSection({ storyState }: RomanianNarrationSectio
       setIsAutoSaving(true);
       try {
         const updatedStoryData = {
-          ...storyData,
+          ...currentStoryData,
           romanianNarrationChunks: chunksToSave
         };
 
-        const saveResult = await saveStory(updatedStoryData, storyData.userId);
+        const saveResult = await saveStory(updatedStoryData, currentStoryData.userId);
         if (saveResult.success) {
           setLastSavedRomanianChunks([...chunksToSave]);
           toast({
@@ -112,13 +112,13 @@ export function RomanianNarrationSection({ storyState }: RomanianNarrationSectio
         debouncedSaveFnRef.current.cancel();
       }
     };
-  }, [storyData, isAutoSaving, lastSavedRomanianChunks, toast]);
+  }, [isAutoSaving, lastSavedRomanianChunks, toast]); // Removed storyState to prevent debounce cancellation
 
   const autoSaveRomanianChunks = useCallback((chunks: RomanianChunk[]) => {
     if (debouncedSaveFnRef.current && chunks.length > 0) {
-      debouncedSaveFnRef.current(chunks);
+      debouncedSaveFnRef.current(chunks, storyData); // Pass current storyData as parameter
     }
-  }, []);
+  }, [storyData]); // Add storyData dependency to callback
 
   const handleTranslateToRomanian = async () => {
     if (!englishChunks.length) {
