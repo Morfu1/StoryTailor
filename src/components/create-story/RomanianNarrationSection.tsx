@@ -37,6 +37,7 @@ export function RomanianNarrationSection({ storyState }: RomanianNarrationSectio
     perplexityModel,
     selectedTtsModel,
     selectedVoiceId,
+    selectedGoogleVoiceId,
     selectedGoogleApiModel,
     handleSetLoading
   } = storyState;
@@ -241,12 +242,20 @@ export function RomanianNarrationSection({ storyState }: RomanianNarrationSectio
     setGeneratingAudio(prev => ({ ...prev, [chunkKey]: true }));
 
     try {
+      // Use the EXACT same voice logic as English narration
+      let voiceIdToUse: string | undefined = undefined;
+      if (selectedTtsModel === 'elevenlabs') {
+        voiceIdToUse = selectedVoiceId || storyData.elevenLabsVoiceId;
+      } else if (selectedTtsModel === 'google') {
+        voiceIdToUse = selectedGoogleVoiceId;
+      }
+
       const result = await generateNarrationAudio({
         script: chunk.text,
-        voiceId: selectedVoiceId,
+        voiceId: selectedTtsModel === 'elevenlabs' ? voiceIdToUse : selectedGoogleVoiceId,
         ttsModel: selectedTtsModel || 'elevenlabs',
-        googleApiModel: selectedGoogleApiModel,
-        languageCode: 'ro-RO', // Romanian language code
+        googleApiModel: selectedTtsModel === 'google' ? selectedGoogleApiModel : undefined,
+        languageCode: selectedTtsModel === 'google' ? 'ro-RO' : undefined, // Romanian language code only for Google TTS
         userId: storyData.userId,
         storyId: storyData.id,
         chunkId: chunk.id,
